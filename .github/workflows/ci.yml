@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  # DIRECTION.md §8 invariants — each becomes a required job as it lands:
+  #   cache-stability-golden : replay recorded conversation, byte-identical served turns
+  #   curator-parity         : brain-API score == trainer-forward score at calib_tau
+  #   featurization-parity   : Rust vectors == Python reference vectors
+  #   contracts-drift        : generated types in sync with packages/contracts/schemas

@@ -1,0 +1,15 @@
+[package]
+name = "dasein-engine"
+description = "Client-side deterministic core: chunking, local embedding, freezing, feature extraction. No network, no torch."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# planned: ort (ONNX embedder), tree-sitter (chunking) — added with the port

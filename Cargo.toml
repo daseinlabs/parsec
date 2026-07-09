@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "packages/engine",
+    "packages/proxy",
+    "packages/mapgen",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/daseinlabs/learner"
+
+[workspace.dependencies]
+# JSON key order must survive round-trips: cache-stable freezing depends on
+# byte-identical re-serialization of previously served turns (§8.1).
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"

@@ -1,0 +1,6 @@
+{
+  "name": "dasein",
+  "version": "0.1.0",
+  "description": "Context compression for Claude Code: exploration maps, no-reread guard, honest savings measurement. Pro tier adds the learned curator via a local proxy.",
+  "author": { "name": "Dasein Labs" }
+}

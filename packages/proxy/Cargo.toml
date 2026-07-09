@@ -1,0 +1,21 @@
+[package]
+name = "dasein-proxy"
+description = "The dasein binary: local data-plane proxy (also the Team cloud gateway), plus mcp / hook / statusline subcommands."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dasein"
+path = "src/main.rs"
+
+[dependencies]
+dasein-engine = { path = "../engine" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+clap = { version = "4", features = ["derive"] }
+# planned: axum/hyper + tokio (proxy, SSE), rmcp (MCP) — added with the port

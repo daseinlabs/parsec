@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://daseinlabs.dev/contracts/brain-api/v0",
+  "title": "Brain scoring API (draft v0)",
+  "description": "Vectors + structural features in, keep/cut scores out. No field in this contract may carry raw text.",
+  "type": "object"
+}

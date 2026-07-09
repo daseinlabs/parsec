@@ -1,0 +1,18 @@
+files
+
+# Rust
+target/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# local state
+.dasein/
+*.onnx
+.env
+.DS_Store
