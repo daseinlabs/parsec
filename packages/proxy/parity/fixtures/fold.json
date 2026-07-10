@@ -1,0 +1,3725 @@
+{
+ "system_to_text": [
+  {
+   "name": "sys_str",
+   "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. ",
+   "expected": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+  },
+  {
+   "name": "sys_blocks",
+   "system": [
+    {
+     "type": "text",
+     "text": "block one"
+    },
+    {
+     "type": "text",
+     "text": "block twö",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "image",
+     "source": "x"
+    }
+   ],
+   "expected": "block one\nblock twö"
+  },
+  {
+   "name": "sys_none",
+   "system": null,
+   "expected": ""
+  }
+ ],
+ "content_text": [
+  {
+   "name": "plain_str",
+   "content": "hello wörld",
+   "expected": "hello wörld"
+  },
+  {
+   "name": "text_blocks",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "expected": "a b"
+  },
+  {
+   "name": "tool_result_str",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "expected": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+  },
+  {
+   "name": "parallel_results",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "expected": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text  second result traceback..."
+  },
+  {
+   "name": "error_result",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "expected": "traceback..."
+  },
+  {
+   "name": "mixed",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "expected": "lead second result"
+  },
+  {
+   "name": "no_text_block",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "expected": ""
+  },
+  {
+   "name": "non_dict_parts",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "expected": "x"
+  },
+  {
+   "name": "empty_list",
+   "content": [],
+   "expected": ""
+  },
+  {
+   "name": "none",
+   "content": null,
+   "expected": ""
+  },
+  {
+   "name": "cache_ctl",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "expected": "t inner"
+  },
+  {
+   "name": "numbers",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "expected": ""
+  }
+ ],
+ "rewrite_first_text": [
+  {
+   "name": "plain_str|",
+   "content": "hello wörld",
+   "new_text": "",
+   "expected": ""
+  },
+  {
+   "name": "plain_str|trimmed",
+   "content": "hello wörld",
+   "new_text": "trimmed",
+   "expected": "trimmed"
+  },
+  {
+   "name": "plain_str|unicode ",
+   "content": "hello wörld",
+   "new_text": "unicode 🐍 trim",
+   "expected": "unicode 🐍 trim"
+  },
+  {
+   "name": "plain_str|   ",
+   "content": "hello wörld",
+   "new_text": "   ",
+   "expected": "   "
+  },
+  {
+   "name": "text_blocks|",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "text",
+     "text": ""
+    }
+   ]
+  },
+  {
+   "name": "text_blocks|trimmed",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed"
+    }
+   ]
+  },
+  {
+   "name": "text_blocks|unicode ",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim"
+    }
+   ]
+  },
+  {
+   "name": "text_blocks|   ",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   "
+    }
+   ]
+  },
+  {
+   "name": "tool_result_str|",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": ""
+    }
+   ]
+  },
+  {
+   "name": "tool_result_str|trimmed",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "trimmed"
+    }
+   ]
+  },
+  {
+   "name": "tool_result_str|unicode ",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "unicode 🐍 trim"
+    }
+   ]
+  },
+  {
+   "name": "tool_result_str|   ",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "   "
+    }
+   ]
+  },
+  {
+   "name": "parallel_results|",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": ""
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "[result consolidated into the first result of this turn above]"
+    }
+   ]
+  },
+  {
+   "name": "parallel_results|trimmed",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "trimmed"
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "[result consolidated into the first result of this turn above]"
+    }
+   ]
+  },
+  {
+   "name": "parallel_results|unicode ",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "unicode 🐍 trim"
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "[result consolidated into the first result of this turn above]"
+    }
+   ]
+  },
+  {
+   "name": "parallel_results|   ",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "   "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "[result consolidated into the first result of this turn above]"
+    }
+   ]
+  },
+  {
+   "name": "error_result|",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "[error output omitted]"
+    }
+   ]
+  },
+  {
+   "name": "error_result|trimmed",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "trimmed"
+    }
+   ]
+  },
+  {
+   "name": "error_result|unicode ",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "unicode 🐍 trim"
+    }
+   ]
+  },
+  {
+   "name": "error_result|   ",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "[error output omitted]"
+    }
+   ]
+  },
+  {
+   "name": "mixed|",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "text",
+     "text": ""
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "mixed|trimmed",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "mixed|unicode ",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "mixed|   ",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   "
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "no_text_block|",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "name": "no_text_block|trimmed",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "name": "no_text_block|unicode ",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "name": "no_text_block|   ",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   "
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "name": "non_dict_parts|",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "text",
+     "text": ""
+    },
+    "bare"
+   ]
+  },
+  {
+   "name": "non_dict_parts|trimmed",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed"
+    },
+    "bare"
+   ]
+  },
+  {
+   "name": "non_dict_parts|unicode ",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim"
+    },
+    "bare"
+   ]
+  },
+  {
+   "name": "non_dict_parts|   ",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   "
+    },
+    "bare"
+   ]
+  },
+  {
+   "name": "empty_list|",
+   "content": [],
+   "new_text": "",
+   "expected": []
+  },
+  {
+   "name": "empty_list|trimmed",
+   "content": [],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed"
+    }
+   ]
+  },
+  {
+   "name": "empty_list|unicode ",
+   "content": [],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim"
+    }
+   ]
+  },
+  {
+   "name": "empty_list|   ",
+   "content": [],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   "
+    }
+   ]
+  },
+  {
+   "name": "none|",
+   "content": null,
+   "new_text": "",
+   "expected": null
+  },
+  {
+   "name": "none|trimmed",
+   "content": null,
+   "new_text": "trimmed",
+   "expected": null
+  },
+  {
+   "name": "none|unicode ",
+   "content": null,
+   "new_text": "unicode 🐍 trim",
+   "expected": null
+  },
+  {
+   "name": "none|   ",
+   "content": null,
+   "new_text": "   ",
+   "expected": null
+  },
+  {
+   "name": "cache_ctl|",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "text",
+     "text": "",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cache_ctl|trimmed",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cache_ctl|unicode ",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cache_ctl|   ",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   ",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "[result consolidated into the first result of this turn above]",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "numbers|",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "new_text": "",
+   "expected": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ]
+  },
+  {
+   "name": "numbers|trimmed",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "new_text": "trimmed",
+   "expected": [
+    {
+     "type": "text",
+     "text": "trimmed"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ]
+  },
+  {
+   "name": "numbers|unicode ",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "new_text": "unicode 🐍 trim",
+   "expected": [
+    {
+     "type": "text",
+     "text": "unicode 🐍 trim"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ]
+  },
+  {
+   "name": "numbers|   ",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "new_text": "   ",
+   "expected": [
+    {
+     "type": "text",
+     "text": "   "
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ]
+  }
+ ],
+ "strip_cache_control": [
+  {
+   "name": "plain_str",
+   "content": "hello wörld",
+   "expected": "hello wörld"
+  },
+  {
+   "name": "text_blocks",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "expected": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ]
+  },
+  {
+   "name": "tool_result_str",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ]
+  },
+  {
+   "name": "parallel_results",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ]
+  },
+  {
+   "name": "error_result",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "expected": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ]
+  },
+  {
+   "name": "mixed",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "expected": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "no_text_block",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "expected": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "name": "non_dict_parts",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "expected": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ]
+  },
+  {
+   "name": "empty_list",
+   "content": [],
+   "expected": []
+  },
+  {
+   "name": "none",
+   "content": null,
+   "expected": null
+  },
+  {
+   "name": "cache_ctl",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "expected": [
+    {
+     "type": "text",
+     "text": "t"
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "content": [
+      {
+       "type": "text",
+       "text": "inner"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "numbers",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "expected": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ]
+  }
+ ],
+ "fingerprint": [
+  {
+   "name": "plain_str",
+   "content": "hello wörld",
+   "expected": "a2d8b8df7d396c6cbe1378ce1212c0879882b4af5be825e4b845373af1a96867"
+  },
+  {
+   "name": "text_blocks",
+   "content": [
+    {
+     "type": "text",
+     "text": "a"
+    },
+    {
+     "type": "text",
+     "text": "b"
+    }
+   ],
+   "expected": "63bc708191a7b9ef0345392586fdfe866b29381bbaafa6da540bc3ad9fc45fd1"
+  },
+  {
+   "name": "tool_result_str",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    }
+   ],
+   "expected": "540e51ee1c35b3e66824e53b70570b1c13e2dbb77836133acdf8081878bab10d"
+  },
+  {
+   "name": "parallel_results",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_1",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "expected": "0de4b7210878334b7f7bd527efa8791e8ba20eb987f5e69c6a89440a5a46a147"
+  },
+  {
+   "name": "error_result",
+   "content": [
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_3",
+     "is_error": true,
+     "content": "traceback..."
+    }
+   ],
+   "expected": "5b72bd3af26da41609b1f4a12c608fd2711caca541885a49c062df5c7f4b7dec"
+  },
+  {
+   "name": "mixed",
+   "content": [
+    {
+     "type": "text",
+     "text": "lead"
+    },
+    {
+     "type": "tool_use",
+     "id": "tu_9",
+     "name": "bash",
+     "input": {
+      "command": "ls"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "tu_2",
+     "content": [
+      {
+       "type": "text",
+       "text": "second result"
+      },
+      {
+       "type": "image",
+       "source": "s"
+      }
+     ]
+    }
+   ],
+   "expected": "27db23a5b3fb1d4fd052ab46e88eb7ccb8f959c76eed961d5c23479fa0b54c0d"
+  },
+  {
+   "name": "no_text_block",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_8",
+     "name": "bash",
+     "input": {}
+    }
+   ],
+   "expected": "b526b39af27a5c4658def516b07548fdd686b6ed5be77d93abcc7511e2e60790"
+  },
+  {
+   "name": "non_dict_parts",
+   "content": [
+    {
+     "type": "text",
+     "text": "x"
+    },
+    "bare"
+   ],
+   "expected": "584bba42ef5c8545cf5aecd77555e71204957dc404fc553a8d628b0ab44b1133"
+  },
+  {
+   "name": "empty_list",
+   "content": [],
+   "expected": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  {
+   "name": "none",
+   "content": null,
+   "expected": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+  },
+  {
+   "name": "cache_ctl",
+   "content": [
+    {
+     "type": "text",
+     "text": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    },
+    {
+     "type": "tool_result",
+     "tool_use_id": "t",
+     "cache_control": {
+      "type": "ephemeral"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "inner",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "expected": "88fa75f5ae06a5bbf98b571a04753fd6f33672238d7b0f9b27430e4584f51b4a"
+  },
+  {
+   "name": "numbers",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "tu_n",
+     "name": "calc",
+     "input": {
+      "a": 1e-07,
+      "b": 1e-05,
+      "c": 1e+16,
+      "d": -0.0,
+      "e": 1.1534175185142759,
+      "f": 123456789,
+      "g": [
+       1.0,
+       0.5,
+       1000000000000000.0,
+       -2.5e-07
+      ],
+      "h": 0.0001
+     }
+    }
+   ],
+   "expected": "94456b385e4f38d38c52dcaeb88e7825d024a7dab703b874c5bfaf40e598448d"
+  }
+ ],
+ "apply_curation": [
+  {
+   "name": "stateless_trim",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "SYS TRIMMED"
+    },
+    {
+     "role": "x",
+     "content": "task description"
+    },
+    {
+     "role": "x",
+     "content": "plan"
+    },
+    {
+     "role": "x",
+     "content": "curated obs"
+    }
+   ],
+   "state": null,
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "SYS TRIMMED"
+   },
+   "expected_state": null
+  },
+  {
+   "name": "stateless_unchanged",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+    },
+    {
+     "role": "x",
+     "content": "task description"
+    },
+    {
+     "role": "x",
+     "content": "plan"
+    },
+    {
+     "role": "x",
+     "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text  second result"
+    }
+   ],
+   "state": null,
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "expected_state": null
+  },
+  {
+   "name": "stateless_short_curated",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "SYS TRIMMED"
+    },
+    {
+     "role": "x",
+     "content": "task description"
+    }
+   ],
+   "state": null,
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "SYS TRIMMED"
+   },
+   "expected_state": null
+  },
+  {
+   "name": "stateless_no_system",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "task description"
+    },
+    {
+     "role": "x",
+     "content": "plan trimmed"
+    },
+    {
+     "role": "x",
+     "content": "obs trimmed"
+    }
+   ],
+   "state": null,
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan trimmed"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "obs trimmed"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "expected_state": null
+  },
+  {
+   "name": "freeze_call1",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "SYS TRIMMED"
+    },
+    {
+     "role": "x",
+     "content": "task description"
+    },
+    {
+     "role": "x",
+     "content": "plan"
+    },
+    {
+     "role": "x",
+     "content": "curated obs"
+    }
+   ],
+   "state": {},
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "SYS TRIMMED"
+   },
+   "expected_state": {
+    "served_folds": {
+     "__system__": "SYS TRIMMED",
+     "0:e84b04ce80b85f5e647241f24ac53ad4dfd7db739ec1c17514847053714b9cc3": {
+      "role": "user",
+      "content": "task description"
+     },
+     "1:ca6f3f75ae854c257cc5451569ba668a1477463ba5a290f7f91f84f448058aa2": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     "2:a7e45c26700b49ba6409e7235ef593b6608c2ff97e2dfe46c63a068a2ffbcdd8": {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "freeze_call2_replays",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "next step"
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "SYS DIFFERENT"
+    },
+    {
+     "role": "x",
+     "content": "task NEW"
+    },
+    {
+     "role": "x",
+     "content": "plan NEW"
+    },
+    {
+     "role": "x",
+     "content": "obs NEW"
+    },
+    {
+     "role": "x",
+     "content": "next step"
+    }
+   ],
+   "state": {
+    "served_folds": {
+     "__system__": "SYS TRIMMED",
+     "0:e84b04ce80b85f5e647241f24ac53ad4dfd7db739ec1c17514847053714b9cc3": {
+      "role": "user",
+      "content": "task description"
+     },
+     "1:ca6f3f75ae854c257cc5451569ba668a1477463ba5a290f7f91f84f448058aa2": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     "2:a7e45c26700b49ba6409e7235ef593b6608c2ff97e2dfe46c63a068a2ffbcdd8": {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   },
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "next step"
+     }
+    ],
+    "system": "SYS TRIMMED"
+   },
+   "expected_state": {
+    "served_folds": {
+     "__system__": "SYS TRIMMED",
+     "0:e84b04ce80b85f5e647241f24ac53ad4dfd7db739ec1c17514847053714b9cc3": {
+      "role": "user",
+      "content": "task description"
+     },
+     "1:ca6f3f75ae854c257cc5451569ba668a1477463ba5a290f7f91f84f448058aa2": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     "2:a7e45c26700b49ba6409e7235ef593b6608c2ff97e2dfe46c63a068a2ffbcdd8": {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     "3:e90fd9c3de27562553e032a2b53f02593c411b1346318c4d9601d16d179df2a5": {
+      "role": "assistant",
+      "content": "next step"
+     }
+    }
+   }
+  },
+  {
+   "name": "freeze_call3_refold_changed_turn",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task description EDITED"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "second result"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "next step"
+     }
+    ],
+    "system": "You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. You are an agent. "
+   },
+   "curated": [
+    {
+     "role": "x",
+     "content": "SYS DIFFERENT"
+    },
+    {
+     "role": "x",
+     "content": "task NEW"
+    },
+    {
+     "role": "x",
+     "content": "plan NEW"
+    },
+    {
+     "role": "x",
+     "content": "obs NEW"
+    },
+    {
+     "role": "x",
+     "content": "next step"
+    }
+   ],
+   "state": {
+    "served_folds": {
+     "__system__": "SYS TRIMMED",
+     "0:e84b04ce80b85f5e647241f24ac53ad4dfd7db739ec1c17514847053714b9cc3": {
+      "role": "user",
+      "content": "task description"
+     },
+     "1:ca6f3f75ae854c257cc5451569ba668a1477463ba5a290f7f91f84f448058aa2": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     "2:a7e45c26700b49ba6409e7235ef593b6608c2ff97e2dfe46c63a068a2ffbcdd8": {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     "3:e90fd9c3de27562553e032a2b53f02593c411b1346318c4d9601d16d179df2a5": {
+      "role": "assistant",
+      "content": "next step"
+     }
+    }
+   },
+   "expected": {
+    "model": "claude-x",
+    "max_tokens": 10,
+    "messages": [
+     {
+      "role": "user",
+      "content": "task NEW"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "next step"
+     }
+    ],
+    "system": "SYS TRIMMED"
+   },
+   "expected_state": {
+    "served_folds": {
+     "__system__": "SYS TRIMMED",
+     "0:e84b04ce80b85f5e647241f24ac53ad4dfd7db739ec1c17514847053714b9cc3": {
+      "role": "user",
+      "content": "task description"
+     },
+     "1:ca6f3f75ae854c257cc5451569ba668a1477463ba5a290f7f91f84f448058aa2": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plan"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "cat a.py"
+        }
+       }
+      ]
+     },
+     "2:a7e45c26700b49ba6409e7235ef593b6608c2ff97e2dfe46c63a068a2ffbcdd8": {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "curated obs"
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_2",
+        "content": [
+         {
+          "type": "text",
+          "text": "[result consolidated into the first result of this turn above]"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     },
+     "3:e90fd9c3de27562553e032a2b53f02593c411b1346318c4d9601d16d179df2a5": {
+      "role": "assistant",
+      "content": "next step"
+     },
+     "0:426aaff3f4e8efc0a24326b17aa87127a3374ae8e3e6f5b20df6785a88932ee7": {
+      "role": "user",
+      "content": "task NEW"
+     }
+    }
+   }
+  }
+ ],
+ "place_cache_breakpoint": [
+  {
+   "input": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "the task",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "plain string reply"
+     }
+    ]
+   },
+   "directive": false,
+   "expected": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "the task"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plain string reply",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected_fps": [
+    "8e16cac69408e4b5c47c3431da83f63636e10018fad6d7a3825110e07905e94c",
+    "f436370f48c7a4a5f84c7bba9b6b796c1f763f7bba0cca12adf83b2ba8ca6a15"
+   ]
+  },
+  {
+   "input": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "the task",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "plain string reply"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "text",
+        "text": "obs tail",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "next"
+       }
+      ]
+     }
+    ]
+   },
+   "directive": false,
+   "expected": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "the task"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "plain string reply",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "text",
+        "text": "obs tail"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "next",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected_fps": [
+    "8e16cac69408e4b5c47c3431da83f63636e10018fad6d7a3825110e07905e94c",
+    "f436370f48c7a4a5f84c7bba9b6b796c1f763f7bba0cca12adf83b2ba8ca6a15",
+    "d633883333d38a370d29f75d7faa419d79f65c93d7ac8b36b1e60b8698aaf388",
+    "98aaa17919b691574ce6a8de1f2238c533921785cb4a8c293cad8807572b0963"
+   ]
+  },
+  {
+   "input": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "the task",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "plain string reply"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "text",
+        "text": "obs tail",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "next"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "[CONTEXT-REUSE] directive"
+       }
+      ]
+     }
+    ]
+   },
+   "directive": true,
+   "expected": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "the task"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": "plain string reply"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "text",
+        "text": "obs tail"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "next",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "[CONTEXT-REUSE] directive"
+       }
+      ]
+     }
+    ]
+   },
+   "expected_fps": [
+    "8e16cac69408e4b5c47c3431da83f63636e10018fad6d7a3825110e07905e94c",
+    "f436370f48c7a4a5f84c7bba9b6b796c1f763f7bba0cca12adf83b2ba8ca6a15",
+    "d633883333d38a370d29f75d7faa419d79f65c93d7ac8b36b1e60b8698aaf388",
+    "98aaa17919b691574ce6a8de1f2238c533921785cb4a8c293cad8807572b0963",
+    "c6d7a22a94e4d658f7c0a5b7640d438b3d62214f099f94f554153579eeb15b14"
+   ]
+  },
+  {
+   "input": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": "EDITED task"
+     },
+     {
+      "role": "assistant",
+      "content": "plain string reply"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "text",
+        "text": "obs tail",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "next"
+       }
+      ]
+     }
+    ]
+   },
+   "directive": false,
+   "expected": {
+    "model": "claude-x",
+    "system": [
+     {
+      "type": "text",
+      "text": "system prompt",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ],
+    "messages": [
+     {
+      "role": "user",
+      "content": "EDITED task"
+     },
+     {
+      "role": "assistant",
+      "content": "plain string reply"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "tu_1",
+        "content": "long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text long observation text "
+       },
+       {
+        "type": "text",
+        "text": "obs tail"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "next",
+        "cache_control": {
+         "type": "ephemeral"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected_fps": [
+    "ff75f9b1d7f4c2441d5ad95410fce56847457cb1d1201747156e580169f04c49",
+    "f436370f48c7a4a5f84c7bba9b6b796c1f763f7bba0cca12adf83b2ba8ca6a15",
+    "d633883333d38a370d29f75d7faa419d79f65c93d7ac8b36b1e60b8698aaf388",
+    "98aaa17919b691574ce6a8de1f2238c533921785cb4a8c293cad8807572b0963"
+   ]
+  }
+ ]
+}

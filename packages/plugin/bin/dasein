@@ -1,0 +1,9 @@
+#!/bin/sh
+# Platform shim: dispatch to the committed per-platform dasein binary.
+dir="$(cd "$(dirname "$0")" && pwd)"
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) exec "$dir/darwin-arm64/dasein" "$@" ;;
+  Darwin-x86_64) exec "$dir/darwin-x64/dasein" "$@" ;;
+  Linux-x86_64) exec "$dir/linux-x64/dasein" "$@" ;;
+  *) echo "dasein: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac

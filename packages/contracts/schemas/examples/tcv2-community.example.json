@@ -1,0 +1,39 @@
+{
+  "contract_version": "tcv2-community/v0",
+  "contributor_id": "c_9f2b6c1a0d3e4f5a6b7c8d9e0f1a2b3c",
+  "trace_id": "t_0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+  "outcome": "success",
+  "harness_fingerprint": {
+    "harness_version": "2.14.0",
+    "model_family": "claude",
+    "config_sha8": "a1b2c3d4"
+  },
+  "chunks": [
+    {
+      "chunk_id": "ch_00112233445566aa",
+      "parent_chunk_id": null,
+      "embedding": {
+        "embedder_id": "emb_bge-large-v1",
+        "dim": 4,
+        "vector": [0.0123, -0.4471, 0.9902, 0.0004]
+      },
+      "structural_features": [2.0, 0.5, 13.0, 1.0],
+      "tool_name": "Read",
+      "token_count": 812,
+      "is_needed": true
+    },
+    {
+      "chunk_id": "ch_8899aabbccddeeff",
+      "parent_chunk_id": "ch_00112233445566aa",
+      "embedding": {
+        "embedder_id": "emb_bge-large-v1",
+        "dim": 4,
+        "vector": [-0.2201, 0.1187, 0.0056, -0.7754]
+      },
+      "structural_features": [3.0, 0.25, 2.0, 0.0],
+      "tool_name": null,
+      "token_count": 145,
+      "is_needed": false
+    }
+  ]
+}

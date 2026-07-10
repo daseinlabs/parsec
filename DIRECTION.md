@@ -69,8 +69,9 @@ Notes:
 │  [brain API] ◄─────────   api.anthropic.com                   │
 └───────│───────────────────────────────────────────────────────┘
         ▼  our cloud (control plane)
-   brain API (GNN inference) · auth/accounts · savings ledger
-   telemetry intake (quarantine → validate → corpus)
+   brain API (GNN inference)
+   platform API (auth/accounts · billing · savings ledger ·
+                 telemetry intake: quarantine → validate → corpus)
    trainer (server-side; produces versioned checkpoint bundles)
 ```
 
@@ -183,6 +184,11 @@ learner/
     trainer/              server-side training + eval gates + checkpoint promotion; the
                           enterprise on-prem fine-tune pipeline is this, containerized.
                           Consumes scripts/trace_graph + trace_train lineage. Private.
+    platform/             accounts, billing, savings-ledger API, telemetry intake — the
+                          control plane minus scoring. Thin FastAPI glue over managed
+                          services (see §7c). Mints/validates the brain-API credential
+                          the proxy calls with. Private; SaaS-only (never part of the
+                          enterprise self-host bundle — brain/trainer are).
     contracts/            shared schemas: tcv2-community trace contract, telemetry events,
                           savings-ledger rows, brain API. Single source of truth across
                           packages and languages.
@@ -194,12 +200,14 @@ learner/
 ```
 
 Dependency direction (enforced): `bench → proxy → engine`; `plugin → proxy (manages)`;
-`brain/trainer` share `contracts` with everything but import nothing client-side. `scripts/`
+`brain/trainer/platform` share `contracts` with everything but import nothing client-side.
+`brain` stays pure inference: it answers "is this key entitled?" via platform (shared table
+or signed entitlement token — decide at Pro build time) and does nothing else non-scoring. `scripts/`
 training modules stop being a runtime dependency of serving (today `curator.py` imports
 `scripts.trace_graph` on the live path — that inversion dies in the port).
 
 **Licensing split:** `plugin`, `proxy`, `engine`, `mapgen`, `contracts` → open source (MIT or
-similar). `brain`, `trainer`, checkpoints, corpus → closed. The OSS shell is replicable anyway
+similar). `brain`, `trainer`, `platform`, checkpoints, corpus → closed. The OSS shell is replicable anyway
 (pxpipe/Woz proved it); the moat is the trained model + data flywheel, and the OSS tier is
 what feeds the flywheel.
 
@@ -242,6 +250,29 @@ The shape:
   ready, its v0 (maps + savings line) can ship with the `mcp`+`hook` subcommands only — the
   proxy subcommand lands with Pro.
 
+## 7c. Platform layer decision (2026-07-09)
+
+The §4 control plane names auth/accounts, billing, and the savings ledger, but §7 originally
+gave them no package. They live in `packages/platform`: **Python + FastAPI, buy-don't-build,
+keep it thin.** Not Rust — the §7b Rust rationale (no runtime guarantee on user machines,
+binary auditability) is client-only; auth/billing is webhook-and-CRUD territory where managed
+ecosystems win and iteration speed matters more than anything Rust buys.
+
+- **Auth + database: Supabase.** Supabase Auth for signup/login/orgs (services verify its
+  JWTs — ~20 lines), Supabase Postgres for accounts, entitlements, savings-ledger rows, and
+  the telemetry consent registry. One vendor for v1; revisit WorkOS when Team-tier SSO/SCIM
+  asks arrive.
+- **Billing: Stripe Checkout + Customer Portal + webhooks.** No custom pricing pages, card
+  forms, or subscription-management UI. Pro seats and Team metered-on-measured-savings are
+  both native Stripe primitives; the "data dividend" is a Stripe coupon/credit.
+- **What we actually write** (a few hundred lines): signup webhook → account row; Stripe
+  webhook → entitlement flag; mint/validate the brain-API key the local proxy uses;
+  savings-ledger ingest + per-account reporting; telemetry intake front door
+  (quarantine → validate → corpus promotion feeding `trainer`).
+- **Sequencing:** none of this blocks §9 steps 1–3. Platform lands with step 4 (Ship Pro) —
+  the free tier needs no account, and the brain API needs auth only once it has paying
+  callers.
+
 ## 8. Invariants to protect with CI from day one
 
 1. **Cache-stability golden test**: replay a recorded multi-turn conversation; every
@@ -263,7 +294,8 @@ The shape:
    distribution, starts the flywheel before the brain API lands.
 3. **Embedder retrain** (the Pro long pole): pick the local ONNX embedder, retrain the curator
    against its vectors, stand up the brain API with checkpoint bundles.
-4. **Ship Pro** (plugin manages local proxy + brain API + billing).
+4. **Ship Pro** (plugin manages local proxy + brain API + the `platform` service — signup,
+   entitlements, billing per §7c).
 5. **Team gateway** when teams ask: same proxy deployed on GKE (reuse the serving-engine
    repo's CI/CD pattern — Artifact Registry, gated rollouts), BYOK keys only, zero-retention
    posture stated loudly; SOC2 on the roadmap before mid-market.

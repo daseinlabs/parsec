@@ -16,7 +16,16 @@ repository = "https://github.com/daseinlabs/learner"
 # JSON key order must survive round-trips: cache-stable freezing depends on
 # byte-identical re-serialization of previously served turns (§8.1).
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+# float_roundtrip: parsed floats must carry the correctly-rounded f64 (the
+# default parse is up to 1 ULP off) — fingerprint bytes depend on it.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"
+# proxy data plane (DIRECTION.md §4): local axum server relaying to
+# api.anthropic.com; rustls only — no native-tls/openssl link burden in the
+# self-contained per-platform `dasein` binary.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"

@@ -12,10 +12,17 @@ path = "src/main.rs"
 
 [dependencies]
 dasein-engine = { path = "../engine" }
+dasein-mapgen = { path = "../mapgen" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 clap = { version = "4", features = ["derive"] }
-# planned: axum/hyper + tokio (proxy, SSE), rmcp (MCP) — added with the port
+sha2 = "0.10"
+regex = "1"
+tokio.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+# planned: rmcp (MCP) — added with the port

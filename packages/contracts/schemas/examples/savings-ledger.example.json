@@ -1,0 +1,13 @@
+{
+ "contract_version": "savings-ledger/v0",
+ "request_id": "req_0123456789abcdef0123456789abcdef",
+ "ts": "2026-07-09T17:04:31Z",
+ "counterfactual_input_tokens": 48211,
+ "billed_input_tokens": 1904,
+ "billed_output_tokens": 512,
+ "billed_cache_read_tokens": 26100,
+ "billed_cache_write_tokens": 2310,
+ "cachePrefixSha8": "deadbeef",
+ "fail_open": false,
+ "conv_id": "run-1:ab12cd34ef56ab12cd34ef56"
+}

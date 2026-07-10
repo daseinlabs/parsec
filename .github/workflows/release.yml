@@ -1,0 +1,31 @@
+name: release
+
+# Builds the per-platform `dasein` binaries that get committed into the plugin
+# repo (DIRECTION.md §7b: distribution is git-clone with no build step, so
+# binaries ship prebuilt). Windows is deliberately not built yet.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14        # arm64
+            platform: darwin-arm64
+          - os: macos-13        # x64
+            platform: darwin-x64
+          - os: ubuntu-latest   # x64
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p dasein-proxy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dasein-${{ matrix.platform }}
+          path: target/release/dasein
+          if-no-files-found: error

@@ -1,0 +1,12 @@
+{
+  "contract_version": "telemetry-events/v0",
+  "event_id": "ev_fedcba98765432100123456789abcdef",
+  "ts": "2026-07-09T17:04:31Z",
+  "tokens_saved": 18342,
+  "cut_pct": 41.5,
+  "cache_read_ratio": 12.7,
+  "outcome": "success",
+  "harness_version": "2.14.0",
+  "latency_ms": 88.5,
+  "fail_open": false
+}

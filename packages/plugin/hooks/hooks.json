@@ -2,11 +2,24 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Read",
+        "matcher": "Read|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein hook PreToolUse"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
+            "args": ["hook", "PreToolUse"]
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
+            "args": ["hook", "PostToolUse"]
           }
         ]
       }
@@ -16,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein hook SessionStart"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
+            "args": ["hook", "SessionStart"]
           }
         ]
       }

@@ -1,0 +1,73 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://daseinlabs.dev/contracts/savings-ledger/v0",
+ "title": "savings-ledger — one row per request (draft v0)",
+ "description": "DIRECTION.md §4.3 + §8.4 measurement honesty: the free count_tokens probe on the original body vs actually-billed usage, in the same row. Simultaneously the billing basis (Team), the upsell proof (Free→Pro), and the trust artifact (Enterprise).",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "contract_version",
+  "request_id",
+  "ts",
+  "counterfactual_input_tokens",
+  "billed_input_tokens",
+  "billed_output_tokens",
+  "billed_cache_read_tokens",
+  "billed_cache_write_tokens",
+  "cachePrefixSha8",
+  "fail_open",
+  "conv_id"
+ ],
+ "properties": {
+  "contract_version": {
+   "const": "savings-ledger/v0"
+  },
+  "request_id": {
+   "type": "string",
+   "pattern": "^req_[0-9a-f]{32}$"
+  },
+  "ts": {
+   "type": "string",
+   "format": "date-time"
+  },
+  "counterfactual_input_tokens": {
+   "type": [
+    "integer",
+    "null"
+   ],
+   "minimum": 0,
+   "description": "count_tokens probe on the ORIGINAL (uncurated) request body — the only permitted baseline (§8.4). null = probe failed; never estimated."
+  },
+  "billed_input_tokens": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Actually-billed uncached input tokens from the upstream usage block."
+  },
+  "billed_output_tokens": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "billed_cache_read_tokens": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "billed_cache_write_tokens": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "cachePrefixSha8": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{8}$",
+   "description": "Cache-bust attribution (§4.3, adopted from pxpipe): hash of the served conversation prefix."
+  },
+  "fail_open": {
+   "type": "boolean",
+   "description": "True when this request was served passthrough after an error (§8.3)."
+  },
+  "conv_id": {
+   "type": "string",
+   "maxLength": 128,
+   "description": "Proxy conversation identity (hash-derived; no raw content)."
+  }
+ }
+}

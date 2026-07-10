@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://daseinlabs.dev/contracts/tcv2-community/v0",
+  "title": "tcv2-community — Tier-2 featurized trace contribution (draft v0)",
+  "description": "DIRECTION.md §6 Tier 2: chunk embeddings + trace graph structure + tool names + token counts + mechanically-computed is_needed labels + outcome. Raw source code and prompts are UNREPRESENTABLE by construction: every string field is an enum, a constrained identifier, or a timestamp; additionalProperties is false everywhere. Evolves only with re-consent (a version bump re-prompts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "contributor_id", "trace_id", "outcome", "harness_fingerprint", "chunks"],
+  "properties": {
+    "contract_version": {
+      "const": "tcv2-community/v0",
+      "description": "Consent is bound to this exact value; any change re-prompts."
+    },
+    "contributor_id": {
+      "type": "string",
+      "pattern": "^c_[0-9a-f]{32}$",
+      "description": "Provenance tag so purge is honorable (§6 pipeline step 3)."
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^t_[0-9a-f]{32}$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "failure", "timeout", "aborted", "unknown"],
+      "description": "Outcome signal used for is_needed labeling; enum, never free text."
+    },
+    "harness_fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness_version", "config_sha8"],
+      "properties": {
+        "harness_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "model_family": {
+          "type": "string",
+          "enum": ["claude", "other"]
+        },
+        "config_sha8": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}$",
+          "description": "Hash of the serving config; identifies the (harness, model, config) cell for tau calibration."
+        }
+      }
+    },
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk_id", "embedding", "structural_features", "token_count", "is_needed"],
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "pattern": "^ch_[0-9a-f]{16}$"
+          },
+          "parent_chunk_id": {
+            "type": ["string", "null"],
+            "pattern": "^ch_[0-9a-f]{16}$",
+            "description": "Trace-graph edge (structure only; the graph carries no content)."
+          },
+          "embedding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["embedder_id", "dim", "vector"],
+            "properties": {
+              "embedder_id": {
+                "type": "string",
+                "pattern": "^emb_[a-z0-9-]{1,32}$",
+                "description": "Which embedder produced the vector; checkpoints are matched to it (§5)."
+              },
+              "dim": { "type": "integer", "minimum": 1, "maximum": 8192 },
+              "vector": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 1,
+                "maxItems": 8192,
+                "description": "The vector itself, never the text. Disclosed as a mitigation, not anonymity (§6)."
+              }
+            }
+          },
+          "structural_features": {
+            "type": "array",
+            "items": { "type": "number" },
+            "maxItems": 256,
+            "description": "Mechanically-computed numeric features only (depth, fanout, recency, ...). Numbers can't smuggle prompts."
+          },
+          "tool_name": {
+            "type": ["string", "null"],
+            "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$",
+            "description": "Tool identifier, constrained to identifier characters — not a free-text field."
+          },
+          "token_count": { "type": "integer", "minimum": 0 },
+          "is_needed": {
+            "type": "boolean",
+            "description": "Mechanically-computed label (§6): was this chunk needed downstream."
+          }
+        }
+      }
+    }
+  }
+}

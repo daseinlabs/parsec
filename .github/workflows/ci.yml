@@ -16,6 +16,22 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: fixtures committed
+        # Parity fixtures are the port's definition of done (DIRECTION.md §7b);
+        # an accidentally emptied fixtures dir must fail loudly, not pass vacuously.
+        run: |
+          test -n "$(ls -A packages/engine/parity/fixtures)"
+          test -n "$(ls -A packages/proxy/parity/fixtures)"
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "./packages/platform[test]"
+      - run: pytest packages/platform/tests
 
   # DIRECTION.md §8 invariants — each becomes a required job as it lands:
   #   cache-stability-golden : replay recorded conversation, byte-identical served turns

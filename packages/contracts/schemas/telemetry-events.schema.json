@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://daseinlabs.dev/contracts/telemetry-events/v0",
+  "title": "telemetry-events — Tier-1 metrics event (draft v0)",
+  "description": "DIRECTION.md §6 Tier 1 (the default ask): tokens saved, cut %, cache read/write ratio, outcome signal, harness version, latency. No content, no paths, no prompts — every string is an enum or a constrained identifier; additionalProperties false.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "event_id", "ts", "tokens_saved", "cut_pct", "cache_read_ratio", "outcome", "harness_version", "latency_ms"],
+  "properties": {
+    "contract_version": { "const": "telemetry-events/v0" },
+    "event_id": {
+      "type": "string",
+      "pattern": "^ev_[0-9a-f]{32}$"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tokens_saved": {
+      "type": "integer",
+      "description": "From the count_tokens counterfactual only — never a modeled baseline (§8.4). May be negative."
+    },
+    "cut_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "cache_read_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "description": "cache_read / cache_write; the §8.1 invariant watches for ≥ ~10:1 per task."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "failure", "timeout", "aborted", "unknown"]
+    },
+    "harness_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "latency_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Added scoring round-trip latency for the turn (§5 latency budget)."
+    },
+    "fail_open": {
+      "type": "boolean",
+      "description": "§8.3: fail-open is a first-class metric; a proxy serving 0% cut must be visible."
+    }
+  }
+}

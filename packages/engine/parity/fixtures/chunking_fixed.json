@@ -1,0 +1,1780 @@
+{
+ "mode": "fixed",
+ "chunk_cases": [
+  {
+   "name": "cat_small",
+   "cmd": "cat src/app.py",
+   "obs": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)",
+   "step": 2,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)",
+     "file": "app.py",
+     "lo": 1,
+     "hi": 25,
+     "step": 2,
+     "kind": "read",
+     "tokens": 86,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "cat_big_windows",
+   "cmd": "cat data/gen.txt",
+   "obs": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: value = 91\nline 14: value = 98\nline 15: value = 105\nline 16: value = 112\nline 17: value = 119\nline 18: value = 126\nline 19: value = 133\nline 20: value = 140\nline 21: value = 147\nline 22: value = 154\nline 23: value = 161\nline 24: value = 168\nline 25: value = 175\nline 26: value = 182\nline 27: value = 189\nline 28: value = 196\nline 29: value = 203\nline 30: value = 210\nline 31: value = 217\nline 32: value = 224\nline 33: value = 231\nline 34: value = 238\nline 35: value = 245\nline 36: value = 252\nline 37: value = 259\nline 38: value = 266\nline 39: value = 273\nline 40: value = 280\nline 41: value = 287\nline 42: value = 294\nline 43: value = 301\nline 44: value = 308\nline 45: value = 315\nline 46: value = 322\nline 47: value = 329\nline 48: value = 336\nline 49: value = 343\nline 50: value = 350\nline 51: value = 357\nline 52: value = 364\nline 53: value = 371\nline 54: value = 378\nline 55: value = 385\nline 56: value = 392\nline 57: value = 399\nline 58: value = 406\nline 59: value = 413\nline 60: value = 420\nline 61: value = 427\nline 62: value = 434\nline 63: value = 441\nline 64: value = 448\nline 65: value = 455\nline 66: value = 462\nline 67: value = 469\nline 68: value = 476\nline 69: value = 483\nline 70: value = 490\nline 71: value = 497\nline 72: value = 504\nline 73: value = 511\nline 74: value = 518\nline 75: value = 525\nline 76: value = 532\nline 77: value = 539\nline 78: value = 546\nline 79: value = 553\nline 80: value = 560\nline 81: value = 567\nline 82: value = 574\nline 83: value = 581\nline 84: value = 588\nline 85: value = 595\nline 86: value = 602\nline 87: value = 609\nline 88: value = 616\nline 89: value = 623\nline 90: value = 630\nline 91: value = 637\nline 92: value = 644\nline 93: value = 651\nline 94: value = 658\nline 95: value = 665\nline 96: value = 672\nline 97: value = 679\nline 98: value = 686\nline 99: value = 693\nline 100: value = 700\nline 101: value = 707\nline 102: value = 714\nline 103: value = 721\nline 104: value = 728\nline 105: value = 735\nline 106: value = 742\nline 107: value = 749\nline 108: value = 756\nline 109: value = 763\nline 110: value = 770\nline 111: value = 777\nline 112: value = 784\nline 113: value = 791\nline 114: value = 798\nline 115: value = 805\nline 116: value = 812\nline 117: value = 819",
+   "step": 0,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: value = 91\nline 14: value = 98\nline 15: value = 105\nline 16: value = 112\nline 17: value = 119\nline 18: value = 126\nline 19: value = 133\nline 20: value = 140\nline 21: value = 147\nline 22: value = 154\nline 23: value = 161\nline 24: value = 168\nline 25: value = 175\nline 26: value = 182\nline 27: value = 189\nline 28: value = 196\nline 29: value = 203\nline 30: value = 210\nline 31: value = 217\nline 32: value = 224\nline 33: value = 231\nline 34: value = 238\nline 35: value = 245\nline 36: value = 252\nline 37: value = 259\nline 38: value = 266\nline 39: value = 273\nline 40: value = 280",
+     "file": "gen.txt",
+     "lo": 1,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 203,
+     "evict": "content",
+     "cmd": "cat data/gen.txt",
+     "rc": null,
+     "head": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: v",
+     "struct_class": ""
+    },
+    {
+     "text": "line 41: value = 287\nline 42: value = 294\nline 43: value = 301\nline 44: value = 308\nline 45: value = 315\nline 46: value = 322\nline 47: value = 329\nline 48: value = 336\nline 49: value = 343\nline 50: value = 350\nline 51: value = 357\nline 52: value = 364\nline 53: value = 371\nline 54: value = 378\nline 55: value = 385\nline 56: value = 392\nline 57: value = 399\nline 58: value = 406\nline 59: value = 413\nline 60: value = 420\nline 61: value = 427\nline 62: value = 434\nline 63: value = 441\nline 64: value = 448\nline 65: value = 455\nline 66: value = 462\nline 67: value = 469\nline 68: value = 476\nline 69: value = 483\nline 70: value = 490\nline 71: value = 497\nline 72: value = 504\nline 73: value = 511\nline 74: value = 518\nline 75: value = 525\nline 76: value = 532\nline 77: value = 539\nline 78: value = 546\nline 79: value = 553\nline 80: value = 560",
+     "file": "gen.txt",
+     "lo": 41,
+     "hi": 80,
+     "step": 0,
+     "kind": "read",
+     "tokens": 209,
+     "evict": "content",
+     "cmd": "cat data/gen.txt",
+     "rc": null,
+     "head": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: v",
+     "struct_class": ""
+    },
+    {
+     "text": "line 81: value = 567\nline 82: value = 574\nline 83: value = 581\nline 84: value = 588\nline 85: value = 595\nline 86: value = 602\nline 87: value = 609\nline 88: value = 616\nline 89: value = 623\nline 90: value = 630\nline 91: value = 637\nline 92: value = 644\nline 93: value = 651\nline 94: value = 658\nline 95: value = 665\nline 96: value = 672\nline 97: value = 679\nline 98: value = 686\nline 99: value = 693\nline 100: value = 700\nline 101: value = 707\nline 102: value = 714\nline 103: value = 721\nline 104: value = 728\nline 105: value = 735\nline 106: value = 742\nline 107: value = 749\nline 108: value = 756\nline 109: value = 763\nline 110: value = 770\nline 111: value = 777\nline 112: value = 784\nline 113: value = 791\nline 114: value = 798\nline 115: value = 805\nline 116: value = 812\nline 117: value = 819",
+     "file": "gen.txt",
+     "lo": 81,
+     "hi": 117,
+     "step": 0,
+     "kind": "read",
+     "tokens": 198,
+     "evict": "content",
+     "cmd": "cat data/gen.txt",
+     "rc": null,
+     "head": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: v",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "sed_range",
+   "cmd": "sed -n '30,60p' pkg/mod.py",
+   "obs": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: value = 91\nline 14: value = 98\nline 15: value = 105\nline 16: value = 112\nline 17: value = 119\nline 18: value = 126\nline 19: value = 133\nline 20: value = 140\nline 21: value = 147\nline 22: value = 154\nline 23: value = 161\nline 24: value = 168\nline 25: value = 175\nline 26: value = 182\nline 27: value = 189\nline 28: value = 196\nline 29: value = 203\nline 30: value = 210\nline 31: value = 217\nline 32: value = 224\nline 33: value = 231\nline 34: value = 238\nline 35: value = 245\nline 36: value = 252\nline 37: value = 259\nline 38: value = 266\nline 39: value = 273\nline 40: value = 280\nline 41: value = 287\nline 42: value = 294\nline 43: value = 301\nline 44: value = 308\nline 45: value = 315\nline 46: value = 322\nline 47: value = 329\nline 48: value = 336\nline 49: value = 343\nline 50: value = 350\nline 51: value = 357\nline 52: value = 364\nline 53: value = 371\nline 54: value = 378\nline 55: value = 385\nline 56: value = 392\nline 57: value = 399\nline 58: value = 406\nline 59: value = 413\nline 60: value = 420\nline 61: value = 427\nline 62: value = 434\nline 63: value = 441\nline 64: value = 448\nline 65: value = 455\nline 66: value = 462\nline 67: value = 469\nline 68: value = 476\nline 69: value = 483\nline 70: value = 490\nline 71: value = 497\nline 72: value = 504\nline 73: value = 511\nline 74: value = 518\nline 75: value = 525\nline 76: value = 532\nline 77: value = 539\nline 78: value = 546\nline 79: value = 553\nline 80: value = 560\nline 81: value = 567\nline 82: value = 574\nline 83: value = 581\nline 84: value = 588\nline 85: value = 595\nline 86: value = 602\nline 87: value = 609\nline 88: value = 616\nline 89: value = 623\nline 90: value = 630\nline 91: value = 637\nline 92: value = 644\nline 93: value = 651\nline 94: value = 658\nline 95: value = 665\nline 96: value = 672\nline 97: value = 679\nline 98: value = 686\nline 99: value = 693\nline 100: value = 700\nline 101: value = 707\nline 102: value = 714\nline 103: value = 721\nline 104: value = 728\nline 105: value = 735\nline 106: value = 742\nline 107: value = 749\nline 108: value = 756\nline 109: value = 763\nline 110: value = 770\nline 111: value = 777\nline 112: value = 784\nline 113: value = 791\nline 114: value = 798\nline 115: value = 805\nline 116: value = 812\nline 117: value = 819",
+   "step": 5,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: value = 91\nline 14: value = 98\nline 15: value = 105\nline 16: value = 112\nline 17: value = 119\nline 18: value = 126\nline 19: value = 133\nline 20: value = 140\nline 21: value = 147\nline 22: value = 154\nline 23: value = 161\nline 24: value = 168\nline 25: value = 175\nline 26: value = 182\nline 27: value = 189\nline 28: value = 196\nline 29: value = 203\nline 30: value = 210\nline 31: value = 217\nline 32: value = 224\nline 33: value = 231\nline 34: value = 238\nline 35: value = 245\nline 36: value = 252\nline 37: value = 259\nline 38: value = 266\nline 39: value = 273\nline 40: value = 280",
+     "file": "mod.py",
+     "lo": 30,
+     "hi": 69,
+     "step": 5,
+     "kind": "read",
+     "tokens": 203,
+     "evict": "content",
+     "cmd": "sed -n '30,60p' pkg/mod.py",
+     "rc": null,
+     "head": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: v",
+     "struct_class": ""
+    },
+    {
+     "text": "line 41: value = 287\nline 42: value = 294\nline 43: value = 301\nline 44: value = 308\nline 45: value = 315\nline 46: value = 322\nline 47: value = 329\nline 48: value = 336\nline 49: value = 343\nline 50: value = 350\nline 51: value = 357\nline 52: value = 364\nline 53: value = 371\nline 54: value = 378\nline 55: value = 385\nline 56: value = 392\nline 57: value = 399\nline 58: value = 406\nline 59: value = 413\nline 60: value = 420\nline 61: value = 427\nline 62: value = 434\nline 63: value = 441\nline 64: value = 448\nline 65: value = 455\nline 66: value = 462\nline 67: value = 469\nline 68: value = 476\nline 69: value = 483\nline 70: value = 490\nline 71: value = 497\nline 72: value = 504\nline 73: value = 511\nline 74: value = 518\nline 75: value = 525\nline 76: value = 532\nline 77: value = 539\nline 78: value = 546\nline 79: value = 553\nline 80: value = 560",
+     "file": "mod.py",
+     "lo": 70,
+     "hi": 109,
+     "step": 5,
+     "kind": "read",
+     "tokens": 209,
+     "evict": "content",
+     "cmd": "sed -n '30,60p' pkg/mod.py",
+     "rc": null,
+     "head": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: v",
+     "struct_class": ""
+    },
+    {
+     "text": "line 81: value = 567\nline 82: value = 574\nline 83: value = 581\nline 84: value = 588\nline 85: value = 595\nline 86: value = 602\nline 87: value = 609\nline 88: value = 616\nline 89: value = 623\nline 90: value = 630\nline 91: value = 637\nline 92: value = 644\nline 93: value = 651\nline 94: value = 658\nline 95: value = 665\nline 96: value = 672\nline 97: value = 679\nline 98: value = 686\nline 99: value = 693\nline 100: value = 700\nline 101: value = 707\nline 102: value = 714\nline 103: value = 721\nline 104: value = 728\nline 105: value = 735\nline 106: value = 742\nline 107: value = 749\nline 108: value = 756\nline 109: value = 763\nline 110: value = 770\nline 111: value = 777\nline 112: value = 784\nline 113: value = 791\nline 114: value = 798\nline 115: value = 805\nline 116: value = 812\nline 117: value = 819",
+     "file": "mod.py",
+     "lo": 110,
+     "hi": 146,
+     "step": 5,
+     "kind": "read",
+     "tokens": 198,
+     "evict": "content",
+     "cmd": "sed -n '30,60p' pkg/mod.py",
+     "rc": null,
+     "head": "line 1: value = 7\nline 2: value = 14\nline 3: value = 21\nline 4: value = 28\nline 5: value = 35\nline 6: value = 42\nline 7: value = 49\nline 8: value = 56\nline 9: value = 63\nline 10: value = 70\nline 11: value = 77\nline 12: value = 84\nline 13: v",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "sed_single",
+   "cmd": "sed -n 12p pkg/mod.py",
+   "obs": "x = 1",
+   "step": 1,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "x = 1",
+     "file": "mod.py",
+     "lo": 12,
+     "hi": 12,
+     "step": 1,
+     "kind": "read",
+     "tokens": 1,
+     "evict": "content",
+     "cmd": "sed -n 12p pkg/mod.py",
+     "rc": null,
+     "head": "x = 1",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "grep_mixed",
+   "cmd": "grep -rn handle src/",
+   "obs": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words",
+   "step": 3,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "src/service/app.py:42:    def handle(self):",
+     "file": "app.py",
+     "lo": 42,
+     "hi": 42,
+     "step": 3,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/service/app.py:77:        return handle_all()",
+     "file": "app.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 3,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "docs/notes.md:9:handle with care",
+     "file": "notes.md",
+     "lo": 9,
+     "hi": 9,
+     "step": 3,
+     "kind": "grep",
+     "tokens": 8,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "binary file matches (dev/null)",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 7,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/util.py:  helper text without lineno",
+     "file": "util.py",
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/:5:empty basename (Python-falsy file)",
+     "file": "",
+     "lo": 5,
+     "hi": 5,
+     "step": 3,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "a.py:9223372036854775807:line number at i64::MAX",
+     "file": "a.py",
+     "lo": 9223372036854775807,
+     "hi": 9223372036854775807,
+     "step": 3,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "[reranked 3 results]\nMakefile\nno path here just words",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "git_grep",
+   "cmd": "git grep -n TODO",
+   "obs": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words",
+   "step": 4,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "src/service/app.py:42:    def handle(self):",
+     "file": "app.py",
+     "lo": 42,
+     "hi": 42,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/service/app.py:77:        return handle_all()",
+     "file": "app.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "docs/notes.md:9:handle with care",
+     "file": "notes.md",
+     "lo": 9,
+     "hi": 9,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 8,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "binary file matches (dev/null)",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 7,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/util.py:  helper text without lineno",
+     "file": "util.py",
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/:5:empty basename (Python-falsy file)",
+     "file": "",
+     "lo": 5,
+     "hi": 5,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "a.py:9223372036854775807:line number at i64::MAX",
+     "file": "a.py",
+     "lo": 9223372036854775807,
+     "hi": 9223372036854775807,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "[reranked 3 results]\nMakefile\nno path here just words",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "git grep -n TODO",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "find_files",
+   "cmd": "find . -name '*.py'",
+   "obs": "./a.py\n./sub/b.py\n",
+   "step": 1,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "./a.py",
+     "file": "a.py",
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 1,
+     "evict": "content",
+     "cmd": "find . -name '*.py'",
+     "rc": null,
+     "head": "./a.py\n./sub/b.py\n",
+     "struct_class": ""
+    },
+    {
+     "text": "./sub/b.py",
+     "file": "b.py",
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 2,
+     "evict": "content",
+     "cmd": "find . -name '*.py'",
+     "rc": null,
+     "head": "./a.py\n./sub/b.py\n",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "other_test_output",
+   "cmd": "python -m pytest -x",
+   "obs": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED\ntest_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED\ntest_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>",
+   "step": 6,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 277,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    },
+    {
+     "text": "test_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 279,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    },
+    {
+     "text": "test_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 111,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "other_empty",
+   "cmd": "ls -la",
+   "obs": "",
+   "step": 0,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 1,
+     "evict": "content",
+     "cmd": "ls -la",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "other_blank",
+   "cmd": "make build",
+   "obs": "\n\n  \n",
+   "step": 0,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "\n\n  \n",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 1,
+     "evict": "content",
+     "cmd": "make build",
+     "rc": null,
+     "head": "\n\n  \n",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "read_empty",
+   "cmd": "cat missing.py",
+   "obs": "",
+   "step": 0,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "",
+     "file": "missing.py",
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "read",
+     "tokens": 1,
+     "evict": "content",
+     "cmd": "cat missing.py",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "read_atoms_g10",
+   "cmd": "cat src/app.py",
+   "obs": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)",
+   "step": 2,
+   "read_lines": 10,
+   "expected": [
+    {
+     "text": "import os\nfrom collections import defaultdict\nCONST = 1\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\nclass Beta:\n    \"\"\"docstring.\"\"\"\n    def method(self, y):",
+     "file": "app.py",
+     "lo": 1,
+     "hi": 16,
+     "step": 2,
+     "kind": "read",
+     "tokens": 44,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\ndef gamma():\n    return Beta().method(3)",
+     "file": "app.py",
+     "lo": 17,
+     "hi": 25,
+     "step": 2,
+     "kind": "read",
+     "tokens": 39,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "read_atoms_sed",
+   "cmd": "sed -n '40,80p' src/big.py",
+   "obs": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)",
+   "step": 3,
+   "read_lines": 10,
+   "expected": [
+    {
+     "text": "import os\nfrom collections import defaultdict\nCONST = 1\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\nclass Beta:\n    \"\"\"docstring.\"\"\"\n    def method(self, y):",
+     "file": "big.py",
+     "lo": 40,
+     "hi": 55,
+     "step": 3,
+     "kind": "read",
+     "tokens": 44,
+     "evict": "content",
+     "cmd": "sed -n '40,80p' src/big.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\ndef gamma():\n    return Beta().method(3)",
+     "file": "big.py",
+     "lo": 56,
+     "hi": 64,
+     "step": 3,
+     "kind": "read",
+     "tokens": 39,
+     "evict": "content",
+     "cmd": "sed -n '40,80p' src/big.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "read_atoms_blankonly",
+   "cmd": "cat empty.py",
+   "obs": "\n\n\n",
+   "step": 1,
+   "read_lines": 10,
+   "expected": [
+    {
+     "text": "\n\n\n",
+     "file": "empty.py",
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "read",
+     "tokens": 1,
+     "evict": "content",
+     "cmd": "cat empty.py",
+     "rc": null,
+     "head": "\n\n\n",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "read_atoms_nofile",
+   "cmd": "cat",
+   "obs": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)",
+   "step": 1,
+   "read_lines": 10,
+   "expected": [
+    {
+     "text": "import os\nfrom collections import defaultdict\nCONST = 1\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\nclass Beta:\n    \"\"\"docstring.\"\"\"\n    def method(self, y):",
+     "file": null,
+     "lo": 1,
+     "hi": 16,
+     "step": 1,
+     "kind": "read",
+     "tokens": 44,
+     "evict": "content",
+     "cmd": "cat",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\ndef gamma():\n    return Beta().method(3)",
+     "file": null,
+     "lo": 17,
+     "hi": 25,
+     "step": 1,
+     "kind": "read",
+     "tokens": 39,
+     "evict": "content",
+     "cmd": "cat",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "unicode_crlf",
+   "cmd": "cat läuft.py",
+   "obs": "é1\r\nline²\r\n\r\nsnake 🐍 ok",
+   "step": 7,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "é1\nline²\n\nsnake 🐍 ok",
+     "file": "läuft.py",
+     "lo": 1,
+     "hi": 4,
+     "step": 7,
+     "kind": "read",
+     "tokens": 5,
+     "evict": "content",
+     "cmd": "cat läuft.py",
+     "rc": null,
+     "head": "é1\r\nline²\r\n\r\nsnake 🐍 ok",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "unicode_atoms",
+   "cmd": "cat läuft.py",
+   "obs": "é1 next\fform\r\nplain",
+   "step": 7,
+   "read_lines": 10,
+   "expected": [
+    {
+     "text": "é1\nnext\nform\nplain",
+     "file": "läuft.py",
+     "lo": 1,
+     "hi": 4,
+     "step": 7,
+     "kind": "read",
+     "tokens": 4,
+     "evict": "content",
+     "cmd": "cat läuft.py",
+     "rc": null,
+     "head": "é1 next\fform\r\nplain",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "rc_returncode_eq",
+   "cmd": "python run.py",
+   "obs": "failed\nreturncode=2\n",
+   "step": 2,
+   "read_lines": null,
+   "expected": [
+    {
+     "text": "failed\nreturncode=2",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 4,
+     "evict": "content",
+     "cmd": "python run.py",
+     "rc": 2,
+     "head": "failed\nreturncode=2\n",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "grep_search_beats_read",
+   "cmd": "grep -n cat src/x.py",
+   "obs": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words",
+   "step": 1,
+   "read_lines": 10,
+   "expected": [
+    {
+     "text": "src/service/app.py:42:    def handle(self):",
+     "file": "app.py",
+     "lo": 42,
+     "hi": 42,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/service/app.py:77:        return handle_all()",
+     "file": "app.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "docs/notes.md:9:handle with care",
+     "file": "notes.md",
+     "lo": 9,
+     "hi": 9,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 8,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "binary file matches (dev/null)",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "other",
+     "tokens": 7,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/util.py:  helper text without lineno",
+     "file": "util.py",
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/:5:empty basename (Python-falsy file)",
+     "file": "",
+     "lo": 5,
+     "hi": 5,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "a.py:9223372036854775807:line number at i64::MAX",
+     "file": "a.py",
+     "lo": 9223372036854775807,
+     "hi": 9223372036854775807,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "[reranked 3 results]\nMakefile\nno path here just words",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "grep -n cat src/x.py",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    }
+   ]
+  }
+ ],
+ "assistant_cases": [
+  {
+   "name": "asst_plan",
+   "txt": "First I will look at the config.\nThen run tests.",
+   "step": 1,
+   "expected": [
+    {
+     "text": "First I will look at the config.\nThen run tests.",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "asst",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "asst_blank",
+   "txt": "  \n\n",
+   "step": 0,
+   "expected": []
+  },
+  {
+   "name": "asst_long",
+   "txt": "thought 0\nthought 1\nthought 2\nthought 3\nthought 4\nthought 5\nthought 6\nthought 7\nthought 8\nthought 9\nthought 10\nthought 11\nthought 12\nthought 13\nthought 14\nthought 15\nthought 16\nthought 17\nthought 18\nthought 19\nthought 20\nthought 21\nthought 22\nthought 23\nthought 24\nthought 25\nthought 26\nthought 27\nthought 28\nthought 29\nthought 30\nthought 31\nthought 32\nthought 33\nthought 34\nthought 35\nthought 36\nthought 37\nthought 38\nthought 39\nthought 40\nthought 41\nthought 42\nthought 43\nthought 44\nthought 45\nthought 46\nthought 47\nthought 48\nthought 49\nthought 50\nthought 51\nthought 52\nthought 53\nthought 54\nthought 55\nthought 56\nthought 57\nthought 58\nthought 59\nthought 60\nthought 61\nthought 62\nthought 63\nthought 64\nthought 65\nthought 66\nthought 67\nthought 68\nthought 69\nthought 70\nthought 71\nthought 72\nthought 73\nthought 74\nthought 75\nthought 76\nthought 77\nthought 78\nthought 79\nthought 80\nthought 81\nthought 82\nthought 83\nthought 84\nthought 85\nthought 86\nthought 87\nthought 88\nthought 89",
+   "step": 3,
+   "expected": [
+    {
+     "text": "thought 0\nthought 1\nthought 2\nthought 3\nthought 4\nthought 5\nthought 6\nthought 7\nthought 8\nthought 9\nthought 10\nthought 11\nthought 12\nthought 13\nthought 14\nthought 15\nthought 16\nthought 17\nthought 18\nthought 19\nthought 20\nthought 21\nthought 22\nthought 23\nthought 24\nthought 25\nthought 26\nthought 27\nthought 28\nthought 29\nthought 30\nthought 31\nthought 32\nthought 33\nthought 34\nthought 35\nthought 36\nthought 37\nthought 38\nthought 39",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "asst",
+     "tokens": 107,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "thought 40\nthought 41\nthought 42\nthought 43\nthought 44\nthought 45\nthought 46\nthought 47\nthought 48\nthought 49\nthought 50\nthought 51\nthought 52\nthought 53\nthought 54\nthought 55\nthought 56\nthought 57\nthought 58\nthought 59\nthought 60\nthought 61\nthought 62\nthought 63\nthought 64\nthought 65\nthought 66\nthought 67\nthought 68\nthought 69\nthought 70\nthought 71\nthought 72\nthought 73\nthought 74\nthought 75\nthought 76\nthought 77\nthought 78\nthought 79",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "asst",
+     "tokens": 109,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "thought 80\nthought 81\nthought 82\nthought 83\nthought 84\nthought 85\nthought 86\nthought 87\nthought 88\nthought 89",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "asst",
+     "tokens": 27,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ]
+  }
+ ],
+ "accum_cases": [
+  {
+   "name": "accum_all",
+   "upto": 2,
+   "read_lines": 10,
+   "steps": [
+    [
+     "grep -rn handle src/",
+     "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words"
+    ],
+    [
+     "cat src/app.py",
+     "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+    ],
+    [
+     "python -m pytest -x",
+     "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED\ntest_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED\ntest_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>"
+    ]
+   ],
+   "expected": [
+    {
+     "text": "src/service/app.py:42:    def handle(self):",
+     "file": "app.py",
+     "lo": 42,
+     "hi": 42,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/service/app.py:77:        return handle_all()",
+     "file": "app.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "docs/notes.md:9:handle with care",
+     "file": "notes.md",
+     "lo": 9,
+     "hi": 9,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 8,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "binary file matches (dev/null)",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 7,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/util.py:  helper text without lineno",
+     "file": "util.py",
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/:5:empty basename (Python-falsy file)",
+     "file": "",
+     "lo": 5,
+     "hi": 5,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "a.py:9223372036854775807:line number at i64::MAX",
+     "file": "a.py",
+     "lo": 9223372036854775807,
+     "hi": 9223372036854775807,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "[reranked 3 results]\nMakefile\nno path here just words",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "import os\nfrom collections import defaultdict\nCONST = 1\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\nclass Beta:\n    \"\"\"docstring.\"\"\"\n    def method(self, y):",
+     "file": "app.py",
+     "lo": 1,
+     "hi": 16,
+     "step": 1,
+     "kind": "read",
+     "tokens": 44,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\ndef gamma():\n    return Beta().method(3)",
+     "file": "app.py",
+     "lo": 17,
+     "hi": 25,
+     "step": 1,
+     "kind": "read",
+     "tokens": 39,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 277,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    },
+    {
+     "text": "test_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 279,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    },
+    {
+     "text": "test_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 111,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "accum_clamped",
+   "upto": 9,
+   "read_lines": 10,
+   "steps": [
+    [
+     "grep -rn handle src/",
+     "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words"
+    ],
+    [
+     "cat src/app.py",
+     "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+    ],
+    [
+     "python -m pytest -x",
+     "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED\ntest_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED\ntest_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>"
+    ]
+   ],
+   "expected": [
+    {
+     "text": "src/service/app.py:42:    def handle(self):",
+     "file": "app.py",
+     "lo": 42,
+     "hi": 42,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/service/app.py:77:        return handle_all()",
+     "file": "app.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "docs/notes.md:9:handle with care",
+     "file": "notes.md",
+     "lo": 9,
+     "hi": 9,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 8,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "binary file matches (dev/null)",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 7,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/util.py:  helper text without lineno",
+     "file": "util.py",
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/:5:empty basename (Python-falsy file)",
+     "file": "",
+     "lo": 5,
+     "hi": 5,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "a.py:9223372036854775807:line number at i64::MAX",
+     "file": "a.py",
+     "lo": 9223372036854775807,
+     "hi": 9223372036854775807,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "[reranked 3 results]\nMakefile\nno path here just words",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "import os\nfrom collections import defaultdict\nCONST = 1\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\nclass Beta:\n    \"\"\"docstring.\"\"\"\n    def method(self, y):",
+     "file": "app.py",
+     "lo": 1,
+     "hi": 16,
+     "step": 1,
+     "kind": "read",
+     "tokens": 44,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\ndef gamma():\n    return Beta().method(3)",
+     "file": "app.py",
+     "lo": 17,
+     "hi": 25,
+     "step": 1,
+     "kind": "read",
+     "tokens": 39,
+     "evict": "content",
+     "cmd": "cat src/app.py",
+     "rc": null,
+     "head": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in",
+     "struct_class": ""
+    },
+    {
+     "text": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 277,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    },
+    {
+     "text": "test_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 279,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    },
+    {
+     "text": "test_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 111,
+     "evict": "content",
+     "cmd": "python -m pytest -x",
+     "rc": null,
+     "head": "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PAS",
+     "struct_class": ""
+    }
+   ]
+  },
+  {
+   "name": "accum_first_legacy",
+   "upto": 0,
+   "read_lines": null,
+   "steps": [
+    [
+     "grep -rn handle src/",
+     "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words"
+    ],
+    [
+     "cat src/app.py",
+     "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+    ],
+    [
+     "python -m pytest -x",
+     "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED\ntest_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED\ntest_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>"
+    ]
+   ],
+   "expected": [
+    {
+     "text": "src/service/app.py:42:    def handle(self):",
+     "file": "app.py",
+     "lo": 42,
+     "hi": 42,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/service/app.py:77:        return handle_all()",
+     "file": "app.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "docs/notes.md:9:handle with care",
+     "file": "notes.md",
+     "lo": 9,
+     "hi": 9,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 8,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "binary file matches (dev/null)",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 7,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/util.py:  helper text without lineno",
+     "file": "util.py",
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "src/:5:empty basename (Python-falsy file)",
+     "file": "",
+     "lo": 5,
+     "hi": 5,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "a.py:9223372036854775807:line number at i64::MAX",
+     "file": "a.py",
+     "lo": 9223372036854775807,
+     "hi": 9223372036854775807,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 12,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    },
+    {
+     "text": "[reranked 3 results]\nMakefile\nno path here just words",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "grep -rn handle src/",
+     "rc": null,
+     "head": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)",
+     "struct_class": ""
+    }
+   ]
+  }
+ ],
+ "dup_cases": [
+  {
+   "name": "dup_accum",
+   "steps": [
+    [
+     "grep -rn handle src/",
+     "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words"
+    ],
+    [
+     "cat src/app.py",
+     "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+    ],
+    [
+     "python -m pytest -x",
+     "=== test session starts ===\ntest_mod.py::test_1 PASSED\ntest_mod.py::test_2 PASSED\ntest_mod.py::test_3 PASSED\ntest_mod.py::test_4 PASSED\ntest_mod.py::test_5 PASSED\ntest_mod.py::test_6 PASSED\ntest_mod.py::test_7 PASSED\ntest_mod.py::test_8 PASSED\ntest_mod.py::test_9 PASSED\ntest_mod.py::test_10 PASSED\ntest_mod.py::test_11 PASSED\ntest_mod.py::test_12 PASSED\ntest_mod.py::test_13 PASSED\ntest_mod.py::test_14 PASSED\ntest_mod.py::test_15 PASSED\ntest_mod.py::test_16 PASSED\ntest_mod.py::test_17 PASSED\ntest_mod.py::test_18 PASSED\ntest_mod.py::test_19 PASSED\ntest_mod.py::test_20 PASSED\ntest_mod.py::test_21 PASSED\ntest_mod.py::test_22 PASSED\ntest_mod.py::test_23 PASSED\ntest_mod.py::test_24 PASSED\ntest_mod.py::test_25 PASSED\ntest_mod.py::test_26 PASSED\ntest_mod.py::test_27 PASSED\ntest_mod.py::test_28 PASSED\ntest_mod.py::test_29 PASSED\ntest_mod.py::test_30 PASSED\ntest_mod.py::test_31 PASSED\ntest_mod.py::test_32 PASSED\ntest_mod.py::test_33 PASSED\ntest_mod.py::test_34 PASSED\ntest_mod.py::test_35 PASSED\ntest_mod.py::test_36 PASSED\ntest_mod.py::test_37 PASSED\ntest_mod.py::test_38 PASSED\ntest_mod.py::test_39 PASSED\ntest_mod.py::test_40 PASSED\ntest_mod.py::test_41 PASSED\ntest_mod.py::test_42 PASSED\ntest_mod.py::test_43 PASSED\ntest_mod.py::test_44 PASSED\ntest_mod.py::test_45 PASSED\ntest_mod.py::test_46 PASSED\ntest_mod.py::test_47 PASSED\ntest_mod.py::test_48 PASSED\ntest_mod.py::test_49 PASSED\ntest_mod.py::test_50 PASSED\ntest_mod.py::test_51 PASSED\ntest_mod.py::test_52 PASSED\ntest_mod.py::test_53 PASSED\ntest_mod.py::test_54 PASSED\ntest_mod.py::test_55 PASSED\ntest_mod.py::test_56 PASSED\ntest_mod.py::test_57 PASSED\ntest_mod.py::test_58 PASSED\ntest_mod.py::test_59 PASSED\ntest_mod.py::test_60 PASSED\ntest_mod.py::test_61 PASSED\ntest_mod.py::test_62 PASSED\ntest_mod.py::test_63 PASSED\ntest_mod.py::test_64 PASSED\ntest_mod.py::test_65 PASSED\ntest_mod.py::test_66 PASSED\ntest_mod.py::test_67 PASSED\ntest_mod.py::test_68 PASSED\ntest_mod.py::test_69 PASSED\ntest_mod.py::test_70 PASSED\ntest_mod.py::test_71 PASSED\ntest_mod.py::test_72 PASSED\ntest_mod.py::test_73 PASSED\ntest_mod.py::test_74 PASSED\ntest_mod.py::test_75 PASSED\ntest_mod.py::test_76 PASSED\ntest_mod.py::test_77 PASSED\ntest_mod.py::test_78 PASSED\ntest_mod.py::test_79 PASSED\ntest_mod.py::test_80 PASSED\ntest_mod.py::test_81 PASSED\ntest_mod.py::test_82 PASSED\ntest_mod.py::test_83 PASSED\ntest_mod.py::test_84 PASSED\ntest_mod.py::test_85 PASSED\ntest_mod.py::test_86 PASSED\ntest_mod.py::test_87 PASSED\ntest_mod.py::test_88 PASSED\ntest_mod.py::test_89 PASSED\ntest_mod.py::test_90 PASSED\ntest_mod.py::test_91 PASSED\ntest_mod.py::test_92 PASSED\ntest_mod.py::test_93 PASSED\ntest_mod.py::test_94 PASSED\n<returncode>1</returncode>"
+    ],
+    [
+     "cat src/app.py",
+     "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+    ],
+    [
+     "sed -n '4,12p' src/app.py",
+     "CONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n"
+    ]
+   ],
+   "upto": 99,
+   "read_lines": 10,
+   "expected_sup": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.4375,
+    0.0,
+    0.0
+   ],
+   "expected_dup_earlier": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2
+   ],
+   "rows": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15
+   ],
+   "expected_sup_rows": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "expected_dup_earlier_rows": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2
+   ]
+  }
+ ],
+ "message_case": {
+  "messages": [
+   {
+    "role": "system",
+    "content": "you are an agent"
+   },
+   {
+    "role": "assistant",
+    "content": "Let me search.",
+    "extra": {
+     "actions": [
+      {
+       "command": "grep -rn handle src/"
+      }
+     ]
+    },
+    "reasoning_content": "I should find the handler définition first.",
+    "tool_calls": [
+     {
+      "provider_specific_fields": {
+       "sig": "abc123",
+       "n": 3,
+       "t": 1e-05,
+       "p": 1.1534175185142759,
+       "big": 1e+16
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "content": "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Now read the file."
+     },
+     {
+      "text": "Part two."
+     }
+    ],
+    "extra": {
+     "actions": [
+      {
+       "query": "open src/app.py"
+      },
+      {
+       "command": ""
+      }
+     ]
+    },
+    "thinking_blocks": [
+     {
+      "thinking": "unicode 🐍 blob"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "image",
+      "text": "nope"
+     }
+    ],
+    "extra": {
+     "actions": []
+    }
+   },
+   {
+    "role": "tool",
+    "content": [
+     {
+      "type": "text",
+      "text": "obs a"
+     },
+     "bare string part"
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": "trailing, no obs -> ignored"
+   }
+  ],
+  "expected_steps": [
+   [
+    "grep -rn handle src/",
+    "src/service/app.py:42:    def handle(self):\nsrc/service/app.py:77:        return handle_all()\ndocs/notes.md:9:handle with care\nbinary file matches (dev/null)\nsrc/util.py:  helper text without lineno\nsrc/:5:empty basename (Python-falsy file)\na.py:9223372036854775807:line number at i64::MAX\n[reranked 3 results]\nMakefile\nno path here just words"
+   ],
+   [
+    "open src/app.py ; ",
+    "import os\nfrom collections import defaultdict\n\nCONST = 1\n\n\ndef alpha(x):\n    if x > 0:\n        return x * 2\n    return -x\n\n\nclass Beta:\n    \"\"\"docstring.\"\"\"\n\n    def method(self, y):\n        # comment kept\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total\n\n\ndef gamma():\n    return Beta().method(3)"
+   ],
+   [
+    "",
+    "obs a"
+   ]
+  ],
+  "expected_reasoning": [
+   {
+    "text": "I should find the handler définition first.",
+    "file": null,
+    "lo": null,
+    "hi": null,
+    "step": 0,
+    "kind": "reasoning",
+    "tokens": 29,
+    "evict": "provider",
+    "cmd": "",
+    "rc": null,
+    "head": "",
+    "struct_class": ""
+   },
+   {
+    "text": "open src/app.py",
+    "file": null,
+    "lo": null,
+    "hi": null,
+    "step": 1,
+    "kind": "reasoning",
+    "tokens": 10,
+    "evict": "provider",
+    "cmd": "",
+    "rc": null,
+    "head": "",
+    "struct_class": ""
+   }
+  ],
+  "expected_assistant": [
+   {
+    "text": "Let me search.",
+    "file": null,
+    "lo": null,
+    "hi": null,
+    "step": 0,
+    "kind": "asst",
+    "tokens": 3,
+    "evict": "content",
+    "cmd": "",
+    "rc": null,
+    "head": "",
+    "struct_class": ""
+   },
+   {
+    "text": "Now read the file. Part two.",
+    "file": null,
+    "lo": null,
+    "hi": null,
+    "step": 1,
+    "kind": "asst",
+    "tokens": 7,
+    "evict": "content",
+    "cmd": "",
+    "rc": null,
+    "head": "",
+    "struct_class": ""
+   }
+  ],
+  "expected_blob_tokens": [
+   0,
+   29,
+   0,
+   10,
+   0,
+   0,
+   0,
+   0
+  ]
+ }
+}

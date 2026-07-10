@@ -25,14 +25,17 @@ enum Command {
     Proxy,
     /// Status line: reads harness JSON on stdin, prints savings summary.
     Statusline,
+    /// Human-readable savings report across recent sessions (/dasein-savings).
+    Savings,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Mcp => anyhow::bail!("dasein mcp: not yet implemented"),
-        Command::Hook { event } => anyhow::bail!("dasein hook {event}: not yet implemented"),
-        Command::Proxy => anyhow::bail!("dasein proxy: not yet implemented"),
-        Command::Statusline => anyhow::bail!("dasein statusline: not yet implemented"),
+        Command::Mcp => dasein_mapgen::mcp::serve_stdio(),
+        Command::Hook { event } => dasein_proxy::hook::run(&event),
+        Command::Proxy => dasein_proxy::server::run(),
+        Command::Statusline => dasein_proxy::statusline::run(),
+        Command::Savings => dasein_proxy::statusline::savings_report(),
     }
 }

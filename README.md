@@ -19,11 +19,30 @@ in this repo.
 | `packages/contracts` | JSON Schema | OSS | Cross-language schemas (trace contract, telemetry, savings ledger, brain API) |
 | `packages/brain` | Python | private | Hosted GNN scoring API |
 | `packages/trainer` | Python | private | Training, eval gates, checkpoint promotion |
+| `packages/platform` | Python | private | Accounts, billing, savings-ledger API, telemetry intake — FastAPI over Supabase + Stripe (DIRECTION.md §7c) |
 | `packages/bench` | Python | private | cc-bench harness; drives the proxy as a black box |
 
 Dependency direction (enforced): `bench → proxy → engine`; `plugin → proxy`
 (manages the process); `brain`/`trainer` share `contracts` with everything but
 import nothing client-side.
+
+## Try the plugin (free tier v0)
+
+```sh
+cargo build --release -p dasein-proxy
+cp target/release/dasein packages/plugin/bin/darwin-arm64/dasein   # your platform
+claude --plugin-dir packages/plugin
+```
+
+In the session: re-`Read` a file you already read — the hook denies it with a
+context-reuse pointer (re-issuing the same read once passes: the insist
+valve). Run the same Bash command 4x — the loop-breaker fires. `/dasein-savings`
+reports what was measured. Optional status line (user setting, not
+plugin-settable) in `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "<repo>/packages/plugin/bin/dasein statusline" } }
+```
 
 ## Build
 
@@ -33,6 +52,15 @@ cargo test
 ```
 
 Python packages are independent uv/pip projects under `packages/{brain,trainer,bench}`.
+
+## License
+
+The repo default is [MIT](LICENSE) (copyright 2026 Dasein Labs) — it covers
+the OSS packages in the table above (`plugin`, `proxy`, `engine`, `mapgen`,
+`contracts`). The private packages (`brain`, `trainer`, `platform`, plus
+checkpoints and the trace corpus) are **not** open source and carry their own
+`LICENSE` notice overriding the root; see DIRECTION.md §7 for the rationale
+(open-source the deterministic shell; sell the brain).
 
 ## Invariants (CI-enforced from day one — DIRECTION.md §8)
 

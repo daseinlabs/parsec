@@ -1,6 +1,11 @@
 {
   "name": "dasein",
+  "displayName": "Dasein",
   "version": "0.1.0",
-  "description": "Context compression for Claude Code: exploration maps, no-reread guard, honest savings measurement. Pro tier adds the learned curator via a local proxy.",
-  "author": { "name": "Dasein Labs" }
+  "description": "Context savings for Claude Code: blocks wasteful re-reads and command loops, measures every token it saves. Free tier of the Dasein A3S stack.",
+  "author": {
+    "name": "Dasein Labs"
+  },
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
 }
