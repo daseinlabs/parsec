@@ -7,7 +7,23 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic>=2",
-    # torch / torch_geometric pinned when the inference port lands
+    "httpx",
+    # inference pins — the vendored reference path was validated against these lines
+    "torch>=2.2,<2.3",
+    "torch-geometric>=2.5",
+    "numpy>=1.26,<2",
+    # symbol-graph centrality (readout cols 37-41); absent it degrades to zeros = score drift
+    "tree-sitter-language-pack",
+    # fallback python grammar for envs where the language pack's prebuilt dylib cannot load
+    # (vendored symbol_graph DASEIN-PATCH); the same grammar version the engine port pins
+    "tree-sitter-python==0.23.6",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "httpx",
+    "jsonschema",   # brain-api/v1 schema + example validation (test_v1.py)
 ]
 
 [build-system]

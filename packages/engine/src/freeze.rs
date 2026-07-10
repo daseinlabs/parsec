@@ -17,6 +17,12 @@
 //!   step skipped while a session was lost is decided on replay exactly as if
 //!   it had been the current call. (The reference never re-enters the birth
 //!   gate — restart made old turns permanently full.)
+//! - Scorer failure is a PER-STEP fail-open: the failed step commits nothing
+//!   and stays out of the replay memo (the next serve retries it), decided
+//!   steps still render, serve() succeeds. The reference raised out of
+//!   curate() and the chunks aged out of the birth gate forever; here the
+//!   decision is only deferred — brain downtime costs savings, never
+//!   correctness.
 //! - Scores/taus cross the trait boundary as fixed-point integers on the
 //!   1e-6 grid (`SCORE_SCALE`); a keep/cut can never flip from float jitter.
 //! - No governor text is folded into resident turns and count_tokens traffic
@@ -89,13 +95,22 @@ impl Default for FreezeConfig {
 
 /// One birth-step scoring request. `live` is the not-yet-dropped chunk set as
 /// of this step (steps <= cur_step), in decision order; `mask` indexes the
-/// undecided chunks within it.
+/// undecided chunks within it. `live_gi` maps each live chunk to its GLOBAL
+/// index in the parsed chunk array and `messages` is the internal view being
+/// served — together they let a remote scorer serialize
+/// (messages, live_gi, mask) itself; the engine stays transport-free.
 pub struct BirthQuery<'a> {
     pub cur_step: i64,
     pub task_text: String,
     pub recent_cmds: String,
     pub live: &'a [Chunk],
     pub live_owner: &'a [usize],
+    pub live_gi: Vec<usize>,
+    pub messages: &'a [Value],
+    /// sha256 over "\n".join("{step}:{kind}:{tokens}") of the parsed chunk
+    /// array — the cross-language chunker-parity guard the brain enforces
+    /// per request (contracts brain-api-dev/v0; mismatch = 409, fail open).
+    pub chunk_checksum: String,
     pub mask: Vec<usize>,
 }
 
@@ -106,22 +121,28 @@ pub struct ScoreResult {
     pub tau_q: i64,
 }
 
+/// A scorer call failed (brain unreachable, timeout, drift 409, ...). The
+/// Freezer answers with a per-step fail-open — never a guessed score.
+#[derive(Debug, thiserror::Error)]
+#[error("scorer: {0}")]
+pub struct ScoreError(pub String);
+
 /// The purity contract: same (query, checkpoint, config) -> same result,
 /// every time, on every machine. The brain API guarantees this by pinning the
-/// checkpoint bundle and emitting grid integers; failure must surface as an
-/// error to the caller's fail-open layer, never as a guessed score.
+/// checkpoint bundle and emitting grid integers; failure surfaces as
+/// `ScoreError` to the per-step fail-open layer, never as a guessed score.
 pub trait ChunkScorer {
-    fn score(&mut self, q: &BirthQuery) -> ScoreResult;
+    fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError>;
 }
 
 /// Fail-open floor: keep everything (tau below every representable score).
 pub struct PassthroughScorer;
 impl ChunkScorer for PassthroughScorer {
-    fn score(&mut self, q: &BirthQuery) -> ScoreResult {
-        ScoreResult {
+    fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
+        Ok(ScoreResult {
             scores_q: vec![SCORE_SCALE; q.live.len()],
             tau_q: 0,
-        }
+        })
     }
 }
 
@@ -133,7 +154,7 @@ pub struct StubScorer {
     pub tau_q: Option<i64>,
 }
 impl ChunkScorer for StubScorer {
-    fn score(&mut self, q: &BirthQuery) -> ScoreResult {
+    fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
         let scores_q = q.live.iter().map(stub_score_q).collect();
         let tau_q = self.tau_q.unwrap_or_else(|| {
             use sha2::{Digest, Sha256};
@@ -145,7 +166,7 @@ impl ChunkScorer for StubScorer {
             b.copy_from_slice(&d[..8]);
             (u64::from_be_bytes(b) % SCORE_SCALE as u64) as i64
         });
-        ScoreResult { scores_q, tau_q }
+        Ok(ScoreResult { scores_q, tau_q })
     }
 }
 
@@ -209,6 +230,11 @@ struct Parsed {
     obs_items: Vec<(usize, String, String, i64)>,
     first_obs: Option<usize>,
     cur_step: i64,
+    /// Chunker drift guard (contracts brain-api-dev/v0): sha256 over
+    /// "\n".join("{step}:{kind}:{tokens}") of the parsed chunk array, in the
+    /// decision order `live_gi` indexes into. The brain re-parses the
+    /// internal view and refuses to score on mismatch (409).
+    chunk_checksum: String,
 }
 
 fn parse(messages: &[Value], cfg: &FreezeConfig) -> Parsed {
@@ -278,19 +304,34 @@ fn parse(messages: &[Value], cfg: &FreezeConfig) -> Parsed {
     // Node-order parity with the trainer: stable sort by (step, reasoning-last).
     let mut order: Vec<usize> = (0..chunks.len()).collect();
     order.sort_by_key(|&i| (chunks[i].step, i64::from(chunks[i].kind == "reasoning")));
-    let chunks = order.iter().map(|&i| chunks[i].clone()).collect();
+    let chunks: Vec<Chunk> = order.iter().map(|&i| chunks[i].clone()).collect();
     let owner = order.iter().map(|&i| owner[i]).collect();
+    let chunk_checksum = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(
+            chunks
+                .iter()
+                .map(|c| format!("{}:{}:{}", c.step, c.kind, c.tokens))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .as_bytes(),
+        );
+        format!("{:x}", h.finalize())
+    };
     Parsed {
         chunks,
         owner,
         obs_items,
         first_obs,
         cur_step,
+        chunk_checksum,
     }
 }
 
-/// The deterministic freezer. All fields are a memo of the pure fold over the
-/// prefix — dropping the whole struct and replaying yields identical output.
+/// The deterministic freezer. All fields (except the `scorer_fail_opens`
+/// counter) are a memo of the pure fold over the prefix — dropping the whole
+/// struct and replaying yields identical output.
 pub struct Freezer<S: ChunkScorer> {
     pub cfg: FreezeConfig,
     pub scorer: S,
@@ -307,6 +348,11 @@ pub struct Freezer<S: ChunkScorer> {
     /// new prefix replays from scratch — keeping warm == cold always.
     seen_msg_hashes: Vec<String>,
     pub insists: u64,
+    /// Scorer fail-open events (birth steps deferred because a score call
+    /// failed). NOT memo state — reset() leaves it alone: the memo fold is
+    /// recomputable but the operational record of brain failures is not, and
+    /// it must survive client-edit resets to stay alertable (§8.3).
+    pub scorer_fail_opens: u64,
 }
 
 /// serve() failure: the caller must pass the ORIGINAL messages through and
@@ -333,9 +379,12 @@ impl<S: ChunkScorer> Freezer<S> {
             replayed_steps: HashSet::new(),
             seen_msg_hashes: Vec::new(),
             insists: 0,
+            scorer_fail_opens: 0,
         }
     }
 
+    /// Clears the memo of the pure fold; `scorer_fail_opens` deliberately
+    /// survives (operational telemetry, not fold state — see field doc).
     fn reset(&mut self) {
         self.dropped.clear();
         self.dropped_ranges.clear();
@@ -458,8 +507,11 @@ impl<S: ChunkScorer> Freezer<S> {
     }
 
     /// Replay the birth decision for step `s` against the registries as of
-    /// steps < s. Pure: consumes only chunks with step <= s.
-    fn replay_birth(&mut self, s: i64, p: &Parsed, messages: &[Value]) {
+    /// steps < s. Pure: consumes only chunks with step <= s. STEP-ATOMIC:
+    /// every scorer call (the shared score plus every per-owner-pool tau)
+    /// happens before any registry commit, so an Err leaves NO trace of this
+    /// step — the next serve replays it as if it were current.
+    fn replay_birth(&mut self, s: i64, p: &Parsed, messages: &[Value]) -> Result<(), ScoreError> {
         // Live set as of this step, in decision order.
         let mut live: Vec<Chunk> = Vec::new();
         let mut live_owner: Vec<usize> = Vec::new();
@@ -471,13 +523,16 @@ impl<S: ChunkScorer> Freezer<S> {
                 live_gi.push(gi);
             }
         }
-        // Undecided newborns, grouped per owner message in first-encounter order.
+        // Undecided newborns, grouped per owner message in first-encounter
+        // order. Insists count into a local so the valve commits with the
+        // rest of the step, not before the fallible scorer calls.
+        let mut step_insists: u64 = 0;
         let mut undecided: Vec<(usize, Vec<(usize, usize)>)> = Vec::new();
         for (j, c) in live.iter().enumerate() {
             let mi = live_owner[j];
             if c.evict != "provider" && c.step == s && !self.decided_msgs.contains(&mi) {
                 if self.insisted(c) && Self::narrow(c) {
-                    self.insists += 1; // agent re-asked this narrow snippet -> serve full, once
+                    step_insists += 1; // agent re-asked this narrow snippet -> serve full, once
                     continue;
                 }
                 match undecided.iter_mut().find(|(m, _)| *m == mi) {
@@ -487,6 +542,7 @@ impl<S: ChunkScorer> Freezer<S> {
             }
         }
         let mut to_drop: Vec<usize> = Vec::new();
+        let mut decided: Vec<usize> = Vec::new();
         if !undecided.is_empty() {
             let task_text = p
                 .first_obs
@@ -512,11 +568,18 @@ impl<S: ChunkScorer> Freezer<S> {
                 recent_cmds: recent_cmds.clone(),
                 live: &live,
                 live_owner: &live_owner,
+                live_gi: live_gi.clone(),
+                messages,
+                chunk_checksum: p.chunk_checksum.clone(),
                 mask: all_mask,
-            });
+            })?;
+            // Multi-owner: ALL per-pool tau calls complete before any pool's
+            // decision commits (a failure on pool k must not leave pools
+            // 0..k decided).
             let multi = undecided.len() > 1;
-            for (mi, pairs) in &undecided {
-                let tau_q = if let Some(t) = self.cfg.tau_fixed_q {
+            let mut taus: Vec<i64> = Vec::with_capacity(undecided.len());
+            for (_, pairs) in &undecided {
+                taus.push(if let Some(t) = self.cfg.tau_fixed_q {
                     t
                 } else if multi {
                     self.scorer
@@ -526,17 +589,25 @@ impl<S: ChunkScorer> Freezer<S> {
                             recent_cmds: recent_cmds.clone(),
                             live: &live,
                             live_owner: &live_owner,
+                            live_gi: live_gi.clone(),
+                            messages,
+                            chunk_checksum: p.chunk_checksum.clone(),
                             mask: pairs.iter().map(|&(j, _)| j).collect(),
-                        })
+                        })?
                         .tau_q
                 } else {
                     shared.tau_q
-                };
+                });
+            }
+            for ((mi, pairs), &tau_q) in undecided.iter().zip(&taus) {
                 let drops = self.budget_cut(pairs, &shared.scores_q, tau_q, &p.chunks, &p.owner);
-                self.decided_msgs.insert(*mi);
+                decided.push(*mi);
                 to_drop.extend(drops.iter().map(|&(_, i)| i));
             }
         }
+        // Commit point: every scorer call for this step succeeded.
+        self.insists += step_insists;
+        self.decided_msgs.extend(decided);
         for &gi in &to_drop {
             let c = &p.chunks[gi];
             self.dropped.insert(ckey(p.owner[gi], c));
@@ -562,6 +633,7 @@ impl<S: ChunkScorer> Freezer<S> {
             }
         }
         self.replayed_steps.insert(s);
+        Ok(())
     }
 
     /// curator._ptr: recoverable-range pointer inside omission markers.
@@ -737,7 +809,9 @@ impl<S: ChunkScorer> Freezer<S> {
     /// steps in order, then render. Output for any prefix is byte-identical
     /// whether this instance served every intermediate prefix or none. On
     /// Err the caller must serve the original messages and treat the call as
-    /// a fail-open event; no state advanced.
+    /// a fail-open event; no state advanced. A scorer failure is NOT an Err:
+    /// the failed step and later ones stay undecided (rendered full) for the
+    /// next serve to retry, and `scorer_fail_opens` ticks once.
     pub fn serve(&mut self, messages: &[Value]) -> Result<Vec<Value>, FreezeError> {
         validate_internal(messages)?;
         // Purity guard: if any already-consumed message's bytes changed
@@ -759,8 +833,13 @@ impl<S: ChunkScorer> Freezer<S> {
         // From 0: an assistant message before the first user/tool message
         // births step-0 chunks (0..=-1 is empty when there are no steps).
         for s in 0..=p.cur_step {
-            if !self.replayed_steps.contains(&s) {
-                self.replay_birth(s, &p, messages);
+            if !self.replayed_steps.contains(&s) && self.replay_birth(s, &p, messages).is_err() {
+                // Per-step fail-open: later steps' decisions fold over this
+                // step's registries, so stop replaying — every affected step
+                // stays out of replayed_steps and the next serve retries.
+                // Render still runs: the serve succeeds on decided state.
+                self.scorer_fail_opens += 1;
+                break;
             }
         }
         let mut by_msg: HashMap<usize, Vec<usize>> = HashMap::new();

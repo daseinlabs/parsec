@@ -1,12 +1,19 @@
 [project]
 name = "dasein-trainer"
 version = "0.1.0"
-description = "Server-side training, eval gates, checkpoint promotion; containerized for the enterprise on-prem fine-tune pipeline. Private."
+description = "Server-side training, eval gates, checkpoint promotion; containerized for the enterprise on-prem fine-tune pipeline. Private. v0 ships the IDENTITY retrain stub (docs/brain-serving-v0.md inference-first): the pipeline shape is real, the train stage returns the base GNN unchanged."
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2",
-    # torch / torch_geometric pinned when the trainer lineage port lands
+    # The eval gate loads candidates through the brain's own self-validating
+    # bundle loader (§8.2) — dasein-brain (and its torch) is installed as a
+    # local editable dep alongside this package; see README. The real trainer
+    # lineage (trace_graph/trace_train, torch_geometric DDP) lands with the
+    # retrain port and replaces train_identity().
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [build-system]
 requires = ["hatchling"]

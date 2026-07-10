@@ -1,0 +1,3611 @@
+{
+ "to_internal": [
+  {
+   "name": "plain_string",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "hello wörld"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "hello wörld"
+    }
+   ]
+  },
+  {
+   "name": "text_blocks",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "a"
+       },
+       {
+        "type": "text",
+        "text": ""
+       },
+       {
+        "type": "text",
+        "text": "b"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "a b"
+    }
+   ]
+  },
+  {
+   "name": "tool_result_str",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "t1",
+        "content": "obs text obs text obs text obs text obs text "
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "obs text obs text obs text obs text obs text "
+    }
+   ]
+  },
+  {
+   "name": "tool_result_empty_parts",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "t2",
+        "content": [
+         {
+          "type": "text",
+          "text": ""
+         },
+         {
+          "type": "text",
+          "text": "x"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       },
+       {
+        "type": "text",
+        "text": "tail"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": " x tail"
+    }
+   ]
+  },
+  {
+   "name": "parallel_tool_results",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "t1",
+        "content": "obs text obs text obs text obs text obs text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "t2",
+        "content": [
+         {
+          "type": "text",
+          "text": ""
+         },
+         {
+          "type": "text",
+          "text": "x"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "t3",
+        "is_error": true,
+        "content": "boom"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "obs text obs text obs text obs text obs text   x boom"
+    }
+   ]
+  },
+  {
+   "name": "thinking_blocks_skipped",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "thinking",
+        "thinking": "let me think",
+        "signature": "sig"
+       },
+       {
+        "type": "redacted_thinking",
+        "data": "xxxx"
+       },
+       {
+        "type": "text",
+        "text": "visible"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "visible"
+    }
+   ]
+  },
+  {
+   "name": "image_document_skipped",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "image",
+        "source": {
+         "type": "base64",
+         "data": "aGk="
+        }
+       },
+       {
+        "type": "document",
+        "source": {
+         "type": "text",
+         "data": "doc"
+        }
+       },
+       {
+        "type": "text",
+        "text": "caption"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "caption"
+    }
+   ]
+  },
+  {
+   "name": "non_dict_parts",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "x"
+       },
+       "bare",
+       7
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "x"
+    }
+   ]
+  },
+  {
+   "name": "system_str",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ],
+    "system": "You are an agent."
+   },
+   "expected": [
+    {
+     "role": "system",
+     "content": "You are an agent."
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  {
+   "name": "system_blocks",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ],
+    "system": [
+     {
+      "type": "text",
+      "text": "block one"
+     },
+     {
+      "type": "image",
+      "source": "x"
+     },
+     {
+      "type": "text",
+      "text": "block twö"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "system",
+     "content": "block one\nblock twö"
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  {
+   "name": "system_empty_str",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ],
+    "system": ""
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  {
+   "name": "system_blocks_whitespace",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ],
+    "system": [
+     {
+      "type": "text",
+      "text": ""
+     },
+     {
+      "type": "text",
+      "text": ""
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "system",
+     "content": "\n"
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  {
+   "name": "system_non_list_dict",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ],
+    "system": {
+     "type": "text",
+     "text": "x"
+    }
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  {
+   "name": "no_messages",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [],
+    "system": "sys"
+   },
+   "expected": [
+    {
+     "role": "system",
+     "content": "sys"
+    }
+   ]
+  },
+  {
+   "name": "messages_missing",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "system": "sys"
+   },
+   "expected": [
+    {
+     "role": "system",
+     "content": "sys"
+    }
+   ]
+  },
+  {
+   "name": "role_missing_defaults_user",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "content": "x"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "x"
+    }
+   ]
+  },
+  {
+   "name": "role_null_passthrough",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": null,
+      "content": "x"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": null,
+     "content": "x"
+    }
+   ]
+  },
+  {
+   "name": "role_tool_passthrough",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "tool",
+      "content": "t out"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "tool",
+     "content": "t out"
+    }
+   ]
+  },
+  {
+   "name": "assistant_no_tool_use",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "just prose"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "just prose"
+    }
+   ]
+  },
+  {
+   "name": "user_tool_use_ignored",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash",
+        "input": {
+         "command": "ls"
+        }
+       },
+       {
+        "type": "text",
+        "text": "u"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "user",
+     "content": "u"
+    }
+   ]
+  },
+  {
+   "name": "bash_simple",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash",
+        "input": {
+         "command": "ls -la /tmp"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"ls -la /tmp\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Bash",
+        "name": "Bash",
+        "command": "ls -la /tmp"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bash_ws_command_derive_literal",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash",
+        "input": {
+         "command": "   "
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"   \"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Bash",
+        "name": "Bash",
+        "command": "   "
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bash_empty_command",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": ""
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "bash",
+        "arguments": "{\"command\": \"\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "bash",
+        "name": "bash",
+        "command": ""
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bash_nonstr_command",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash",
+        "input": {
+         "command": 123,
+         "description": "d"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": 123, \"description\": \"d\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Bash",
+        "name": "Bash",
+        "command": "Bash command=123 description=d",
+        "description": "d"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "bash_output_tool",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_a",
+        "name": "BashOutput",
+        "input": {
+         "command": "tail -f log"
+        }
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_b",
+        "name": "bash_output",
+        "input": {
+         "bash_id": "b1"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_a",
+       "type": "function",
+       "function": {
+        "name": "BashOutput",
+        "arguments": "{\"command\": \"tail -f log\"}"
+       }
+      },
+      {
+       "id": "tu_b",
+       "type": "function",
+       "function": {
+        "name": "bash_output",
+        "arguments": "{\"bash_id\": \"b1\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "BashOutput",
+        "name": "BashOutput",
+        "command": "tail -f log"
+       },
+       {
+        "tool": "bash_output",
+        "name": "bash_output",
+        "bash_id": "b1",
+        "command": "bash_output bash_id=b1"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "shell_unicode_command",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "shell",
+        "input": {
+         "command": "echo 'héllo 🐍'"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "shell",
+        "arguments": "{\"command\": \"echo 'h\\u00e9llo \\ud83d\\udc0d'\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "shell",
+        "name": "shell",
+        "command": "echo 'héllo 🐍'"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_cat",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "command": "cat /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_offset_limit",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 10,
+         "limit": 5
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 10, \"limit\": 5}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 10,
+        "limit": 5,
+        "command": "sed -n '10,14p' /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_offset_only",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 10
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 10}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 10,
+        "command": "sed -n '10,2009p' /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_limit_only",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "limit": 40
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"limit\": 40}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "limit": 40,
+        "command": "cat /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_offset0",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 0,
+         "limit": 5
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 0, \"limit\": 5}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 0,
+        "limit": 5,
+        "command": "cat /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_limit0",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 5,
+         "limit": 0
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 5, \"limit\": 0}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 5,
+        "limit": 0,
+        "command": "sed -n '5,2004p' /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_null_offset",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": null,
+         "limit": 3
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": null, \"limit\": 3}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": null,
+        "limit": 3,
+        "command": "cat /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_str_nums",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": "12",
+         "limit": " 3 "
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": \"12\", \"limit\": \" 3 \"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": "12",
+        "limit": " 3 ",
+        "command": "sed -n '12,14p' /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_invalid_offset_nulls_both",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": "abc",
+         "limit": 5
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": \"abc\", \"limit\": 5}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": "abc",
+        "limit": 5,
+        "command": "cat /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_invalid_limit_nulls_both",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 10,
+         "limit": "x"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 10, \"limit\": \"x\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 10,
+        "limit": "x",
+        "command": "cat /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_float_bool",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 5.9,
+         "limit": true
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 5.9, \"limit\": true}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 5.9,
+        "limit": true,
+        "command": "sed -n '5,5p' /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_negative_limit",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "/a/b.py",
+         "offset": 7,
+         "limit": -3
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a/b.py\", \"offset\": 7, \"limit\": -3}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a/b.py",
+        "offset": 7,
+        "limit": -3,
+        "command": "sed -n '7,7p' /a/b.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_name_variants",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_a",
+        "name": "view",
+        "input": {
+         "path": "/x/y"
+        }
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_b",
+        "name": "NotebookRead",
+        "input": {
+         "filename": "n.ipynb"
+        }
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_c",
+        "name": "open_file",
+        "input": {
+         "file": "f.txt"
+        }
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_d",
+        "name": "cat",
+        "input": {
+         "file_path": "z"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_a",
+       "type": "function",
+       "function": {
+        "name": "view",
+        "arguments": "{\"path\": \"/x/y\"}"
+       }
+      },
+      {
+       "id": "tu_b",
+       "type": "function",
+       "function": {
+        "name": "NotebookRead",
+        "arguments": "{\"filename\": \"n.ipynb\"}"
+       }
+      },
+      {
+       "id": "tu_c",
+       "type": "function",
+       "function": {
+        "name": "open_file",
+        "arguments": "{\"file\": \"f.txt\"}"
+       }
+      },
+      {
+       "id": "tu_d",
+       "type": "function",
+       "function": {
+        "name": "cat",
+        "arguments": "{\"file_path\": \"z\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "view",
+        "name": "view",
+        "path": "/x/y",
+        "command": "cat /x/y"
+       },
+       {
+        "tool": "NotebookRead",
+        "name": "NotebookRead",
+        "filename": "n.ipynb",
+        "command": "cat n.ipynb"
+       },
+       {
+        "tool": "open_file",
+        "name": "open_file",
+        "file": "f.txt",
+        "command": "cat f.txt"
+       },
+       {
+        "tool": "cat",
+        "name": "cat",
+        "file_path": "z",
+        "command": "cat z"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_file_path_falsy_falls_through",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": "",
+         "path": "/real"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"\", \"path\": \"/real\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "",
+        "path": "/real",
+        "command": "cat /real"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "read_file_nonstr_derives",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": {
+         "file_path": [
+          1
+         ],
+         "path": "/real"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": [1], \"path\": \"/real\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": [
+         1
+        ],
+        "path": "/real",
+        "command": "Read file_path=[1] path=/real"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "edit_basename",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Edit",
+        "input": {
+         "file_path": "/a/b/c.py",
+         "old_string": "x",
+         "new_string": "y"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Edit",
+        "arguments": "{\"file_path\": \"/a/b/c.py\", \"old_string\": \"x\", \"new_string\": \"y\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Edit",
+        "name": "Edit",
+        "file_path": "/a/b/c.py",
+        "old_string": "x",
+        "new_string": "y",
+        "command": "edit c.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "write_no_slash",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Write",
+        "input": {
+         "path": "notes.md",
+         "content": "body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body "
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Write",
+        "arguments": "{\"path\": \"notes.md\", \"content\": \"body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body \"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Write",
+        "name": "Write",
+        "path": "notes.md",
+        "content": "body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body body ",
+        "command": "edit notes.md"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "edit_trailing_slash",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "NotebookEdit",
+        "input": {
+         "file_path": "/a/b/"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "NotebookEdit",
+        "arguments": "{\"file_path\": \"/a/b/\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "NotebookEdit",
+        "name": "NotebookEdit",
+        "file_path": "/a/b/",
+        "command": "edit "
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "str_replace_editor",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "str_replace_based_edit_tool",
+        "input": {
+         "path": "/w/e.rs"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "str_replace_based_edit_tool",
+        "arguments": "{\"path\": \"/w/e.rs\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "str_replace_based_edit_tool",
+        "name": "str_replace_based_edit_tool",
+        "path": "/w/e.rs",
+        "command": "edit e.rs"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "multiedit",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "MultiEdit",
+        "input": {
+         "file_path": "src/main.rs",
+         "edits": [
+          {
+           "old": "a"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "MultiEdit",
+        "arguments": "{\"file_path\": \"src/main.rs\", \"edits\": [{\"old\": \"a\"}]}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "MultiEdit",
+        "name": "MultiEdit",
+        "file_path": "src/main.rs",
+        "edits": [
+         {
+          "old": "a"
+         }
+        ],
+        "command": "edit main.rs"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "grep_pattern_path",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Grep",
+        "input": {
+         "pattern": "fn main",
+         "path": "src/"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Grep",
+        "arguments": "{\"pattern\": \"fn main\", \"path\": \"src/\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Grep",
+        "name": "Grep",
+        "pattern": "fn main",
+        "path": "src/",
+        "command": "grep 'fn main' src/",
+        "query": "fn main"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "grep_quotes_swapped",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Grep",
+        "input": {
+         "pattern": "it's a 'test'",
+         "include": "*.rs"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Grep",
+        "arguments": "{\"pattern\": \"it's a 'test'\", \"include\": \"*.rs\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Grep",
+        "name": "Grep",
+        "pattern": "it's a 'test'",
+        "include": "*.rs",
+        "command": "grep 'it s a  test ' *.rs",
+        "query": "it's a 'test'"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "grep_long_pattern_clip",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Grep",
+        "input": {
+         "pattern": "x'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'y"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Grep",
+        "arguments": "{\"pattern\": \"x'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'y\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Grep",
+        "name": "Grep",
+        "pattern": "x'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'y",
+        "command": "grep 'x yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx yx '",
+        "query": "x'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'yx'y"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "glob_pattern",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Glob",
+        "input": {
+         "pattern": "**/*.py"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Glob",
+        "arguments": "{\"pattern\": \"**/*.py\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Glob",
+        "name": "Glob",
+        "pattern": "**/*.py",
+        "command": "grep '**/*.py'",
+        "query": "**/*.py"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "search_query_key",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "search",
+        "input": {
+         "query": "needle"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "search",
+        "arguments": "{\"query\": \"needle\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "search",
+        "name": "search",
+        "query": "needle",
+        "command": "grep 'needle'"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "searchcode_q_key",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "search_code",
+        "input": {
+         "q": "tok"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "search_code",
+        "arguments": "{\"q\": \"tok\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "search_code",
+        "name": "search_code",
+        "q": "tok",
+        "command": "grep 'tok'",
+        "query": "tok"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "rg_empty",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "rg",
+        "input": {}
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "rg",
+        "arguments": "{}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "rg",
+        "name": "rg",
+        "command": "grep ''"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "grep_nonstr_pattern_path",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "find",
+        "input": {
+         "pattern": [
+          1,
+          "a'b"
+         ],
+         "path": 5
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "find",
+        "arguments": "{\"pattern\": [1, \"a'b\"], \"path\": 5}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "find",
+        "name": "find",
+        "pattern": [
+         1,
+         "a'b"
+        ],
+        "path": 5,
+        "command": "grep '[1, \"a b\"]' 5"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "grep_pattern_vs_query_order",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "search",
+        "input": {
+         "pattern": "P",
+         "query": "Q"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "search",
+        "arguments": "{\"pattern\": \"P\", \"query\": \"Q\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "search",
+        "name": "search",
+        "pattern": "P",
+        "query": "Q",
+        "command": "grep 'P'"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "unknown_tool_sorted_render",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "mcp__custom",
+        "input": {
+         "zeta": "z",
+         "alpha": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα",
+         "num": 3.5,
+         "flag": true,
+         "nul": null,
+         "list": [
+          1,
+          2
+         ],
+         "obj": {
+          "k": "v'w"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "mcp__custom",
+        "arguments": "{\"zeta\": \"z\", \"alpha\": \"\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\\u03b1\", \"num\": 3.5, \"flag\": true, \"nul\": null, \"list\": [1, 2], \"obj\": {\"k\": \"v'w\"}}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "mcp__custom",
+        "name": "mcp__custom",
+        "zeta": "z",
+        "alpha": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα",
+        "num": 3.5,
+        "flag": true,
+        "nul": null,
+        "list": [
+         1,
+         2
+        ],
+        "obj": {
+         "k": "v'w"
+        },
+        "command": "mcp__custom alpha=αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα… flag=true list=[1, 2] nul=null num=3.5 obj={\"k\": \"v'w\"} zeta=z"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "unknown_tool_total_clip",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "WebFetch",
+        "input": {
+         "a": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+         "b": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+         "c": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "WebFetch",
+        "arguments": "{\"a\": \"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\", \"b\": \"qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\", \"c\": \"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "WebFetch",
+        "name": "WebFetch",
+        "a": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+        "b": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "c": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "command": "WebFetch a=pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp… b=qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq… c=rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "unknown_tool_empty_args",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "TodoWrite",
+        "input": {}
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "TodoWrite",
+        "arguments": "{}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "TodoWrite",
+        "name": "TodoWrite",
+        "command": "TodoWrite"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "splat_overrides_tool_name_command",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "customtool",
+        "input": {
+         "tool": "X",
+         "name": "Y",
+         "command": "rm -rf /",
+         "query": "   "
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "customtool",
+        "arguments": "{\"tool\": \"X\", \"name\": \"Y\", \"command\": \"rm -rf /\", \"query\": \"   \"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "X",
+        "name": "Y",
+        "command": "customtool command=rm -rf / name=Y query=    tool=X",
+        "query": "   "
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "splat_query_overwritten_same_slot",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "customtool",
+        "input": {
+         "query": "real",
+         "z": 1
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "customtool",
+        "arguments": "{\"query\": \"real\", \"z\": 1}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "customtool",
+        "name": "customtool",
+        "query": "real",
+        "z": 1,
+        "command": "customtool query=real z=1"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "splat_bash_command_twin_wins",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "bash",
+        "input": {
+         "command": "echo hi",
+         "extra": 1
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "bash",
+        "arguments": "{\"command\": \"echo hi\", \"extra\": 1}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "bash",
+        "name": "bash",
+        "command": "echo hi",
+        "extra": 1
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "nondict_input_str",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash",
+        "input": "ls -la"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "\"ls -la\""
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Bash",
+        "name": "Bash",
+        "command": "Bash"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "nondict_input_list",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Grep",
+        "input": [
+         1,
+         2
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Grep",
+        "arguments": "[1, 2]"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Grep",
+        "name": "Grep",
+        "command": "grep ''"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "nondict_input_null",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Read",
+        "input": null
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "command": "Read"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "nondict_input_zero",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "mystery",
+        "input": 0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "mystery",
+        "arguments": "{}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "mystery",
+        "name": "mystery",
+        "command": "mystery"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "input_missing",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Bash",
+        "name": "Bash",
+        "command": "Bash"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "block_type_only",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use"
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": null,
+       "type": "function",
+       "function": {
+        "name": null,
+        "arguments": "{}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "",
+        "name": "",
+        "command": ""
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "name_whitespace_stripped",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "  Read  ",
+        "input": {
+         "file_path": "/a"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "  Read  ",
+        "arguments": "{\"file_path\": \"/a\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a",
+        "command": "cat /a"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "unicode_args_ascii_escape",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_1",
+        "name": "Bash",
+        "input": {
+         "command": "grep 'é' — 🐍"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_1",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"grep '\\u00e9' \\u2014 \\ud83d\\udc0d\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Bash",
+        "name": "Bash",
+        "command": "grep 'é' — 🐍"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "parallel_tool_use_interleaved",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "first I read"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_a",
+        "name": "Read",
+        "input": {
+         "file_path": "/a.py",
+         "offset": 3,
+         "limit": 4
+        }
+       },
+       {
+        "type": "text",
+        "text": "then I grep"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_b",
+        "name": "Grep",
+        "input": {
+         "pattern": "todo",
+         "glob": "**/*.md"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": [
+    {
+     "role": "assistant",
+     "content": "first I read then I grep",
+     "tool_calls": [
+      {
+       "id": "tu_a",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/a.py\", \"offset\": 3, \"limit\": 4}"
+       }
+      },
+      {
+       "id": "tu_b",
+       "type": "function",
+       "function": {
+        "name": "Grep",
+        "arguments": "{\"pattern\": \"todo\", \"glob\": \"**/*.md\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/a.py",
+        "offset": 3,
+        "limit": 4,
+        "command": "sed -n '3,6p' /a.py"
+       },
+       {
+        "tool": "Grep",
+        "name": "Grep",
+        "pattern": "todo",
+        "glob": "**/*.md",
+        "command": "grep 'todo' **/*.md",
+        "query": "todo"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "conversation_mixed",
+   "body": {
+    "model": "claude-x",
+    "max_tokens": 8,
+    "messages": [
+     {
+      "role": "user",
+      "content": "fix the bug"
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "reading"
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_a",
+        "name": "Read",
+        "input": {
+         "file_path": "/src/x.py"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "t1",
+        "content": "obs text obs text obs text obs text obs text "
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "tu_b",
+        "name": "Grep",
+        "input": {
+         "pattern": "def x",
+         "path": "src"
+        }
+       },
+       {
+        "type": "tool_use",
+        "id": "tu_c",
+        "name": "Edit",
+        "input": {
+         "file_path": "/src/x.py",
+         "old_string": "a",
+         "new_string": "b"
+        }
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "t1",
+        "content": "obs text obs text obs text obs text obs text "
+       },
+       {
+        "type": "tool_result",
+        "tool_use_id": "t2",
+        "content": [
+         {
+          "type": "text",
+          "text": ""
+         },
+         {
+          "type": "text",
+          "text": "x"
+         },
+         {
+          "type": "image",
+          "source": "s"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "system": "You fix bugs."
+   },
+   "expected": [
+    {
+     "role": "system",
+     "content": "You fix bugs."
+    },
+    {
+     "role": "user",
+     "content": "fix the bug"
+    },
+    {
+     "role": "assistant",
+     "content": "reading",
+     "tool_calls": [
+      {
+       "id": "tu_a",
+       "type": "function",
+       "function": {
+        "name": "Read",
+        "arguments": "{\"file_path\": \"/src/x.py\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Read",
+        "name": "Read",
+        "file_path": "/src/x.py",
+        "command": "cat /src/x.py"
+       }
+      ]
+     }
+    },
+    {
+     "role": "user",
+     "content": "obs text obs text obs text obs text obs text "
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "tu_b",
+       "type": "function",
+       "function": {
+        "name": "Grep",
+        "arguments": "{\"pattern\": \"def x\", \"path\": \"src\"}"
+       }
+      },
+      {
+       "id": "tu_c",
+       "type": "function",
+       "function": {
+        "name": "Edit",
+        "arguments": "{\"file_path\": \"/src/x.py\", \"old_string\": \"a\", \"new_string\": \"b\"}"
+       }
+      }
+     ],
+     "extra": {
+      "actions": [
+       {
+        "tool": "Grep",
+        "name": "Grep",
+        "pattern": "def x",
+        "path": "src",
+        "command": "grep 'def x' src",
+        "query": "def x"
+       },
+       {
+        "tool": "Edit",
+        "name": "Edit",
+        "file_path": "/src/x.py",
+        "old_string": "a",
+        "new_string": "b",
+        "command": "edit x.py"
+       }
+      ]
+     }
+    },
+    {
+     "role": "user",
+     "content": "obs text obs text obs text obs text obs text   x"
+    }
+   ]
+  }
+ ],
+ "bash_twin_command": [
+  {
+   "name": "strip_lower_name",
+   "tool": " Read ",
+   "args": {
+    "file_path": "/a"
+   },
+   "expected": "cat /a"
+  },
+  {
+   "name": "nondict_args_read",
+   "tool": "READ",
+   "args": "not a dict",
+   "expected": null
+  },
+  {
+   "name": "nondict_args_grep",
+   "tool": "grep",
+   "args": 5,
+   "expected": "grep ''"
+  },
+  {
+   "name": "bash_unstripped_return",
+   "tool": "Bash",
+   "args": {
+    "command": "  x  "
+   },
+   "expected": "  x  "
+  },
+  {
+   "name": "bash_empty_none",
+   "tool": "bash",
+   "args": {
+    "command": ""
+   },
+   "expected": null
+  },
+  {
+   "name": "shell_null_command",
+   "tool": "shell",
+   "args": {
+    "command": null
+   },
+   "expected": null
+  },
+  {
+   "name": "edit_nested",
+   "tool": "edit",
+   "args": {
+    "file_path": "a/b/c"
+   },
+   "expected": "edit c"
+  },
+  {
+   "name": "unknown_none",
+   "tool": "unknown",
+   "args": {
+    "command": "ls"
+   },
+   "expected": null
+  },
+  {
+   "name": "read_underscore_int",
+   "tool": "read",
+   "args": {
+    "file_path": "/f",
+    "offset": "1_2",
+    "limit": "2"
+   },
+   "expected": "sed -n '12,13p' /f"
+  },
+  {
+   "name": "read_signed_str_ints",
+   "tool": "read",
+   "args": {
+    "file_path": "/f",
+    "offset": " -2 ",
+    "limit": "+3"
+   },
+   "expected": "sed -n '-2,0p' /f"
+  },
+  {
+   "name": "read_bad_underscore",
+   "tool": "read",
+   "args": {
+    "file_path": "/f",
+    "offset": "1__2",
+    "limit": "2"
+   },
+   "expected": "cat /f"
+  },
+  {
+   "name": "read_float_str_invalid",
+   "tool": "read",
+   "args": {
+    "file_path": "/f",
+    "offset": "5.0",
+    "limit": 2
+   },
+   "expected": "cat /f"
+  },
+  {
+   "name": "grep_path_only",
+   "tool": "glob",
+   "args": {
+    "path": "src/**"
+   },
+   "expected": "grep '' src/**"
+  },
+  {
+   "name": "grep_falsy_pattern_chain",
+   "tool": "rg",
+   "args": {
+    "pattern": "",
+    "query": 0,
+    "q": "hit"
+   },
+   "expected": "grep 'hit'"
+  }
+ ],
+ "derive_command": [
+  {
+   "name": "nondict_str_clip",
+   "tool": "Tool",
+   "args": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+   "expected": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+  },
+  {
+   "name": "nondict_none",
+   "tool": "Tool",
+   "args": null,
+   "expected": "None"
+  },
+  {
+   "name": "nondict_bool",
+   "tool": "Tool",
+   "args": true,
+   "expected": "True"
+  },
+  {
+   "name": "nondict_float",
+   "tool": "Tool",
+   "args": 3.5,
+   "expected": "3.5"
+  },
+  {
+   "name": "nondict_list_repr",
+   "tool": "Tool",
+   "args": [
+    1,
+    "a'b",
+    null,
+    2.5,
+    "d\"q"
+   ],
+   "expected": "[1, \"a'b\", None, 2.5, 'd\"q']"
+  },
+  {
+   "name": "nondict_list_unicode",
+   "tool": "Tool",
+   "args": [
+    "héllo 🐍",
+    "tab\there\nnl"
+   ],
+   "expected": "['héllo 🐍', 'tab\\there\\nnl']"
+  },
+  {
+   "name": "empty_tool_name",
+   "tool": "",
+   "args": {
+    "a": "b"
+   },
+   "expected": "a=b"
+  },
+  {
+   "name": "shell_upper",
+   "tool": "BASH",
+   "args": {
+    "command": "x"
+   },
+   "expected": "x"
+  },
+  {
+   "name": "shell_empty_command",
+   "tool": "Bash",
+   "args": {
+    "command": ""
+   },
+   "expected": ""
+  },
+  {
+   "name": "shell_command_nonstr",
+   "tool": "run",
+   "args": {
+    "command": [
+     1
+    ]
+   },
+   "expected": "run command=[1]"
+  },
+  {
+   "name": "raw_str_value_kept",
+   "tool": "Tool",
+   "args": {
+    "s": "line1\nline2\ttab"
+   },
+   "expected": "Tool s=line1\nline2\ttab"
+  },
+  {
+   "name": "value_clip_unicode",
+   "tool": "Tool",
+   "args": {
+    "k": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+   },
+   "expected": "Tool k=ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ…"
+  },
+  {
+   "name": "sorted_keys_unicode",
+   "tool": "Tool",
+   "args": {
+    "b": 1,
+    "a": 2,
+    "é": 3,
+    "Z": 4
+   },
+   "expected": "Tool Z=4 a=2 b=1 é=3"
+  }
+ ],
+ "derive_query": [
+  {
+   "name": "search_key",
+   "tool": "t",
+   "args": {
+    "search": "found"
+   },
+   "expected": "found"
+  },
+  {
+   "name": "query_ws_falls_to_pattern",
+   "tool": "t",
+   "args": {
+    "query": "  ",
+    "pattern": "p"
+   },
+   "expected": "p"
+  },
+  {
+   "name": "nonstr_skipped",
+   "tool": "t",
+   "args": {
+    "q": 5
+   },
+   "expected": ""
+  },
+  {
+   "name": "nondict",
+   "tool": "t",
+   "args": "nondict",
+   "expected": ""
+  },
+  {
+   "name": "unstripped_return",
+   "tool": "t",
+   "args": {
+    "query": " padded "
+   },
+   "expected": " padded "
+  },
+  {
+   "name": "none_query",
+   "tool": "t",
+   "args": {
+    "query": null,
+    "search": "s"
+   },
+   "expected": "s"
+  }
+ ]
+}

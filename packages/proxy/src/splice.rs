@@ -195,7 +195,7 @@ pub fn orig_fingerprint(content: &Value) -> String {
     format!("{:x}", h.finalize())
 }
 
-fn py_truthy(v: &Value) -> bool {
+pub(crate) fn py_truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
         Value::Bool(b) => *b,

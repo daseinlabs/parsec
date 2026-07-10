@@ -1,0 +1,234 @@
+{
+ "turns": [
+  {
+   "model": "claude-sonnet-4-6",
+   "max_tokens": 128,
+   "system": "be terse",
+   "tools": [
+    {
+     "name": "Read",
+     "description": "Read a file from disk",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "file_path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "file_path"
+      ]
+     }
+    },
+    {
+     "name": "Bash",
+     "description": "Run a shell command",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "command": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "command"
+      ]
+     }
+    },
+    {
+     "name": "Grep",
+     "description": "Search file contents with a regex",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "pattern": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "pattern"
+      ]
+     }
+    },
+    {
+     "name": "Edit",
+     "description": "Replace a string in a file",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "file_path": {
+        "type": "string"
+       },
+       "old_string": {
+        "type": "string"
+       },
+       "new_string": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "file_path",
+       "old_string",
+       "new_string"
+      ]
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "Fix the failing test in parser.py"
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "Let me read the file."
+      },
+      {
+       "type": "tool_use",
+       "id": "toolu_1",
+       "name": "Read",
+       "input": {
+        "file_path": "src/parser.py"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_1",
+       "content": "1: value_1 = compute_step_1(input_1)\n2: value_2 = compute_step_2(input_2)\n3: value_3 = compute_step_3(input_3)\n4: value_4 = compute_step_4(input_4)\n5: value_5 = compute_step_5(input_5)\n6: value_6 = compute_step_6(input_6)\n7: value_7 = compute_step_7(input_7)\n8: value_8 = compute_step_8(input_8)\n9: value_9 = compute_step_9(input_9)\n10: value_10 = compute_step_10(input_10)\n11: value_11 = compute_step_11(input_11)\n12: value_12 = compute_step_12(input_12)\n13: value_13 = compute_step_13(input_13)\n14: value_14 = compute_step_14(input_14)\n15: value_15 = compute_step_15(input_15)\n16: value_16 = compute_step_16(input_16)\n17: value_17 = compute_step_17(input_17)\n18: value_18 = compute_step_18(input_18)\n19: value_19 = compute_step_19(input_19)\n20: value_20 = compute_step_20(input_20)\n21: value_21 = compute_step_21(input_21)\n22: value_22 = compute_step_22(input_22)\n23: value_23 = compute_step_23(input_23)\n24: value_24 = compute_step_24(input_24)\n25: value_25 = compute_step_25(input_25)\n26: value_26 = compute_step_26(input_26)\n27: value_27 = compute_step_27(input_27)\n28: value_28 = compute_step_28(input_28)\n29: value_29 = compute_step_29(input_29)\n30: value_30 = compute_step_30(input_30)\n31: value_31 = compute_step_31(input_31)\n32: value_32 = compute_step_32(input_32)\n33: value_33 = compute_step_33(input_33)\n34: value_34 = compute_step_34(input_34)\n35: value_35 = compute_step_35(input_35)\n36: value_36 = compute_step_36(input_36)\n37: value_37 = compute_step_37(input_37)\n38: value_38 = compute_step_38(input_38)\n39: value_39 = compute_step_39(input_39)\n40: value_40 = compute_step_40(input_40)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "model": "claude-sonnet-4-6",
+   "max_tokens": 128,
+   "system": "be terse",
+   "tools": [
+    {
+     "name": "Read",
+     "description": "Read a file from disk",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "file_path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "file_path"
+      ]
+     }
+    },
+    {
+     "name": "Bash",
+     "description": "Run a shell command",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "command": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "command"
+      ]
+     }
+    },
+    {
+     "name": "Grep",
+     "description": "Search file contents with a regex",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "pattern": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "pattern"
+      ]
+     }
+    },
+    {
+     "name": "Edit",
+     "description": "Replace a string in a file",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "file_path": {
+        "type": "string"
+       },
+       "old_string": {
+        "type": "string"
+       },
+       "new_string": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "file_path",
+       "old_string",
+       "new_string"
+      ]
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "Fix the failing test in parser.py"
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "Let me read the file."
+      },
+      {
+       "type": "tool_use",
+       "id": "toolu_1",
+       "name": "Read",
+       "input": {
+        "file_path": "src/parser.py"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_1",
+       "content": "1: value_1 = compute_step_1(input_1)\n2: value_2 = compute_step_2(input_2)\n3: value_3 = compute_step_3(input_3)\n4: value_4 = compute_step_4(input_4)\n5: value_5 = compute_step_5(input_5)\n6: value_6 = compute_step_6(input_6)\n7: value_7 = compute_step_7(input_7)\n8: value_8 = compute_step_8(input_8)\n9: value_9 = compute_step_9(input_9)\n10: value_10 = compute_step_10(input_10)\n11: value_11 = compute_step_11(input_11)\n12: value_12 = compute_step_12(input_12)\n13: value_13 = compute_step_13(input_13)\n14: value_14 = compute_step_14(input_14)\n15: value_15 = compute_step_15(input_15)\n16: value_16 = compute_step_16(input_16)\n17: value_17 = compute_step_17(input_17)\n18: value_18 = compute_step_18(input_18)\n19: value_19 = compute_step_19(input_19)\n20: value_20 = compute_step_20(input_20)\n21: value_21 = compute_step_21(input_21)\n22: value_22 = compute_step_22(input_22)\n23: value_23 = compute_step_23(input_23)\n24: value_24 = compute_step_24(input_24)\n25: value_25 = compute_step_25(input_25)\n26: value_26 = compute_step_26(input_26)\n27: value_27 = compute_step_27(input_27)\n28: value_28 = compute_step_28(input_28)\n29: value_29 = compute_step_29(input_29)\n30: value_30 = compute_step_30(input_30)\n31: value_31 = compute_step_31(input_31)\n32: value_32 = compute_step_32(input_32)\n33: value_33 = compute_step_33(input_33)\n34: value_34 = compute_step_34(input_34)\n35: value_35 = compute_step_35(input_35)\n36: value_36 = compute_step_36(input_36)\n37: value_37 = compute_step_37(input_37)\n38: value_38 = compute_step_38(input_38)\n39: value_39 = compute_step_39(input_39)\n40: value_40 = compute_step_40(input_40)"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": "The bug is on line 12."
+    },
+    {
+     "role": "user",
+     "content": "apply the fix"
+    }
+   ]
+  }
+ ]
+}

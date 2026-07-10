@@ -13,7 +13,10 @@
 //! idempotent re-serve, and the purity guard resetting on edited history.
 
 use dasein_engine::chunking::ChunkMode;
-use dasein_engine::freeze::{FreezeConfig, FreezeError, Freezer, StubScorer};
+use dasein_engine::freeze::{
+    BirthQuery, ChunkScorer, FreezeConfig, FreezeError, Freezer, ScoreError, ScoreResult,
+    StubScorer,
+};
 use serde_json::{json, Value};
 
 fn load(name: &str) -> Value {
@@ -121,6 +124,102 @@ fn parity_freeze_tau85() {
 #[test]
 fn parity_freeze_tauq() {
     run_suite("freeze_tauq");
+}
+
+/// Fails its first `fails_left` calls (brain down), then delegates to the
+/// always-healthy StubScorer.
+struct FlakyScorer {
+    fails_left: usize,
+    inner: StubScorer,
+}
+impl ChunkScorer for FlakyScorer {
+    fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
+        if self.fails_left > 0 {
+            self.fails_left -= 1;
+            return Err(ScoreError("brain unreachable".into()));
+        }
+        self.inner.score(q)
+    }
+}
+
+// Content chosen so the stub scores fall below each step's pool qhat — every
+// step trims something under a healthy scorer (asserted for step 2 below).
+fn read_obs(tag: &str, n: usize) -> String {
+    (1..=n)
+        .map(|i| format!("def {tag}_helper_{i}(): return parse_{tag}(node={i}, strict=True)"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Three birth steps: task, then three read->observation turns (each step is
+/// multi-owner — assistant text pool + read pool — so recovery exercises the
+/// per-owner-pool tau calls too).
+fn flaky_conv() -> Vec<Value> {
+    vec![
+        json!({"role": "user", "content": "TASK: audit the parser helpers"}),
+        json!({"role": "assistant", "content": "Reading foo.py to map the helpers.",
+               "extra": {"actions": [{"command": "cat foo.py"}]}}),
+        json!({"role": "user", "content": read_obs("foo", 30)}),
+        json!({"role": "assistant", "content": "Now bar.py for the callers.",
+               "extra": {"actions": [{"command": "cat bar.py"}]}}),
+        json!({"role": "user", "content": read_obs("bar", 30)}),
+        json!({"role": "assistant", "content": "Finally baz.py for the tests.",
+               "extra": {"actions": [{"command": "cat baz.py"}]}}),
+        json!({"role": "user", "content": read_obs("baz", 30)}),
+    ]
+}
+
+/// Scorer failure = per-step fail-open (docs/brain-serving-v0.md): the failed
+/// step renders FULL and stays undecided; once the scorer heals, the retried
+/// steps decide exactly as if they had been current — recovery == cold
+/// replay, the core determinism claim.
+#[test]
+fn scorer_failure_defers_step_and_recovery_equals_cold_replay() {
+    let messages = flaky_conv();
+    let cfg = FreezeConfig::default();
+    let mut fz = Freezer::new(
+        cfg.clone(),
+        FlakyScorer {
+            fails_left: 0,
+            inner: StubScorer { tau_q: None },
+        },
+    );
+
+    // Turn 1: healthy — step 1 decided and committed.
+    let first = fz.serve(&messages[..3]).unwrap();
+    assert_eq!(fz.scorer_fail_opens, 0);
+
+    // Brain goes down: the first serve of the full conversation fails at
+    // step 2 (its first score call — steps 0/1 are already replayed).
+    fz.scorer.fails_left = 1;
+    let degraded = fz.serve(&messages).unwrap(); // (a) still Ok
+    assert_eq!(fz.scorer_fail_opens, 1, "one fail-open counted"); // (b)
+    for i in 3..7 {
+        assert_eq!(
+            degraded[i], messages[i],
+            "step-2+ turns render FULL while the scorer is down (msg {i})"
+        );
+    }
+    // Prior decisions still render (the fail-open is per-step, not per-request).
+    assert_eq!(
+        degraded[2], first[2],
+        "decided step 1 keeps its frozen form"
+    );
+
+    // Healthy again: the deferred steps replay as if current.
+    let recovered = fz.serve(&messages).unwrap();
+    assert_eq!(fz.scorer_fail_opens, 1, "recovery adds no fail-opens");
+    let mut fresh = Freezer::new(cfg, StubScorer { tau_q: None });
+    let cold = fresh.serve(&messages).unwrap();
+    assert_eq!(recovered, cold, "recovery == cold replay"); // (c)
+    assert_eq!(
+        fz.registry_snapshot(),
+        fresh.registry_snapshot(),
+        "recovered registries == fresh registries"
+    ); // (d)
+       // The full render above was a deferral, not a no-op: the healthy path
+       // does trim the step that failed.
+    assert_ne!(recovered[4], messages[4], "healthy scorer trims step 2");
 }
 
 #[test]

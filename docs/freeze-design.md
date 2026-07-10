@@ -50,9 +50,13 @@ Three shifts against the reference make this hold:
 
 - `engine::freeze` (wire-agnostic core):
   - `ChunkScorer` trait — quantized scores for a message's chunks given the
-    accumulated context; implementations: brain-API client (proxy side),
-    `PassthroughScorer` (fail-open floor: keep everything),
-    deterministic `StubScorer` (tests).
+    accumulated context; implementations: brain-API client (proxy side,
+    `BrainScorer`), `PassthroughScorer` (fail-open floor: keep everything),
+    deterministic `StubScorer` (tests). Since the inference-first wiring
+    (docs/brain-serving-v0.md) `score` returns `Result<ScoreResult,
+    ScoreError>`: a scorer failure leaves the birth step UNDECIDED (step-
+    atomic commits, `scorer_fail_opens` counted) and it is retried on a
+    later serve — recovery is byte-identical to a cold replay.
   - `decide_message(j, steps, scorer, config) -> MessageDecision` — pure.
   - `serve_conversation(steps, scorer, config)` — folds decisions over a
     prefix; the golden-test surface.

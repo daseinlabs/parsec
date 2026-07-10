@@ -1,0 +1,167 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://daseinlabs.dev/contracts/brain-api-dev/v0",
+ "title": "Brain scoring API — DEV contract (v0, inference-first)",
+ "description": "⚠️ CARRIES RAW TEXT — dev/dogfood machines only, never real users (docs/brain-serving-v0.md). The client sends the internal message view; the brain re-chunks with the vendored reference chunker (cross-checked against the client's chunk checksum), embeds via in-cluster dasein-embed, and runs the exact reference scoring path against curator_v4_prod.pt. The proxy only activates this path when DASEIN_BRAIN_URL is set AND DASEIN_BRAIN_DEV_RAW=1. Superseded by brain-api/v1 (vectors+features) once the local embedder + client featurization land.",
+ "oneOf": [
+  { "$ref": "#/$defs/score_trace_request" },
+  { "$ref": "#/$defs/score_trace_response" },
+  { "$ref": "#/$defs/score_tools_request" },
+  { "$ref": "#/$defs/score_tools_response" },
+  { "$ref": "#/$defs/score_rules_request" },
+  { "$ref": "#/$defs/score_rules_response" },
+  { "$ref": "#/$defs/score_gate_request" },
+  { "$ref": "#/$defs/score_gate_response" }
+ ],
+ "$defs": {
+  "grid_q": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 1000000,
+   "description": "fixed-point score on the 1e-6 grid (engine SCORE_SCALE): q = round(sigmoid * 1_000_000)"
+  },
+  "score_trace_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "messages", "live_gi", "mask", "cur_step", "chunk_checksum"],
+   "properties": {
+    "contract": { "const": "brain-api-dev/v0" },
+    "conv_id": { "type": "string", "maxLength": 128 },
+    "messages": {
+     "type": "array",
+     "items": { "type": "object" },
+     "description": "to_internal view of the conversation (RAW TEXT — dev only)"
+    },
+    "live_gi": {
+     "type": "array",
+     "items": { "type": "integer", "minimum": 0 },
+     "description": "global indices into the parsed chunk array of the chunks still alive (client registries applied)"
+    },
+    "mask": {
+     "type": "array",
+     "items": { "type": "integer", "minimum": 0 },
+     "description": "rows within live_gi to decide this step (undecided newborns)"
+    },
+    "cur_step": { "type": "integer", "minimum": 0 },
+    "chunk_checksum": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$",
+     "description": "sha256 over '\\n'.join('{step}:{kind}:{tokens}') of the client's parsed chunk array — the live cross-language chunker-parity guard; mismatch = 409, fail open"
+    },
+    "target_cov": { "enum": ["0.90", "0.80", "0.70", "0.60", "0.50"] }
+   }
+  },
+  "score_trace_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["scores_q", "tau_q", "checkpoint_id"],
+   "properties": {
+    "scores_q": {
+     "type": "array",
+     "items": { "$ref": "#/$defs/grid_q" },
+     "description": "one per live row; rows outside mask are exactly 1000000 (never cut)"
+    },
+    "tau_q": { "$ref": "#/$defs/grid_q", "description": "the checkpoint's calibrated tau for target_cov — constant per (ckpt, cov)" },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timings_ms": {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": { "embed": { "type": "number" }, "forward": { "type": "number" } }
+    }
+   }
+  },
+  "score_tools_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "messages", "tools"],
+   "properties": {
+    "contract": { "const": "brain-api-dev/v0" },
+    "conv_id": { "type": "string", "maxLength": 128 },
+    "messages": { "type": "array", "items": { "type": "object" } },
+    "tools": { "type": "array", "items": { "type": "object" }, "description": "native Anthropic tool defs (pre-prune roster)" }
+   }
+  },
+  "score_tools_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["names", "scores_q", "tokens", "checkpoint_id"],
+   "properties": {
+    "names": {
+     "type": "array",
+     "items": { "type": "string" },
+     "description": "unique tool names (deduped last-wins), aligned with scores_q/tokens; [] = ineligible, serve full roster (fail-open)"
+    },
+    "scores_q": { "type": "array", "items": { "$ref": "#/$defs/grid_q" } },
+    "tokens": {
+     "type": "array",
+     "items": { "type": "integer", "minimum": 0 },
+     "description": "len(sort_keys schema JSON)//4 — the mass unit prune() ranks on"
+    },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+   }
+  },
+  "score_rules_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "messages", "tools", "step"],
+   "description": "POST /v1/score/rules — rule head (curator_v4 within-run AUC 0.814). ⚠️ NOT wired into any proxy consumer yet: scores are served for bench calibration and dogfood inspection only.",
+   "properties": {
+    "contract": { "const": "brain-api-dev/v0" },
+    "conv_id": { "type": "string", "maxLength": 128 },
+    "messages": { "type": "array", "items": { "type": "object" } },
+    "tools": { "type": "array", "items": { "type": "object" }, "description": "the request tool roster; the rule graph rides the same tool-spec build, so an empty roster is ineligible (fail-open {})" },
+    "rules": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eid", "text"],
+      "properties": { "eid": { "type": "string" }, "text": { "type": "string" } }
+     },
+     "description": "candidate rules to score at `step`; omitted -> the bundle's rules.json subset with status active|always_on (for the shipped roster: rule1, rule2, rule3, rule4, rule6, rule7 — candidate/retired eids are never scored unrequested)"
+    },
+    "step": { "type": "integer", "minimum": 0, "description": "the fire step (client step index). A step with no step node — a pure-reasoning turn, or a numbering past the server's chunk pipeline — clamps to the nearest EARLIER step node (the vendored trainer clamp)." }
+   }
+  },
+  "score_rules_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["scores_q", "tau_hint_q", "checkpoint_id", "description"],
+   "properties": {
+    "scores_q": {
+     "type": "object",
+     "additionalProperties": { "$ref": "#/$defs/grid_q" },
+     "description": "eid -> quantized raw sigmoid(score_rules); {} = ineligible/failed -> fail open (ungated fire is the baseline)"
+    },
+    "tau_hint_q": { "$ref": "#/$defs/grid_q", "description": "ADVISORY ONLY (the rule-head handoff's ~0.15; scores are compressed, ranking is the signal) — the firing tau MUST be bench-calibrated per checkpoint before any consumer fires on it" },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "description": { "type": "string", "description": "restates the advisory-tau / no-consumer caveat on every response" }
+   }
+  },
+  "score_gate_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "messages", "tools", "brief"],
+   "description": "POST /v1/score/gate — gate/brief head (serve-the-brief decision). ⚠️ NOT wired into any proxy consumer yet.",
+   "properties": {
+    "contract": { "const": "brain-api-dev/v0" },
+    "conv_id": { "type": "string", "maxLength": 128 },
+    "messages": { "type": "array", "items": { "type": "object" } },
+    "tools": { "type": "array", "items": { "type": "object" }, "description": "the request tool roster; the gate graph rides the same tool-spec build, so an empty roster is ineligible (fail-open)" },
+    "brief": { "type": "string", "description": "the codescout brief text (RAW TEXT — dev only); empty/blank -> fail-open shape" }
+   }
+  },
+  "score_gate_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["score_q", "tau_q", "fire", "fail_open", "checkpoint_id"],
+   "properties": {
+    "score_q": { "$ref": "#/$defs/grid_q", "description": "quantized raw sigmoid(score_gate); exactly 1000000 on the fail-open path (serve = never gate on error)" },
+    "tau_q": { "$ref": "#/$defs/grid_q", "description": "constant 500000 — the reference's locked gate tau 0.5" },
+    "fire": { "type": "boolean", "description": "score_q >= tau_q: serve the brief" },
+    "fail_open": { "type": "boolean", "description": "true when scoring was ineligible/failed (empty brief, empty roster, error) — the fail-open event marker (counted, alertable)" },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+   }
+  }
+ }
+}

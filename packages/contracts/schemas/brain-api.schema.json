@@ -1,7 +1,175 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://daseinlabs.dev/contracts/brain-api/v0",
-  "title": "Brain scoring API (draft v0)",
-  "description": "Vectors + structural features in, keep/cut scores out. No field in this contract may carry raw text.",
-  "type": "object"
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://daseinlabs.dev/contracts/brain-api/v1",
+ "title": "Brain scoring API v1 — the data-plane-clean contract (SERVED)",
+ "description": "Chunk vectors + structural features + graph metadata in, quantized keep/cut scores out (DIRECTION.md §4, CLAUDE.md non-negotiable). Raw text is unrepresentable by construction: every string field is a const/enum, a fixed-length hex id, or a bounded [A-Za-z0-9:._-] identifier (conv_id, tool name — harness identifiers, never user code); free text has no slot, and the served pydantic models additionally reject unknown fields (extra='forbid'). Served since brain-api/v1 landed in packages/brain: POST /v1/score/trace and /v1/score/tools dispatch on the request `contract` field — 'brain-api-dev/v0' bodies take the dev raw-text path (brain-api-dev.schema.json, our machines only), 'brain-api/v1' bodies take this one. The client featurizes where the text lives: local embedder (bge-large-compatible, 1024-d), node_struct_with_type(21) per chunk, the 49-col readout struct per decided row, and the rel-4 supersession pairs (the only text-dependent edge relation). The server rebuilds the exact trained graph topology from ids alone (graph-construction.md §1-2) — verified score-identical to the dev path by the cross-path parity gate (packages/brain/tests/test_v1.py). Scores ride the 1e-6 fixed-point grid (engine SCORE_SCALE).",
+ "oneOf": [
+  { "$ref": "#/$defs/score_trace_request" },
+  { "$ref": "#/$defs/score_trace_response" },
+  { "$ref": "#/$defs/score_tools_request" },
+  { "$ref": "#/$defs/score_tools_response" }
+ ],
+ "$defs": {
+  "grid_q": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 1000000,
+   "description": "fixed-point score on the 1e-6 grid (engine SCORE_SCALE): q = round(sigmoid * 1_000_000)"
+  },
+  "checkpoint_id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$",
+   "description": "sha256 of the checkpoint .pt the client featurized against; the brain 409s on mismatch with its loaded bundle (§8.2 matched-pair trap: features and weights must move together)"
+  },
+  "ident": {
+   "type": "string",
+   "pattern": "^[A-Za-z0-9:._-]{1,128}$",
+   "description": "bounded identifier charset — no free text representable"
+  },
+  "hex16_id": {
+   "type": ["string", "null"],
+   "pattern": "^[0-9a-f]{16}$",
+   "description": "salted 16-hex identity hash — equality/truthiness ride the wire, never the string it names; irreversible server-side (the salt stays on the client)"
+  },
+  "vec1024": {
+   "type": "array",
+   "items": { "type": "number" },
+   "minItems": 1024,
+   "maxItems": 1024,
+   "description": "L2-normalized bge-large-compatible embedding (fp32 values; the server casts to fp32 exactly as the dev path casts its embedder output)"
+  },
+  "kind": { "enum": ["read", "grep", "other", "reasoning", "asst"] },
+  "node": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["emb_text", "emb_cmd", "emb_head", "struct", "step", "kind", "tokens"],
+   "description": "one live chunk, featurized client-side. The graph rebuilt server-side depends on: emb_text (xe content slot + rel-2 kNN cosine), emb_cmd/emb_head (xe slots + command/head hub payloads), struct+markers (xs cols 0-22; the head marker is head_id presence), step (temporal order, step spine, PE), kind (reasoning marker), file_id+lo (rel-0 same-file line-neighbor chain, keyed on id equality + lo ordering; also the file hub and the rel-2 cross-file exclusion), cmd_id (one command hub per distinct (step, cmd_id)), head_id (head hub gate on the command's first chunk).",
+   "properties": {
+    "emb_text": { "$ref": "#/$defs/vec1024", "description": "embedding of chunk text[:2000]" },
+    "emb_cmd": { "$ref": "#/$defs/vec1024", "description": "embedding of the producing command; zero vector when the chunk has none (cmd_id null)" },
+    "emb_head": { "$ref": "#/$defs/vec1024", "description": "embedding of the observation head[:240]; zero vector when none (head_id null)" },
+    "struct": {
+     "type": "array",
+     "items": { "type": "number" },
+     "minItems": 21,
+     "maxItems": 21,
+     "description": "node_struct_with_type row: struct_features_causal(16) + struct_type_features(5), computed client-side where the text lives"
+    },
+    "step": { "type": "integer", "minimum": 0 },
+    "kind": { "$ref": "#/$defs/kind" },
+    "tokens": { "type": "integer", "minimum": 1, "description": "chunk token weight (max(1, len(text)//4)) — capture/diagnostics parity with the chunk contract; the trace forward reads token mass from `struct`, not from this field" },
+    "file_id": { "$ref": "#/$defs/hex16_id", "description": "salted hash of the file basename; null = fileless chunk (no rel-0 chain edge, no file hub — the dev path's empty-basename semantics)" },
+    "lo": { "type": ["integer", "null"], "description": "first original-file line covered; null disables the rel-0 chain for this chunk (whole-file reads, greps, reasoning)" },
+    "hi": { "type": ["integer", "null"] },
+    "cmd_id": { "$ref": "#/$defs/hex16_id", "description": "salted hash of the producing command string; null = no command (no command hub row)" },
+    "head_id": { "$ref": "#/$defs/hex16_id", "description": "salted hash of the observation head[:240]; PRESENCE is the has-head marker and gates the head hub on the command's first chunk" }
+   }
+  },
+  "tool": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["name", "emb", "tokens"],
+   "properties": {
+    "name": { "$ref": "#/$defs/ident", "description": "tool name — rides in the clear DELIBERATELY: it is a harness identifier (the keep-set filter's join key back to the request roster), not user code/text" },
+    "emb": { "$ref": "#/$defs/vec1024", "description": "embedding of the serialized schema text json.dumps({name, description, parameters}, sort_keys)" },
+    "tokens": { "type": "integer", "minimum": 1, "description": "len(serialized schema)//4 — the mass unit prune() ranks on; echoed back aligned with scores_q" }
+   }
+  },
+  "score_trace_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "checkpoint_id", "cur_step", "nodes", "task_emb", "mask", "decided_struct", "edges_supersession"],
+   "description": "POST /v1/score/trace with contract='brain-api/v1'. The server rebuilds the trained het graph from the payload (vendored edges/attach_steps/attach_hetero over id stand-ins; HUBPROPS off), runs score_decided over the mask rows with the client's decided_struct, and returns raw-sigmoid scores quantized — bit-identical to the dev path on the same conversation (the test_v1.py parity gate).",
+   "properties": {
+    "contract": { "const": "brain-api/v1" },
+    "conv_id": { "$ref": "#/$defs/ident" },
+    "checkpoint_id": { "$ref": "#/$defs/checkpoint_id" },
+    "cur_step": { "type": "integer", "minimum": 0 },
+    "target_cov": { "type": "string", "pattern": "^0\\.\\d{2}$", "description": "accepted for provenance; tau resolves at bundle load (DASEIN_TARGET_COV), not per request" },
+    "nodes": {
+     "type": "array",
+     "items": { "$ref": "#/$defs/node" },
+     "description": "the LIVE chunk set (client registries applied) in decision order: the stable step-sorted parse order the dev path re-derives — the temporal chain i->i+1 and all equal-step tie-breaks key on this ordering"
+    },
+    "task_emb": { "$ref": "#/$defs/vec1024", "description": "embedding of the task statement text[:2000] (the first user message); zeros when absent" },
+    "sys_emb": { "$ref": "#/$defs/vec1024", "description": "embedding of the system prompt text[:2000] (the harness hub payload); omitted = zeros" },
+    "mask": {
+     "type": "array",
+     "items": { "type": "integer", "minimum": 0 },
+     "description": "rows of `nodes` to decide (undecided newborns); all other rows return exactly 1000000 (never cut)"
+    },
+    "decided_struct": {
+     "type": "array",
+     "items": { "type": "array", "items": { "type": "number" }, "minItems": 49, "maxItems": 49 },
+     "description": "one 49-col readout row per mask entry (graph-construction.md §1.3), computed client-side where the text lives; width is validated against the bundle's read_struct (422 on drift)"
+    },
+    "edges_supersession": {
+     "type": "array",
+     "items": {
+      "type": "array",
+      "prefixItems": [{ "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 }],
+      "minItems": 2,
+      "maxItems": 2
+     },
+     "description": "client-computed rel-4 pairs [old_src, new_dst] over `nodes` rows — the ONLY text-dependent edge relation (same-file line overlap OR >=0.6 span-set Jaccard, vendored pyg_model.edges semantics). The server sorts pairs lexicographically = the vendored emission order (i asc, j asc), keeping the edge order — and therefore the scatter summation order — bit-identical to the dev path. Required, even when empty: the client must compute it consciously, never default it away."
+    }
+   }
+  },
+  "score_trace_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["scores_q", "tau_q", "checkpoint_id"],
+   "properties": {
+    "scores_q": {
+     "type": "array",
+     "items": { "$ref": "#/$defs/grid_q" },
+     "description": "one per node row; rows outside mask are exactly 1000000 (never cut)"
+    },
+    "tau_q": { "$ref": "#/$defs/grid_q", "description": "the checkpoint's calibrated tau for the serving target_cov — constant per (ckpt, cov)" },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timings_ms": {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": {
+      "embed": { "type": "number", "description": "always 0.0 on v1 — the server embeds nothing (structural)" },
+      "forward": { "type": "number" }
+     }
+    }
+   }
+  },
+  "score_tools_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "checkpoint_id", "nodes", "task_emb", "tools"],
+   "description": "POST /v1/score/tools with contract='brain-api/v1'. Schema nodes attach as task-conditioned causal SINKS (rel 3, task->schema only — never a call->schema edge), exactly the trained attach_tools topology; xe rides the dev path's fp16 round-trip for bit-parity. `nodes` is the tool-spec chunk pipeline view (steps_of pairing; at step 0, mirror the dev fallback of chunking the task text — nodes must be non-empty). No edges_supersession here: rel-4 edges target observation rows only, provably outside the tool rows' receptive field (pinned by the parity gate).",
+   "properties": {
+    "contract": { "const": "brain-api/v1" },
+    "conv_id": { "$ref": "#/$defs/ident" },
+    "checkpoint_id": { "$ref": "#/$defs/checkpoint_id" },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" }, "minItems": 1 },
+    "task_emb": { "$ref": "#/$defs/vec1024" },
+    "sys_emb": { "$ref": "#/$defs/vec1024", "description": "omitted = zeros" },
+    "tools": {
+     "type": "array",
+     "items": { "$ref": "#/$defs/tool" },
+     "description": "the deduped (last-wins) roster in order; [] returns the fail-open shape (names: []) = serve the full roster"
+    }
+   }
+  },
+  "score_tools_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["names", "scores_q", "tokens", "checkpoint_id"],
+   "properties": {
+    "names": {
+     "type": "array",
+     "items": { "$ref": "#/$defs/ident" },
+     "description": "echoes the request roster names, aligned with scores_q/tokens; [] = ineligible, serve full roster (fail-open)"
+    },
+    "scores_q": { "type": "array", "items": { "$ref": "#/$defs/grid_q" } },
+    "tokens": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "echoes the request token masses (the prune ranking unit)" },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+   }
+  }
+ }
 }

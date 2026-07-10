@@ -3,8 +3,22 @@ name = "dasein-bench"
 version = "0.1.0"
 description = "cc-bench harness, grader, arms. Imports the proxy as a black-box client; imported by nothing."
 requires-python = ">=3.11"
-dependencies = [
-    "pydantic>=2",
+# The harness core is pure stdlib (measurement code must not drag deps into
+# the product graph). Real-run extras are opt-in below.
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+# For REAL benchmark runs only (credits + Docker + task repos; see README):
+#   claude-agent-sdk : drives the real `claude` CLI headlessly (cc_runner)
+#   datasets         : SWE-bench instance resolution (cc_runner, prepare_repos)
+#   swebench         : the official grading harness (grader)
+run = [
+    "claude-agent-sdk",
+    "datasets",
+    "swebench",
 ]
 
 [build-system]
@@ -13,3 +27,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dasein_bench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

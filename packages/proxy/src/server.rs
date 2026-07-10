@@ -23,7 +23,7 @@
 //!   anthropic_shapes.py:484 ordering bug, fixed per
 //!   docs/freeze-design.md "Open items").
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -40,18 +40,65 @@ use futures_util::StreamExt;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
+use dasein_engine::freeze::{FreezeConfig, Freezer};
 use dasein_engine::pystr::py_json_dumps;
 
+use crate::brain::{self, BrainConfig, BrainScorer};
+use crate::internal::to_internal;
 use crate::splice::{self, FoldMap};
 
 /// Per-conversation memo. Strictly a cache (see module doc): `folds` are the
 /// exact bytes already served per turn (splice::FoldMap), `last_fps` the
 /// message fingerprints of the last SUCCESSFUL upstream call — the proof of
-/// what Anthropic's cache actually holds.
-#[derive(Default)]
+/// what Anthropic's cache actually holds. `freezer` is the deterministic
+/// fold memo (replayable from scratch — losing it costs brain round trips,
+/// never bytes); `tool_keep` is the once-per-conversation frozen keep-set
+/// (re-pruning per turn would vary the prefix and bust the provider cache).
 pub struct ConvState {
     pub folds: FoldMap,
     pub last_fps: Vec<String>,
+    pub freezer: Option<Freezer<BrainScorer>>,
+    pub tool_keep: Option<HashSet<String>>,
+    /// Eviction clock (reference sessions.py TTL semantics). Memos are pure
+    /// caches, so evicting a live conversation only costs replay round trips
+    /// and one provider-cache re-seed — never bytes.
+    pub touched: std::time::Instant,
+}
+
+impl Default for ConvState {
+    fn default() -> Self {
+        ConvState {
+            folds: FoldMap::default(),
+            last_fps: Vec::new(),
+            freezer: None,
+            tool_keep: None,
+            touched: std::time::Instant::now(),
+        }
+    }
+}
+
+/// Evict conversation memos idle past `ttl`, then oldest-first down to `cap`
+/// (reference: DASEIN_SESSION_TTL_S=3600, DASEIN_SESSION_MAX=512). A
+/// long-lived auto-started proxy must not grow without bound.
+fn evict_stale(
+    convs: &mut HashMap<String, ConvState>,
+    now: std::time::Instant,
+    ttl: std::time::Duration,
+    cap: usize,
+) -> usize {
+    let before = convs.len();
+    convs.retain(|_, cs| now.duration_since(cs.touched) < ttl);
+    if convs.len() > cap {
+        let mut by_age: Vec<(String, std::time::Instant)> = convs
+            .iter()
+            .map(|(k, cs)| (k.clone(), cs.touched))
+            .collect();
+        by_age.sort_by_key(|(_, t)| *t);
+        for (k, _) in by_age.iter().take(convs.len() - cap) {
+            convs.remove(k);
+        }
+    }
+    before - convs.len()
 }
 
 /// Shared proxy state. `convs` uses a std Mutex — every touch is short and
@@ -63,21 +110,69 @@ pub struct AppState {
     /// §8.3: fail-open is a first-class metric, not a silent branch.
     pub fail_open_count: AtomicU64,
     pub ledger_path: PathBuf,
+    /// Real-scorer path (docs/brain-serving-v0.md). None = v0 passthrough
+    /// curation exactly as before.
+    pub brain: Option<BrainConfig>,
+    /// Idle/self-shutdown bookkeeping: epoch-seconds of the last inbound
+    /// request and the number currently in flight.
+    pub last_request_epoch_s: AtomicU64,
+    pub in_flight: AtomicU64,
+}
+
+fn epoch_s() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 impl AppState {
     pub fn new(upstream_base: String, ledger_path: PathBuf) -> Self {
+        Self::with_brain(upstream_base, ledger_path, None)
+    }
+
+    pub fn with_brain(
+        upstream_base: String,
+        ledger_path: PathBuf,
+        brain: Option<BrainConfig>,
+    ) -> Self {
         Self {
             upstream_base,
             client: reqwest::Client::new(),
             convs: Mutex::new(HashMap::new()),
             fail_open_count: AtomicU64::new(0),
             ledger_path,
+            brain,
+            last_request_epoch_s: AtomicU64::new(epoch_s()),
+            in_flight: AtomicU64::new(0),
         }
     }
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.upstream_base.trim_end_matches('/'), path)
+    }
+
+    fn touch(&self) {
+        self.last_request_epoch_s
+            .store(epoch_s(), Ordering::Relaxed);
+    }
+}
+
+/// RAII in-flight marker so the idle-exit sweep never kills a request that
+/// is mid-relay; owns an Arc so it can ride inside a streaming body and keep
+/// the proxy alive until the last SSE byte.
+struct InFlight(Arc<AppState>);
+impl InFlight {
+    fn enter(st: &Arc<AppState>) -> Self {
+        st.touch();
+        st.in_flight.fetch_add(1, Ordering::SeqCst);
+        InFlight(st.clone())
+    }
+}
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.0.in_flight.fetch_sub(1, Ordering::SeqCst);
+        self.0.touch();
     }
 }
 
@@ -92,9 +187,78 @@ pub fn run() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     let ledger = PathBuf::from(home).join(".dasein").join("ledger.jsonl");
-    let state = Arc::new(AppState::new(upstream, ledger));
+    let brain = BrainConfig::from_env();
+    if let Some(b) = &brain {
+        match b.contract {
+            crate::brain::BrainContract::Dev => tracing::info!(
+                url = %b.url, target_cov = %b.target_cov, tool_prune = b.tool_prune,
+                "brain scorer active — DEV RAW-TEXT contract (brain-api-dev/v0), \
+                 our-machines-only posture"
+            ),
+            crate::brain::BrainContract::V1 => tracing::info!(
+                url = %b.url, target_cov = %b.target_cov, tool_prune = b.tool_prune,
+                embed = %b.embed_backend,
+                "brain scorer active — brain-api/v1 (client featurization, \
+                 no raw text on the wire)"
+            ),
+        }
+    }
+    let state = Arc::new(AppState::with_brain(upstream, ledger, brain));
+
+    // Lifecycle dials: DASEIN_PROXY_IDLE_EXIT_S (0/unset = run forever — the
+    // manual default; the plugin's SessionStart auto-start sets 1800 so the
+    // managed proxy also turns itself OFF), plus the reference's conversation
+    // memo bounds (sessions.py: TTL 3600s, max 512).
+    let idle_exit_s: u64 = std::env::var("DASEIN_PROXY_IDLE_EXIT_S")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let ttl_s: u64 = std::env::var("DASEIN_SESSION_TTL_S")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3600);
+    let cap: usize = std::env::var("DASEIN_SESSION_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(512);
+    if idle_exit_s > 0 {
+        tracing::info!("idle self-shutdown armed: exit after {idle_exit_s}s without traffic");
+    }
+
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
+        let maint = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            tick.tick().await; // the immediate first tick
+            loop {
+                tick.tick().await;
+                let evicted = evict_stale(
+                    &mut lock(&maint.convs),
+                    std::time::Instant::now(),
+                    std::time::Duration::from_secs(ttl_s),
+                    cap,
+                );
+                if evicted > 0 {
+                    tracing::info!(
+                        evicted,
+                        "conversation memos evicted (TTL/cap) — \
+                                    pure caches, replayable"
+                    );
+                }
+                if idle_exit_s > 0
+                    && maint.in_flight.load(Ordering::SeqCst) == 0
+                    && epoch_s().saturating_sub(maint.last_request_epoch_s.load(Ordering::Relaxed))
+                        >= idle_exit_s
+                {
+                    tracing::info!(
+                        "no traffic for {idle_exit_s}s and nothing in flight — exiting \
+                         (the plugin SessionStart hook restarts the proxy on demand)"
+                    );
+                    std::process::exit(0);
+                }
+            }
+        });
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
         tracing::info!("dasein proxy listening on 127.0.0.1:{port}");
         axum::serve(listener, router(state)).await?;
@@ -121,14 +285,21 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// anthropic_upstream.AnthropicUpstream._headers, narrowed: forward ONLY the
-/// auth surface — x-api-key, authorization, anthropic-* — verbatim. These
-/// values are never logged or stored (§3: user's own auth headers pass
-/// through, subscription tokens never touch our cloud).
+/// auth surface — x-api-key, authorization, anthropic-* — verbatim, plus the
+/// bench run-id tag `x-ccb-run-id` (the usage gateway keys its per-request
+/// rows by it; the reference forwarded it, and a SHARED gateway below the
+/// proxy cannot isolate runs without it). These values are never logged or
+/// stored (§3: user's own auth headers pass through, subscription tokens
+/// never touch our cloud).
 fn forward_auth_headers(inbound: &HeaderMap) -> HeaderMap {
     let mut out = HeaderMap::new();
     for (name, value) in inbound {
         let n = name.as_str();
-        if n == "x-api-key" || n == "authorization" || n.starts_with("anthropic-") {
+        if n == "x-api-key"
+            || n == "authorization"
+            || n == "x-ccb-run-id"
+            || n.starts_with("anthropic-")
+        {
             out.append(name.clone(), value.clone());
         }
     }
@@ -178,7 +349,57 @@ fn note_fail_open(st: &AppState, why: &str) {
     );
 }
 
+/// §8.1 capture seam: with `DASEIN_RECORD_DIR` set, every real /v1/messages
+/// body is dumped VERBATIM (pre-curation) to `<dir>/<conv_id>/turn_<n>.json`
+/// — a maintainer runs real Claude Code through the proxy once, then feeds
+/// the conversation directory to scripts/record_to_fixture.py. count_tokens
+/// and client-metadata calls never record (they never curate either). The
+/// per-conv counter is the count of files already on disk, so a proxy
+/// restart mid-recording keeps appending instead of overwriting. Fail-open:
+/// a dump error is logged and the request proceeds untouched.
+fn record_inbound(headers: &HeaderMap, body: &Value, raw: &[u8]) {
+    let Some(dir) = std::env::var("DASEIN_RECORD_DIR")
+        .ok()
+        .filter(|d| !d.trim().is_empty())
+    else {
+        return;
+    };
+    let conv_id = conversation_id(headers, &to_internal(body));
+    let res: io::Result<()> = (|| {
+        let d = PathBuf::from(dir.trim()).join(&conv_id);
+        std::fs::create_dir_all(&d)?;
+        let n = std::fs::read_dir(&d)?
+            .filter_map(Result::ok)
+            .filter(|e| {
+                let name = e.file_name();
+                let s = name.to_string_lossy();
+                s.starts_with("turn_") && s.ends_with(".json")
+            })
+            .count()
+            + 1;
+        std::fs::write(d.join(format!("turn_{n}.json")), raw)
+    })();
+    if let Err(e) = res {
+        tracing::warn!("DASEIN_RECORD_DIR dump failed (recording is fail-open): {e}");
+    }
+}
+
 // ── curation plan (spec steps b-d) ──────────────────────────────────────────
+
+/// Capture-seam telemetry for the ledger row (docs/brain-serving-v0.md);
+/// zero-valued fields are omitted from the row.
+#[derive(Default, Clone)]
+struct PlanStats {
+    checkpoint_id: Option<String>,
+    brain_ms: f64,
+    scorer_fail_opens: u64,
+    /// Internal-view chars/4 the freezer trimmed THIS call (uncut − rendered)
+    /// — a diagnostic, never a savings claim (§8.4).
+    freeze_cut_tokens: i64,
+    tools_total: Option<usize>,
+    tools_kept: Option<usize>,
+    tools_pre_prune_sha8: Option<String>,
+}
 
 struct Plan {
     conv_id: String,
@@ -189,35 +410,95 @@ struct Plan {
     /// cachePrefixSha8 bust attribution (§4.3): sha8 over the leading run of
     /// cur_fps proven byte-identical to the prior successful call.
     cache_prefix_sha8: String,
+    stats: PlanStats,
 }
 
-/// v0 curation: PASSTHROUGH-shaped, but through the real machinery. The
-/// internal view is exactly `to_internal`'s text view ([system] + one entry
-/// per message), so apply_curation's `cur_text == content_text(orig)` branch
-/// forwards every turn verbatim while recording folds — the wire freeze is
-/// live from day one even before a curator cuts anything.
-fn curate(st: &AppState, headers: &HeaderMap, body: &Value) -> anyhow::Result<Plan> {
-    let msgs = body
-        .get("messages")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow::anyhow!("body has no messages array"))?;
+/// Internal-view token mass (reference _PROMPT diag: Σ len(_text(m))//4).
+fn internal_mass(msgs: &[Value]) -> i64 {
+    msgs.iter()
+        .map(|m| {
+            let t = match m.get("content") {
+                Some(Value::String(s)) => s.clone(),
+                other => splice::content_text(other),
+            };
+            dasein_engine::pystr::char_len(&t) as i64 / 4
+        })
+        .sum()
+}
 
-    let mut internal: Vec<Value> = Vec::new();
-    let sys_text = splice::system_to_text(body.get("system"));
-    if !sys_text.is_empty() {
-        internal.push(json!({ "content": sys_text }));
+/// Curation: the FULL to_internal view (roles + bash-twin actions) through
+/// the deterministic Freezer when a brain is configured, else the v0
+/// passthrough shape (internal text == original text, so apply_curation's
+/// equality branch forwards every turn verbatim while recording folds — the
+/// wire freeze is live even before a curator cuts anything).
+async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow::Result<Plan> {
+    if body.get("messages").and_then(Value::as_array).is_none() {
+        anyhow::bail!("body has no messages array");
     }
-    for m in msgs {
-        internal.push(json!({ "content": splice::content_text(m.get("content")) }));
-    }
+    let internal = to_internal(body);
     let conv_id = conversation_id(headers, &internal);
+    let mut stats = PlanStats::default();
+    lock(&st.convs).entry(conv_id.clone()).or_default().touched = std::time::Instant::now();
+
+    // sessions.py new-run reset: a request with no assistant turn is turn 1
+    // of a fresh run — stale memos (folds, freezer, tool keep-set) from an
+    // earlier run with the same task head must not leak into it.
+    let has_assistant = internal
+        .iter()
+        .any(|m| m.get("role").and_then(Value::as_str) == Some("assistant"));
+    if !has_assistant {
+        lock(&st.convs).remove(&conv_id);
+    }
+
+    // The Freezer path: serve() replays un-replayed birth steps (brain round
+    // trips) and renders. Runs in spawn_blocking — BrainScorer is a blocking
+    // HTTP client. The freezer is TAKEN from the memo and put back after; a
+    // racing request on the same conversation just rebuilds the memo from
+    // scratch (pure fold — identical bytes, extra latency only).
+    let curated_internal: Vec<Value> = if let Some(bcfg) = &st.brain {
+        let taken = lock(&st.convs)
+            .entry(conv_id.clone())
+            .or_default()
+            .freezer
+            .take();
+        let internal_in = internal.clone();
+        let bcfg2 = bcfg.clone();
+        let conv2 = conv_id.clone();
+        // Freezer (and its blocking HTTP scorer) is built AND driven on a
+        // blocking thread — reqwest::blocking panics on async runtime threads.
+        let (fz, served, fails_before) = tokio::task::spawn_blocking(move || {
+            let mut fz = taken.unwrap_or_else(|| {
+                Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
+            });
+            let fails_before = fz.scorer_fail_opens;
+            let served = fz.serve(&internal_in);
+            (fz, served, fails_before)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("freezer task panicked: {e}"))?;
+        stats.scorer_fail_opens = fz.scorer_fail_opens - fails_before;
+        stats.brain_ms = fz.scorer.stats.brain_ms;
+        stats.checkpoint_id = fz.scorer.stats.checkpoint_id.clone();
+        lock(&st.convs).entry(conv_id.clone()).or_default().freezer = Some(fz);
+        match served {
+            Ok(c) => {
+                stats.freeze_cut_tokens = (internal_mass(&internal) - internal_mass(&c)).max(0);
+                c
+            }
+            // Invalid internal shape: the reference raises out of curate()
+            // before any commit and fails open — same observable behavior.
+            Err(e) => anyhow::bail!("freeze rejected internal view: {e}"),
+        }
+    } else {
+        internal.clone()
+    };
 
     let (mut folds, prior_fps) = {
         let mut convs = lock(&st.convs);
         let cs = convs.entry(conv_id.clone()).or_default();
         (cs.folds.clone(), cs.last_fps.clone())
     };
-    let curated = splice::apply_curation(body, &internal, Some(&mut folds));
+    let curated = splice::apply_curation(body, &curated_internal, Some(&mut folds));
     // Folds MAY commit before the send: they memoize served bytes and replay
     // idempotently — unlike fingerprints, which assert "upstream has cached
     // these bytes" and must wait for the 2xx (see below).
@@ -228,7 +509,82 @@ fn curate(st: &AppState, headers: &HeaderMap, body: &Value) -> anyhow::Result<Pl
     } else {
         Some(prior_fps.as_slice())
     };
-    let (out, cur_fps) = splice::place_cache_breakpoint(&curated, false, prior);
+    let (mut out, cur_fps) = splice::place_cache_breakpoint(&curated, false, prior);
+
+    // Tool-schema keep-set (reference _prepare_anthropic step 10): score the
+    // roster ONCE per conversation via the brain tool head, freeze the
+    // keep-set, filter every later request against it. Fail-open at every
+    // seam: scoring failure = full roster + retry next request. Added guard
+    // vs the reference: a client-forced tool_choice is served the full
+    // roster (the reference could 400 upstream on a pruned forced tool).
+    if let Some(bcfg) = &st.brain {
+        if bcfg.tool_prune {
+            if let Some(tools) = body
+                .get("tools")
+                .filter(|t| t.as_array().is_some_and(|a| !a.is_empty()))
+            {
+                stats.tools_total = Some(tools.as_array().map(|a| a.len()).unwrap_or(0));
+                stats.tools_pre_prune_sha8 = Some(brain::roster_sha8(tools));
+                let keep = lock(&st.convs)
+                    .entry(conv_id.clone())
+                    .or_default()
+                    .tool_keep
+                    .clone();
+                let keep = match keep {
+                    Some(k) => Some(k),
+                    None => {
+                        match brain::score_tools(&st.client, bcfg, &conv_id, &internal, tools).await
+                        {
+                            Some(ts) => {
+                                let res = brain::prune(
+                                    &ts.scores_q,
+                                    &ts.tokens,
+                                    &ts.names,
+                                    bcfg.tool_cut,
+                                );
+                                let kset: HashSet<String> = res.keep.iter().cloned().collect();
+                                tracing::info!(
+                                    conv = %conv_id,
+                                    kept = res.keep.len(),
+                                    total = ts.names.len(),
+                                    saved_tok = res.tokens_saved,
+                                    "tool-prune keep-set frozen"
+                                );
+                                lock(&st.convs)
+                                    .entry(conv_id.clone())
+                                    .or_default()
+                                    .tool_keep = Some(kset.clone());
+                                Some(kset)
+                            }
+                            None => None,
+                        }
+                    }
+                };
+                let forced =
+                    body.pointer("/tool_choice/type").and_then(Value::as_str) == Some("tool");
+                if let (Some(keep), false) = (keep, forced) {
+                    let src: Vec<Value> = out
+                        .get("tools")
+                        .or(Some(tools))
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    let kept: Vec<Value> = src
+                        .into_iter()
+                        .filter(|t| {
+                            t.get("name")
+                                .and_then(Value::as_str)
+                                .is_some_and(|n| keep.contains(n))
+                        })
+                        .collect();
+                    stats.tools_kept = Some(kept.len());
+                    if let Some(o) = out.as_object_mut() {
+                        o.insert("tools".into(), Value::Array(kept));
+                    }
+                }
+            }
+        }
+    }
 
     let frozen = cur_fps
         .iter()
@@ -242,7 +598,17 @@ fn curate(st: &AppState, headers: &HeaderMap, body: &Value) -> anyhow::Result<Pl
         out_bytes: serde_json::to_vec(&out)?,
         cur_fps,
         cache_prefix_sha8,
+        stats,
     })
+}
+
+/// curating_proxy._is_client_metadata_call: Claude Code housekeeping (title
+/// generation / topic detection) is forwarded untouched and unbilled — it
+/// must never advance curation state or pollute the ledger.
+fn is_client_metadata_call(body: &Value) -> bool {
+    let sys = splice::system_to_text(body.get("system")).to_lowercase();
+    (sys.contains("generate a concise") && sys.contains("title"))
+        || sys.contains("main topic or goal of this coding session")
 }
 
 // ── §8.4 count_tokens counterfactual ────────────────────────────────────────
@@ -250,19 +616,49 @@ fn curate(st: &AppState, headers: &HeaderMap, body: &Value) -> anyhow::Result<Pl
 /// Free probe: the ORIGINAL inbound body against upstream count_tokens. Any
 /// failure returns None — the ledger records null, never an estimate (§8.4).
 async fn count_tokens_probe(st: &AppState, headers: &HeaderMap, raw: Bytes) -> Option<i64> {
-    let resp = st
+    let resp = match st
         .client
         .post(st.url("/v1/messages/count_tokens"))
         .headers(forward_auth_headers(headers))
         .body(raw)
         .send()
         .await
-        .ok()?;
-    if !resp.status().is_success() {
+    {
+        Ok(r) => r,
+        Err(e) => {
+            probe_failure_diagnosis(&format!("transport: {e}"));
+            return None;
+        }
+    };
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        probe_failure_diagnosis(&format!(
+            "{status}: {}",
+            body.chars().take(200).collect::<String>()
+        ));
         return None;
     }
     let v: Value = resp.json().await.ok()?;
     v.get("input_tokens").and_then(Value::as_i64)
+}
+
+/// A failing probe silently nulls every savings number (§8.4 forbids
+/// estimating), so the FIRST failure per process explains itself loudly —
+/// e.g. an OAuth token whose scope rejects count_tokens; later failures
+/// stay at debug to keep the log readable.
+fn probe_failure_diagnosis(why: &str) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    let mut first = false;
+    ONCE.call_once(|| first = true);
+    if first {
+        tracing::warn!(
+            "count_tokens counterfactual probe FAILED ({why}) — savings will read as \
+             unmeasured (null) until this resolves; trimming itself is unaffected"
+        );
+    } else {
+        tracing::debug!("count_tokens probe failed: {why}");
+    }
 }
 
 // ── savings ledger (contracts/schemas/savings-ledger.schema.json v0) ────────
@@ -310,21 +706,33 @@ fn rfc3339_now() -> String {
 /// packages/contracts/schemas/savings-ledger.schema.json (flat `billed_*`,
 /// `cachePrefixSha8`, RFC3339 `ts`). `counterfactual_input_tokens` is null
 /// when the probe failed — measurement honesty (§8.4) forbids estimating.
+/// Row identity, owned so the streaming finalizer can carry it to stream end.
+#[derive(Clone)]
+struct RowCtx {
+    conv_id: String,
+    model: Option<String>,
+    cache_prefix_sha8: String,
+    fail_open: bool,
+}
+
 fn write_ledger(
     st: &AppState,
-    conv_id: &str,
+    ctx: &RowCtx,
     counterfactual: Option<i64>,
     usage: Option<&Value>,
-    cache_prefix_sha8: &str,
-    fail_open: bool,
+    stats: &PlanStats,
 ) {
+    let conv_id = ctx.conv_id.as_str();
+    let model = ctx.model.as_deref();
+    let cache_prefix_sha8 = ctx.cache_prefix_sha8.as_str();
+    let fail_open = ctx.fail_open;
     let g = |k: &str| {
         usage
             .and_then(|u| u.get(k))
             .and_then(Value::as_i64)
             .unwrap_or(0)
     };
-    let row = json!({
+    let mut row = json!({
         "contract_version": "savings-ledger/v0",
         "request_id": request_id(),
         "ts": rfc3339_now(),
@@ -337,6 +745,65 @@ fn write_ledger(
         "cachePrefixSha8": cache_prefix_sha8,
         "fail_open": fail_open,
     });
+
+    // The live savings line — what `tail -f ~/.dasein/proxy.log` (or the
+    // proxy terminal) shows per request. Token-denominated per §8.4; the
+    // input-side billed sum is uncached + cache read + cache write.
+    let billed_side =
+        g("input_tokens") + g("cache_read_input_tokens") + g("cache_creation_input_tokens");
+    match counterfactual {
+        Some(cf) => tracing::info!(
+            conv = %&conv_id[..conv_id.len().min(12)],
+            model = model.unwrap_or("?"),
+            counterfactual_in = cf,
+            billed_in = g("input_tokens"),
+            cache_read = g("cache_read_input_tokens"),
+            cache_write = g("cache_creation_input_tokens"),
+            out = g("output_tokens"),
+            saved = cf - billed_side,
+            fail_open,
+            "request served — ~{} input tok avoided", cf - billed_side
+        ),
+        None => tracing::info!(
+            conv = %&conv_id[..conv_id.len().min(12)],
+            model = model.unwrap_or("?"),
+            billed_in = g("input_tokens"),
+            fail_open,
+            "request served — probe null, savings unmeasured (§8.4: never estimated)"
+        ),
+    }
+
+    // Capture seams (savings-ledger optional fields): present only when the
+    // real-scorer path ran — old rows stay schema-identical.
+    if let Some(o) = row.as_object_mut() {
+        if let Some(m) = model {
+            o.insert("model".into(), json!(m));
+        }
+        if let Some(ck) = &stats.checkpoint_id {
+            o.insert("checkpoint_id".into(), json!(ck));
+        }
+        if stats.brain_ms > 0.0 {
+            o.insert(
+                "brain_ms".into(),
+                json!((stats.brain_ms * 10.0).round() / 10.0),
+            );
+        }
+        if stats.scorer_fail_opens > 0 {
+            o.insert("scorer_fail_opens".into(), json!(stats.scorer_fail_opens));
+        }
+        if stats.freeze_cut_tokens > 0 {
+            o.insert("freeze_cut_tokens".into(), json!(stats.freeze_cut_tokens));
+        }
+        if let Some(t) = stats.tools_total {
+            o.insert("tools_total".into(), json!(t));
+        }
+        if let Some(k) = stats.tools_kept {
+            o.insert("tools_kept".into(), json!(k));
+        }
+        if let Some(s8) = &stats.tools_pre_prune_sha8 {
+            o.insert("tools_pre_prune_sha8".into(), json!(s8));
+        }
+    }
     if let Some(dir) = st.ledger_path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -435,6 +902,7 @@ async fn count_tokens_passthrough(
     headers: HeaderMap,
     raw: Bytes,
 ) -> Response {
+    let _guard = InFlight::enter(&st);
     relay_buffered(&st, "/v1/messages/count_tokens", &headers, raw).await
 }
 
@@ -483,12 +951,23 @@ fn bad_gateway(e: &reqwest::Error) -> Response {
 /// forward → relay → ledger), with the §8.3 fail-open floor around every
 /// internal step.
 async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Bytes) -> Response {
+    let _guard = InFlight::enter(&st);
     let body: Option<Value> = serde_json::from_slice(&raw).ok();
 
-    // (b-d) conversation id, v0 curation, breakpoint placement — any error
-    // here means forwarding the ORIGINAL body verbatim (fail-open, counted).
+    // Claude Code housekeeping (title/topic generation): forwarded untouched
+    // and unbilled — no curation state advance, no probe, no ledger row.
+    if let Some(b) = body.as_ref() {
+        if is_client_metadata_call(b) {
+            return relay_buffered(&st, "/v1/messages", &headers, raw).await;
+        }
+        record_inbound(&headers, b, &raw);
+    }
+
+    // (b-d) conversation id, curation (freeze when a brain is configured),
+    // breakpoint placement, tool keep-set — any error here means forwarding
+    // the ORIGINAL body verbatim (fail-open, counted).
     let plan = match body.as_ref() {
-        Some(b) => match curate(&st, &headers, b) {
+        Some(b) => match curate(&st, &headers, b).await {
             Ok(p) => Some(p),
             Err(e) => {
                 note_fail_open(&st, &format!("curation failed: {e}"));
@@ -501,6 +980,7 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         }
     };
     let fail_open = plan.is_none();
+    let stats = plan.as_ref().map(|p| p.stats.clone()).unwrap_or_default();
 
     // (e) §8.4 counterfactual — always on the ORIGINAL inbound bytes.
     let counterfactual = count_tokens_probe(&st, &headers, raw.clone()).await;
@@ -536,11 +1016,19 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         }
     }
 
-    let conv_id = plan.as_ref().map(|p| p.conv_id.clone()).unwrap_or_default();
-    let sha8 = plan
-        .as_ref()
-        .map(|p| p.cache_prefix_sha8.clone())
-        .unwrap_or_else(|| sha8_of_fps(std::iter::empty()));
+    let row_ctx = RowCtx {
+        conv_id: plan.as_ref().map(|p| p.conv_id.clone()).unwrap_or_default(),
+        model: body
+            .as_ref()
+            .and_then(|b| b.get("model"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        cache_prefix_sha8: plan
+            .as_ref()
+            .map(|p| p.cache_prefix_sha8.clone())
+            .unwrap_or_else(|| sha8_of_fps(std::iter::empty())),
+        fail_open,
+    };
 
     let wants_stream = body
         .as_ref()
@@ -561,16 +1049,13 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
             r.map_err(io::Error::other)
         });
         let st2 = st.clone();
+        // The stream outlives this handler; its own guard keeps the idle
+        // sweep from shooting the proxy mid-SSE.
+        let stream_guard = InFlight::enter(&st);
         let finalize = futures_util::stream::once(async move {
+            let _guard = stream_guard;
             let usage = lock(&scan).finish();
-            write_ledger(
-                &st2,
-                &conv_id,
-                counterfactual,
-                usage.as_ref(),
-                &sha8,
-                fail_open,
-            );
+            write_ledger(&st2, &row_ctx, counterfactual, usage.as_ref(), &stats);
             Ok::<Bytes, io::Error>(Bytes::new())
         });
         return respond(status, ct, Body::from_stream(tee.chain(finalize)));
@@ -585,13 +1070,31 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
     } else {
         None
     };
-    write_ledger(
-        &st,
-        &conv_id,
-        counterfactual,
-        usage.as_ref(),
-        &sha8,
-        fail_open,
-    );
+    write_ledger(&st, &row_ctx, counterfactual, usage.as_ref(), &stats);
     respond(status, ct, Body::from(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evict_stale_applies_ttl_then_cap_oldest_first() {
+        let now = std::time::Instant::now();
+        let old = now - std::time::Duration::from_secs(4000);
+        let mid = now - std::time::Duration::from_secs(120);
+        let mut convs: HashMap<String, ConvState> = HashMap::new();
+        for (k, t) in [("expired", old), ("warm", mid), ("hot", now)] {
+            let cs = ConvState {
+                touched: t,
+                ..Default::default()
+            };
+            convs.insert(k.to_string(), cs);
+        }
+        // TTL evicts "expired"; cap 1 then drops the older survivor ("warm").
+        let evicted = evict_stale(&mut convs, now, std::time::Duration::from_secs(3600), 1);
+        assert_eq!(evicted, 2);
+        assert!(convs.contains_key("hot"));
+        assert_eq!(convs.len(), 1);
+    }
 }

@@ -1,0 +1,93 @@
+{
+  "score_trace_request": {
+    "contract": "brain-api-dev/v0",
+    "conv_id": "a1b2c3d4e5f60718293a4b5c",
+    "messages": [
+      { "role": "system", "content": "You are a coding agent." },
+      { "role": "user", "content": "Fix the failing test in parser.py" },
+      {
+        "role": "assistant",
+        "content": "Let me look at the file.",
+        "tool_calls": [
+          {
+            "id": "toolu_01",
+            "type": "function",
+            "function": { "name": "Read", "arguments": "{\"file_path\": \"src/parser.py\"}" }
+          }
+        ],
+        "extra": {
+          "actions": [
+            { "tool": "Read", "name": "Read", "file_path": "src/parser.py", "command": "cat src/parser.py" }
+          ]
+        }
+      },
+      { "role": "user", "content": "1: def parse(x):\n2:    return x.split(',')\n3: # TODO handle quotes" }
+    ],
+    "live_gi": [0],
+    "mask": [0],
+    "cur_step": 1,
+    "chunk_checksum": "9c4f2a11b3d5e6f7a8091a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+    "target_cov": "0.70"
+  },
+  "score_trace_response": {
+    "scores_q": [412873],
+    "tau_q": 315265,
+    "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8",
+    "timings_ms": { "embed": 41.2, "forward": 18.7 }
+  },
+  "score_tools_request": {
+    "contract": "brain-api-dev/v0",
+    "conv_id": "a1b2c3d4e5f60718293a4b5c",
+    "messages": [
+      { "role": "user", "content": "Fix the failing test in parser.py" }
+    ],
+    "tools": [
+      { "name": "Read", "description": "Reads a file", "input_schema": { "type": "object" } },
+      { "name": "Bash", "description": "Runs a command", "input_schema": { "type": "object" } }
+    ]
+  },
+  "score_tools_response": {
+    "names": ["Read", "Bash"],
+    "scores_q": [998210, 973402],
+    "tokens": [24, 22],
+    "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8"
+  },
+  "score_rules_request": {
+    "contract": "brain-api-dev/v0",
+    "conv_id": "a1b2c3d4e5f60718293a4b5c",
+    "messages": [
+      { "role": "user", "content": "Fix the failing test in parser.py" }
+    ],
+    "tools": [
+      { "name": "Read", "description": "Reads a file", "input_schema": { "type": "object" } }
+    ],
+    "rules": [
+      { "eid": "rule7", "text": "Verify the module is importable before declaring the fix done." }
+    ],
+    "step": 4
+  },
+  "score_rules_response": {
+    "scores_q": { "rule7": 133310 },
+    "tau_hint_q": 150000,
+    "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8",
+    "description": "tau_hint_q is advisory (rule-head handoff ~0.15; scores are compressed, ranking is the signal) — the firing tau MUST be bench-calibrated before any consumer fires on it. No proxy consumer is wired to this head yet. scores_q == {} means ineligible/failed: fail open (ungated fire is the baseline)."
+  },
+  "score_gate_request": {
+    "contract": "brain-api-dev/v0",
+    "conv_id": "a1b2c3d4e5f60718293a4b5c",
+    "messages": [
+      { "role": "user", "content": "Fix the failing test in parser.py" }
+    ],
+    "tools": [
+      { "name": "Read", "description": "Reads a file", "input_schema": { "type": "object" } }
+    ],
+    "brief": "Scout brief: parse() drops quoted fields; see tests/test_parser.py::test_quotes."
+  },
+  "score_gate_response": {
+    "score_q": 487735,
+    "tau_q": 500000,
+    "fire": false,
+    "fail_open": false,
+    "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8"
+  }
+}

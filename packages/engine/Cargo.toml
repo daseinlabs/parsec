@@ -1,6 +1,6 @@
 [package]
 name = "dasein-engine"
-description = "Client-side deterministic core: chunking, local embedding, freezing, feature extraction. No network, no torch."
+description = "Client-side deterministic core: chunking, local embedding, freezing, feature extraction. No torch; the only network code is embed::RemoteEmbedder (dev fallback)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -24,4 +24,16 @@ tree-sitter-rust = "0.23"
 tree-sitter-java = "0.23"
 tree-sitter-c = "0.23"
 tree-sitter-cpp = "0.23"
-# planned: ort (ONNX embedder) — lands with the embedder retrain
+# embed::RemoteEmbedder (dasein-embed /embed JSON path — dev fallback)
+reqwest.workspace = true
+# embed::OnnxEmbedder — compile-gated so default builds stay light; a local
+# bge-large export may only ship once it passes scripts/embed/parity_gate.py
+ort = { version = "2.0.0-rc.12", optional = true }
+tokenizers = { version = "0.23", optional = true }
+
+[features]
+onnx = ["dep:ort", "dep:tokenizers"]
+
+[[example]]
+name = "onnx_battery"
+required-features = ["onnx"]

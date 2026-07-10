@@ -74,10 +74,118 @@ pub fn run(event: &str) -> anyhow::Result<()> {
         }
         "SessionStart" => {
             prune_sessions(7);
+            if let Some(msg) = maybe_autostart_proxy() {
+                println!(
+                    "{}",
+                    json!({ "systemMessage": msg, "suppressOutput": true })
+                );
+            }
         }
         _ => {}
     }
     Ok(())
+}
+
+/// The Pro flip-on (DIRECTION.md §7: "plugin → proxy (manages)"): when this
+/// session is ROUTED through a local dasein proxy (ANTHROPIC_BASE_URL points
+/// at a loopback port) and nothing is listening there yet, spawn
+/// `dasein proxy` detached so the session's first request doesn't hit a dead
+/// port. The hook inherits the session env, so DASEIN_BRAIN_URL /
+/// DASEIN_BRAIN_CONTRACT / DASEIN_EMBED_* configured in settings.json `env`
+/// flow into the spawned proxy. What a hook CANNOT do is set
+/// ANTHROPIC_BASE_URL itself — routing must exist at launch (settings env or
+/// shell). Opt out with DASEIN_PROXY_AUTOSTART=0. Returns a user-visible
+/// message when it acted (or failed — a dead routed port breaks the session,
+/// which must never be silent).
+fn maybe_autostart_proxy() -> Option<String> {
+    if std::env::var("DASEIN_PROXY_AUTOSTART").ok().as_deref() == Some("0") {
+        return None;
+    }
+    let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
+    let port = local_proxy_port(&base)?;
+    if port_listening(port) {
+        return None; // already up (ours or the user's own) — never double-spawn
+    }
+    let exe = std::env::current_exe().ok()?;
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let log_dir = std::path::PathBuf::from(&home).join(".dasein");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_path = log_dir.join("proxy.log");
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok()?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("proxy")
+        .env("DASEIN_PROXY_PORT", port.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::from(log.try_clone().ok()?))
+        .stderr(std::process::Stdio::from(log));
+    // A MANAGED proxy also turns itself off: 30 min without traffic and it
+    // exits (this hook revives it next session). A user-set value wins;
+    // manual `dasein proxy` runs keep the run-forever default.
+    if std::env::var("DASEIN_PROXY_IDLE_EXIT_S").is_err() {
+        cmd.env("DASEIN_PROXY_IDLE_EXIT_S", "1800");
+    }
+    #[cfg(unix)]
+    {
+        // Own process group: the proxy outlives this hook AND the session —
+        // it is a local service, idle-cheap (~10MB), reused by the next one.
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    }
+    if let Err(e) = cmd.spawn() {
+        return Some(format!(
+            "⌁ dasein: ANTHROPIC_BASE_URL routes through 127.0.0.1:{port} but the proxy \
+             FAILED to start ({e}) — API requests will fail until you run `dasein proxy` \
+             (log: {})",
+            log_path.display()
+        ));
+    }
+    for _ in 0..40 {
+        if port_listening(port) {
+            let brain = std::env::var("DASEIN_BRAIN_URL").ok();
+            return Some(match brain {
+                Some(b) => format!(
+                    "⌁ dasein proxy auto-started on 127.0.0.1:{port} (brain: {b}; \
+                     log: {})",
+                    log_path.display()
+                ),
+                None => format!(
+                    "⌁ dasein proxy auto-started on 127.0.0.1:{port} in passthrough mode — \
+                     set DASEIN_BRAIN_URL to enable curation (log: {})",
+                    log_path.display()
+                ),
+            });
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    Some(format!(
+        "⌁ dasein: proxy spawned for 127.0.0.1:{port} but never came up — API requests \
+         will fail; check {}",
+        log_path.display()
+    ))
+}
+
+/// The port when `base` is a local dasein-proxy-shaped URL: plain http on
+/// IPv4 loopback with an explicit port. Anything else (real API, remote
+/// gateways, https, IPv6 — the proxy binds 127.0.0.1 only) is not ours to
+/// manage.
+fn local_proxy_port(base: &str) -> Option<u16> {
+    let rest = base.trim().trim_end_matches('/').strip_prefix("http://")?;
+    let (host, port) = rest.split_once(':')?;
+    if !matches!(host, "127.0.0.1" | "localhost") {
+        return None;
+    }
+    port.parse().ok()
+}
+
+fn port_listening(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
 }
 
 fn record_post(st: &mut SessionState, tool: &str, tool_input: &Value, cwd: &str) {
@@ -104,5 +212,23 @@ fn record_post(st: &mut SessionState, tool: &str, tool_input: &Value, cwd: &str)
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::local_proxy_port;
+
+    #[test]
+    fn only_loopback_http_urls_are_managed() {
+        assert_eq!(local_proxy_port("http://127.0.0.1:8082"), Some(8082));
+        assert_eq!(local_proxy_port("http://localhost:8082/"), Some(8082));
+        // the proxy binds IPv4 loopback only — IPv6 base URLs are not managed
+        assert_eq!(local_proxy_port("http://[::1]:9000"), None);
+        assert_eq!(local_proxy_port("https://127.0.0.1:8082"), None); // https = not ours
+        assert_eq!(local_proxy_port("http://api.anthropic.com"), None);
+        assert_eq!(local_proxy_port("http://127.0.0.1"), None); // no explicit port
+        assert_eq!(local_proxy_port("http://192.168.1.5:8082"), None); // not loopback
+        assert_eq!(local_proxy_port("http://127.0.0.1:notaport"), None);
     }
 }

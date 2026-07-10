@@ -68,6 +68,46 @@
    "type": "string",
    "maxLength": 128,
    "description": "Proxy conversation identity (hash-derived; no raw content)."
+  },
+  "model": {
+   "type": "string",
+   "maxLength": 128,
+   "description": "The request's model id (a harness identifier, not content) — enables per-model reporting and honest dollarization via a price table (packages/bench pricing owns prices; the ledger stays token-denominated per §8.4)."
+  },
+  "checkpoint_id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$",
+   "description": "sha256 of the brain checkpoint bundle that scored this request (capture seam: served-cut provenance). Absent on passthrough-only requests."
+  },
+  "brain_ms": {
+   "type": "number",
+   "minimum": 0,
+   "description": "Wall time spent in brain scoring calls this request."
+  },
+  "scorer_fail_opens": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Birth steps left undecided this request because the scorer errored (§8.3 — counted, retried on a later call, never guessed)."
+  },
+  "freeze_cut_tokens": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Estimated token mass of chunks the freezer dropped across the conversation so far (internal-view chars/4 units, NOT billed tokens — savings claims come only from the counterfactual)."
+  },
+  "tools_total": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Tool schemas on the inbound request (pre-prune roster size; capture seam TRAINING_CAPTURE_GAPS #1)."
+  },
+  "tools_kept": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Tool schemas actually forwarded after the frozen keep-set filter."
+  },
+  "tools_pre_prune_sha8": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{8}$",
+   "description": "Hash of the pre-prune roster (sorted names) — joins served traffic back to the full-roster identity without storing schemas."
   }
  }
 }

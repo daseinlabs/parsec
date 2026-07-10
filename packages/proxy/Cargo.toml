@@ -18,6 +18,7 @@ serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 sha2 = "0.10"
 regex = "1"
@@ -26,3 +27,8 @@ axum.workspace = true
 reqwest.workspace = true
 futures-util.workspace = true
 # planned: rmcp (MCP) — added with the port
+
+[features]
+# v1-contract local ONNX embedder (forwards the engine gate); default builds
+# stay light — see docs/brain-serving-v0.md "v1 migration status" appendix.
+onnx = ["dasein-engine/onnx"]

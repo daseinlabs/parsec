@@ -232,6 +232,7 @@ async fn auth_headers_forwarded_and_anchors_added() {
             ("authorization", "Bearer tok-456"),
             ("anthropic-version", "2023-06-01"),
             ("anthropic-beta", "prompt-caching-2024"),
+            ("x-ccb-run-id", "bench-run-42"),
             ("x-unrelated", "should-not-forward"),
         ],
     )
@@ -245,11 +246,16 @@ async fn auth_headers_forwarded_and_anchors_added() {
     assert_eq!(r.header("authorization"), Some("Bearer tok-456"));
     assert_eq!(r.header("anthropic-version"), Some("2023-06-01"));
     assert_eq!(r.header("anthropic-beta"), Some("prompt-caching-2024"));
+    // the bench run-id tag rides upstream: the usage gateway below the proxy
+    // keys its per-request rows by it (the reference forwarded it; a SHARED
+    // gateway cannot isolate the dasein arm's rows without it)
+    assert_eq!(r.header("x-ccb-run-id"), Some("bench-run-42"));
     assert_eq!(r.header("x-unrelated"), None);
-    // the counterfactual probe carried the same auth
+    // the counterfactual probe carried the same auth + run-id tag
     let ct = ctx.mock.count_tokens();
     assert_eq!(ct.len(), 1);
     assert_eq!(ct[0].header("x-api-key"), Some("sk-ant-test-123"));
+    assert_eq!(ct[0].header("x-ccb-run-id"), Some("bench-run-42"));
 
     let sent = r.body();
     // system anchored (run-stable block) and the tail message anchored

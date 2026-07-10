@@ -1,0 +1,490 @@
+{
+ "cases": [
+  {
+   "name": "line_overlap",
+   "chunks": [
+    {
+     "text": "import os\nfrom collections import defaultdict\n\ndef alpha(x):\n    if x > 0:\n        return process_records(x) * 2\n    return -x\n\nclass Beta:\n    def method(self, y):\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total",
+     "file": "app.py",
+     "lo": 1,
+     "hi": 14,
+     "step": 0,
+     "kind": "read",
+     "tokens": 65,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "\nclass Beta:\n    def method(self, y):\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total",
+     "file": "app.py",
+     "lo": 8,
+     "hi": 14,
+     "step": 1,
+     "kind": "read",
+     "tokens": 33,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "import os\nfrom collections import defaultdict\n\ndef alpha(x):\n    if x > 0:\n        return process_records(x) * 2\n    return -x\n\nclass Beta:\n    def method(self, y):\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total",
+     "file": "app.py",
+     "lo": 1,
+     "hi": 14,
+     "step": 2,
+     "kind": "read",
+     "tokens": 65,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "unrelated tail words",
+     "file": "app.py",
+     "lo": 12,
+     "hi": 14,
+     "step": 3,
+     "kind": "read",
+     "tokens": 5,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     2
+    ],
+    [
+     1,
+     2
+    ]
+   ]
+  },
+  {
+   "name": "jaccard",
+   "chunks": [
+    {
+     "text": "run_batch load_shard normalize_rows validate_schema parse_config",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 16,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "run_batch load_shard normalize_rows validate_schema parse_configs!",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "other",
+     "tokens": 16,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "totally_different words_here nothing_shared at_all_zone",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "run_batch load_shard normalize_rows validate_schema parse_config",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "reasoning",
+     "tokens": 16,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     1
+    ],
+    [
+     0,
+     3
+    ],
+    [
+     1,
+     3
+    ]
+   ]
+  },
+  {
+   "name": "empty_basename",
+   "chunks": [
+    {
+     "text": "alpha_span beta_span gamma_span delta_span",
+     "file": "",
+     "lo": 1,
+     "hi": 4,
+     "step": 0,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "alpha_span beta_span gamma_span delta_span",
+     "file": "",
+     "lo": 2,
+     "hi": 5,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "alpha_span beta_span gamma_span delta_span",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 4,
+     "step": 2,
+     "kind": "read",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "alpha_span beta_span gamma_span delta_span",
+     "file": "q.py",
+     "lo": 2,
+     "hi": 5,
+     "step": 3,
+     "kind": "read",
+     "tokens": 10,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     1
+    ],
+    [
+     0,
+     2
+    ],
+    [
+     0,
+     3
+    ],
+    [
+     1,
+     2
+    ],
+    [
+     1,
+     3
+    ],
+    [
+     2,
+     3
+    ]
+   ]
+  },
+  {
+   "name": "same_step_and_order",
+   "chunks": [
+    {
+     "text": "run_batch load_shard normalize_rows validate_schema parse_config",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "other",
+     "tokens": 16,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "run_batch load_shard normalize_rows validate_schema parse_config",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "other",
+     "tokens": 16,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "run_batch load_shard normalize_rows validate_schema parse_config",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "other",
+     "tokens": 16,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ],
+   "expected": [
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "lo_none",
+   "chunks": [
+    {
+     "text": "import os\nfrom collections import defaultdict\n\ndef alpha(x):\n    if x > 0:\n        return process_records(x) * 2\n    return -x\n\nclass Beta:\n    def method(self, y):\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total",
+     "file": "app.py",
+     "lo": null,
+     "hi": null,
+     "step": 0,
+     "kind": "read",
+     "tokens": 65,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "import os\nfrom collections import defaultdict\n\ndef alpha(x):\n    if x > 0:\n        return process_records(x) * 2\n    return -x\n\nclass Beta:\n    def method(self, y):\n        total = 0\n        for i in range(y):\n            total += alpha(i)\n        return total",
+     "file": "app.py",
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "read",
+     "tokens": 65,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "totally_different words_here nothing_shared at_all_zone",
+     "file": "app.py",
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "read",
+     "tokens": 13,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "parsed_reread",
+   "chunks": [
+    {
+     "text": "returncode: 0\ndef f0(x):\n    return g0(x)\ndef f1(x):\n    return g1(x)\ndef f2(x):\n    return g2(x)\ndef f3(x):\n    return g3(x)\ndef f4(x):",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 1,
+     "kind": "read",
+     "tokens": 34,
+     "evict": "content",
+     "cmd": "cat q.py",
+     "rc": 0,
+     "head": "returncode: 0\ndef f0(x):\n    return g0(x)\ndef f1(x):\n    return g1(x)\ndef f2(x):\n    return g2(x)\ndef f3(x):\n    return g3(x)\ndef f4(x):\n    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "struct_class": ""
+    },
+    {
+     "text": "    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "file": "q.py",
+     "lo": 11,
+     "hi": 17,
+     "step": 1,
+     "kind": "read",
+     "tokens": 25,
+     "evict": "content",
+     "cmd": "cat q.py",
+     "rc": 0,
+     "head": "returncode: 0\ndef f0(x):\n    return g0(x)\ndef f1(x):\n    return g1(x)\ndef f2(x):\n    return g2(x)\ndef f3(x):\n    return g3(x)\ndef f4(x):\n    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "struct_class": ""
+    },
+    {
+     "text": "Read it.",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "asst",
+     "tokens": 2,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "returncode: 0\ndef f4(x):\n    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "file": "q.py",
+     "lo": 9,
+     "hi": 17,
+     "step": 2,
+     "kind": "read",
+     "tokens": 31,
+     "evict": "content",
+     "cmd": "sed -n '9,16p' q.py",
+     "rc": 0,
+     "head": "returncode: 0\ndef f4(x):\n    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "struct_class": ""
+    },
+    {
+     "text": "Check the tail.",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "asst",
+     "tokens": 3,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    },
+    {
+     "text": "returncode: 0\ndef f0(x):\n    return g0(x)\ndef f1(x):\n    return g1(x)\ndef f2(x):\n    return g2(x)\ndef f3(x):\n    return g3(x)\ndef f4(x):",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 3,
+     "kind": "read",
+     "tokens": 34,
+     "evict": "content",
+     "cmd": "cat q.py",
+     "rc": 0,
+     "head": "returncode: 0\ndef f0(x):\n    return g0(x)\ndef f1(x):\n    return g1(x)\ndef f2(x):\n    return g2(x)\ndef f3(x):\n    return g3(x)\ndef f4(x):\n    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "struct_class": ""
+    },
+    {
+     "text": "    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "file": "q.py",
+     "lo": 11,
+     "hi": 17,
+     "step": 3,
+     "kind": "read",
+     "tokens": 25,
+     "evict": "content",
+     "cmd": "cat q.py",
+     "rc": 0,
+     "head": "returncode: 0\ndef f0(x):\n    return g0(x)\ndef f1(x):\n    return g1(x)\ndef f2(x):\n    return g2(x)\ndef f3(x):\n    return g3(x)\ndef f4(x):\n    return g4(x)\ndef f5(x):\n    return g5(x)\ndef f6(x):\n    return g6(x)\ndef f7(x):\n    return g7(x)",
+     "struct_class": ""
+    },
+    {
+     "text": "Re-read the whole file.",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "asst",
+     "tokens": 5,
+     "evict": "content",
+     "cmd": "",
+     "rc": null,
+     "head": "",
+     "struct_class": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     3
+    ],
+    [
+     0,
+     5
+    ],
+    [
+     1,
+     3
+    ],
+    [
+     1,
+     6
+    ],
+    [
+     3,
+     5
+    ],
+    [
+     3,
+     6
+    ]
+   ]
+  }
+ ]
+}

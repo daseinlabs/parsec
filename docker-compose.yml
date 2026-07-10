@@ -1,0 +1,32 @@
+# Local backend for MANUAL testing (docs/manual-testing.md). Not a deployment:
+# this runs the brain on YOUR machine; the data-plane proxy stays a host
+# process (`scripts/proxy_dev.sh`) so Claude Code's auth never enters a
+# container.
+#
+#   docker compose up -d brain                       # demo mode (hash embeds + forced tau)
+#   EMBED=dasein DASEIN_SERVE_TAU= docker compose up -d   # real mode: bge vectors via host
+#                                                    #   kubectl port-forward svc/dasein-embed 18080:80
+#
+# Requires the checkpoint at ~/.dasein/brain/curator_v4_prod.pt
+# (gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.dasein/brain/).
+services:
+  brain:
+    build: ./packages/brain
+    image: dasein-brain:local
+    ports:
+      - "8090:8080"
+    volumes:
+      - ${HOME}/.dasein/brain:/bundle:ro
+    environment:
+      # demo (default): deterministic hash embeddings + DASEIN_SERVE_TAU=0.999
+      # so the machinery visibly trims regardless of what the model thinks of
+      # your conversation. real: un-forced calibrated tau (0.70 cov) + bge
+      # vectors from the port-forwarded in-cluster embedder — honest scores.
+      DASEIN_EMBED_BACKEND: ${EMBED:-hash}          # hash | dasein
+      DASEIN_EMBED_URL: http://host.docker.internal:18080/embed
+      DASEIN_SERVE_TAU: ${DASEIN_SERVE_TAU-0.999}   # export DASEIN_SERVE_TAU= for calibrated
+      DASEIN_TARGET_COV: ${DASEIN_TARGET_COV:-0.70}
+      DASEIN_BRAIN_KEY: ${DASEIN_BRAIN_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # linux docker parity; no-op on Docker Desktop
+    restart: unless-stopped
