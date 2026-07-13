@@ -27,12 +27,14 @@
     "mask": [0],
     "cur_step": 1,
     "chunk_checksum": "9c4f2a11b3d5e6f7a8091a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
-    "target_cov": "0.70"
+    "target_cov": "0.70",
+    "gf": [0.5, 0.44, 0.17, 0.83]
   },
   "score_trace_response": {
     "scores_q": [412873],
     "tau_q": 315265,
     "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8",
+    "doom_q": 137042,
     "timings_ms": { "embed": 41.2, "forward": 18.7 }
   },
   "score_tools_request": {
@@ -68,6 +70,14 @@
   },
   "score_rules_response": {
     "scores_q": { "rule7": 133310 },
+    "rules": [
+      {
+        "eid": "rule7",
+        "text": "Verify the module is importable before declaring the fix done.",
+        "p_q": 133310,
+        "fire_step": 4
+      }
+    ],
     "tau_hint_q": 150000,
     "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8",
     "description": "tau_hint_q is advisory (rule-head handoff ~0.15; scores are compressed, ranking is the signal) — the firing tau MUST be bench-calibrated before any consumer fires on it. No proxy consumer is wired to this head yet. scores_q == {} means ineligible/failed: fail open (ungated fire is the baseline)."
@@ -88,6 +98,17 @@
     "tau_q": 500000,
     "fire": false,
     "fail_open": false,
+    "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8"
+  },
+  "neighbors_request": {
+    "contract": "brain-api-dev/v0",
+    "conv_id": "a1b2c3d4e5f60718293a4b5c",
+    "task_text": "Fix the failing test in parser.py"
+  },
+  "neighbors_response": {
+    "nbr_cost_median": 412808.0,
+    "nbr_count": 14,
+    "neighbors_active": true,
     "checkpoint_id": "1f4c9a7e2b8d6053e1a9c7b5d3f2e4a6c8b0d2f4a6e8c0b2d4f6a8e0c2b4d6f8"
   }
 }

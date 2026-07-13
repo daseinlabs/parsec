@@ -3,6 +3,7 @@ the brain's own self-validation and score EXACTLY like the base GNN — that is
 the whole point of the stub (same GNN out, pipeline shape real)."""
 
 import json
+import logging
 
 import pytest
 
@@ -42,6 +43,25 @@ def test_eval_gate_rejects_corruption(base_ckpt, tmp_path):
     bad.write_bytes(base_ckpt.read_bytes()[: 1 << 20])  # truncated = unloadable
     with pytest.raises(Exception):
         eval_gate(bad, base_ckpt)
+
+
+def test_retrain_stage_logging(base_ckpt, tmp_path, caplog, capsys):
+    """The orchestrator narrates every stage (start/done + wall-ms) plus per-stage detail
+    (collect rows, identity banner, eval verdict with max |Δ|, promote artifacts) — via
+    logging, never print (caplog is the capture seam)."""
+    with caplog.at_level(logging.INFO, logger="dasein_trainer"):
+        retrain(base_ckpt, tmp_path / "bundles", version="log-smoke")
+    msgs = [r.getMessage() for r in caplog.records]
+    blob = "\n".join(msgs)
+    for stage in ("collect", "train_identity", "eval_gate", "promote"):
+        assert f"stage {stage} START" in blob, msgs
+        assert any(m.startswith(f"stage {stage} DONE wall_ms=") for m in msgs), msgs
+    assert any("IDENTITY TRAINER" in m and "sha8=" in m for m in msgs)
+    assert any(m.startswith("eval_gate: n_scores_compared=") and "max_abs_delta_q=0" in m
+               and "verdict=PASS" in m for m in msgs)
+    assert any(m.startswith("promote: version=log-smoke") and "artifacts=" in m for m in msgs)
+    assert any(m.startswith("retrain DONE version=log-smoke") for m in msgs)
+    assert "[trainer]" not in capsys.readouterr().out    # the old print() banners are gone
 
 
 def test_collect_inventories_capture_rows(tmp_path):

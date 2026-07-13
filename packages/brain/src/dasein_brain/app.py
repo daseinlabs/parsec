@@ -18,15 +18,21 @@ from __future__ import annotations
 from . import _flags  # noqa: F401  parity pins before bundle/scorer (vendored) imports
 
 import os
+import statistics
 import threading
+import time
 from typing import Annotated, Literal, Union
 
+import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import v1graph
+from ._log import COUNTERS, conv_sha8, count_fail_open, get_logger
 from .bundle import load_bundle
 from .scorer import TraceScorer, chunk_checksum
+
+log = get_logger("app")
 
 CONTRACT = "brain-api-dev/v0"
 CONTRACT_V1 = "brain-api/v1"
@@ -45,6 +51,13 @@ def _q(x: float) -> int:
     return int(round(float(x) * GRID))
 
 
+# doom-head run-state input: loop_feats = [cur loop frac, trailing-3 mean, slope over 3,
+# trailing-6 frac >= 0.34] — 4 bounded numbers, client-computed (commands are raw text; the
+# pure function ports, same parity posture as the chunker guard). No text representable.
+Gf4 = Annotated[list[Annotated[float, Field(ge=-1.0, le=1.0)]],
+                Field(min_length=4, max_length=4)]
+
+
 class ScoreTraceRequest(BaseModel):
     contract: Literal["brain-api-dev/v0"]
     conv_id: str = Field(max_length=128)
@@ -54,6 +67,7 @@ class ScoreTraceRequest(BaseModel):
     cur_step: int
     chunk_checksum: str
     target_cov: str | None = None    # accepted per schema; tau resolves at bundle load, not here
+    gf: Gf4 | None = None            # omitted = doom not scored (v0 behavior)
 
 
 class ScoreToolsRequest(BaseModel):
@@ -107,6 +121,7 @@ class ScoreTraceV1Request(BaseModel):
     edges_supersession: list[tuple[int, int]]    # client-computed rel-4 (src, dst) pairs —
     #                                              the only text-dependent edge relation
     target_cov: str | None = Field(default=None, pattern=r"^0\.\d{2}$")
+    gf: Gf4 | None = None                        # loop_feats 4-vector; omitted = no doom score
 
 
 class V1Tool(BaseModel):
@@ -152,6 +167,43 @@ class ScoreGateRequest(BaseModel):
     brief: str
 
 
+class ScoreRulesV1Request(BaseModel):
+    """Rule head on the v1 contract: the trace payload's graph fields + the fire step. The
+    rule roster AND rule text live server-side (rules.json) — nothing text-shaped rides in.
+    `nodes` is the tool-spec chunk pipeline view (the same featurization the v1 tools request
+    carries); mask/decided_struct are decision-path fields the rule head never reads and are
+    deliberately not part of this request."""
+    model_config = ConfigDict(extra="forbid")
+    contract: Literal["brain-api/v1"]
+    conv_id: str = Field(pattern=_IDENT)
+    checkpoint_id: str = Field(pattern=_HEX64)
+    cur_step: int = Field(ge=0)                  # the fire step (nearest-earlier clamp applies)
+    nodes: list[V1Node]
+    task_emb: Vec1024
+    sys_emb: Vec1024 | None = None
+    edges_supersession: list[tuple[int, int]]    # required even when empty, like score/trace
+
+
+class NeighborsRequest(BaseModel):
+    contract: Literal["brain-api-dev/v0"]
+    conv_id: str = Field(max_length=128)
+    task_text: str                               # first user message internal text[:2000]
+
+
+class NeighborsV1Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    contract: Literal["brain-api/v1"]
+    conv_id: str = Field(pattern=_IDENT)
+    checkpoint_id: str = Field(pattern=_HEX64)
+    task_vec: Vec1024                            # client-embedded task head; raw text never rides
+
+
+ScoreRulesBody = Annotated[Union[ScoreRulesRequest, ScoreRulesV1Request],
+                           Field(discriminator="contract")]
+NeighborsBody = Annotated[Union[NeighborsRequest, NeighborsV1Request],
+                          Field(discriminator="contract")]
+
+
 def create_app() -> FastAPI:
     bundle = load_bundle()           # self-validating: any mismatch raises, the app never starts
     scorer = TraceScorer(bundle)
@@ -167,14 +219,35 @@ def create_app() -> FastAPI:
         if key and request.headers.get("authorization") != f"Bearer {key}":
             raise HTTPException(status_code=401, detail="missing or invalid bearer token")
 
+    @app.middleware("http")
+    async def _count_and_time(request: Request, call_next):
+        """Observability only: request counter (served on /health) + a DEBUG access line.
+        The per-endpoint INFO lines below carry the scoring detail; nothing here reads or
+        logs bodies (data-plane rule)."""
+        if request.url.path == "/health":
+            return await call_next(request)
+        COUNTERS["requests"] += 1
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        log.debug("access path=%s status=%d total_ms=%.1f", request.url.path,
+                  response.status_code, (time.perf_counter() - t0) * 1000.0)
+        return response
+
+    def _score_stats(scores_q: list[int]) -> str:
+        if not scores_q:
+            return "n=0"
+        return f"n={len(scores_q)} min_q={min(scores_q)} max_q={max(scores_q)}"
+
     @app.get("/health")
     def health():
-        return {"status": "ok"}
+        # fail_opens/requests: process-wide counters (CLAUDE.md: fail-open counted, alertable)
+        return {"status": "ok", "fail_opens": COUNTERS["fail_opens"],
+                "requests": COUNTERS["requests"]}
 
     @app.get("/v1/bundle")
     def bundle_info(request: Request):
         _auth(request)
-        return {
+        info = {
             "contract": CONTRACT,
             "contracts": [CONTRACT, CONTRACT_V1],   # score/trace + score/tools dispatch on both
             "checkpoint_id": bundle.checkpoint_id,
@@ -182,9 +255,17 @@ def create_app() -> FastAPI:
             "target_cov": bundle.target_cov,
             "grid": GRID,
             "heads": ["curator", "tool", "rule", "gate"],   # rule/gate: no proxy consumer yet
-            "neighbors": False,      # nf=None in v0: +3 zero block-parity cols (trained w/ dropout)
+            # neighbors: True when the hoods artifact is mounted (DASEIN_HOODS_PKL); False =
+            # nf=None, +3 zero block-parity cols (valid: trained with 20% block dropout)
+            "neighbors": bundle.hoods is not None,
+            # doom head provenance: gf width the ckpt expects; scored only when a trace
+            # request carries `gf` (no consumer sends it by default)
+            "doom": {"gf": bundle.doom_gf, "served": bundle.doom_gf > 0},
             "flags": bundle.flags,
         }
+        if bundle.hoods is not None:
+            info["hoods_anchors"] = len(bundle.hoods.task_embs)
+        return info
 
     def _v1_checkpoint_guard(req_checkpoint_id: str) -> None:
         """§8.2 matched-pair trap: v1 features were computed against a specific checkpoint's
@@ -211,15 +292,27 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=422,
                                 detail=f"edges_supersession out of range for {n} nodes")
         if not req.nodes or not req.mask:            # nothing to decide: all rows never-cut
+            # (no forward runs here, so no doom_q even when gf rode in — nothing was scored)
             return {"scores_q": [GRID] * n, "tau_q": bundle.tau_q,
                     "checkpoint_id": bundle.checkpoint_id,
                     "timings_ms": {"embed": 0.0, "forward": 0.0}}
         with lock:
-            sc, tau, timings = v1graph.score_trace(
+            sc, tau, timings, doom = v1graph.score_trace(
                 bundle, req.nodes, req.task_emb, req.sys_emb, req.mask,
-                req.decided_struct, req.edges_supersession)
-        return {"scores_q": [_q(s) for s in sc], "tau_q": _q(tau),
-                "checkpoint_id": bundle.checkpoint_id, "timings_ms": timings}
+                req.decided_struct, req.edges_supersession, gf=req.gf)
+        out = {"scores_q": [_q(s) for s in sc], "tau_q": _q(tau),
+               "checkpoint_id": bundle.checkpoint_id, "timings_ms": timings}
+        if doom is not None:
+            out["doom_q"] = _q(doom)
+        log.info("score/trace contract=v1 conv=%s n_nodes=%d n_mask=%d heads=curator%s "
+                 "graph_ms=%s forward_ms=%s tau_q=%d %s%s neighbors=%s status=200",
+                 conv_sha8(req.conv_id), n, len(req.mask),
+                 "+doom" if doom is not None else "",
+                 timings.get("embed"), timings.get("forward"), out["tau_q"],
+                 _score_stats(out["scores_q"]),
+                 f" doom_q={out['doom_q']}" if doom is not None else "",
+                 bundle.hoods is not None)
+        return out
 
     def _score_tools_v1(req: ScoreToolsV1Request):
         _v1_checkpoint_guard(req.checkpoint_id)
@@ -265,39 +358,140 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=422,
                                     detail=f"mask out of range for {len(req.live_gi)} live rows")
             if not req.live_gi or not req.mask:          # nothing to decide: all rows never-cut
+                # (no forward runs, so no doom_q even when gf rode in — nothing was scored)
                 return {"scores_q": [GRID] * len(req.live_gi), "tau_q": bundle.tau_q,
                         "checkpoint_id": bundle.checkpoint_id,
                         "timings_ms": {"embed": 0.0, "forward": 0.0}}
             sc, tau, timings = scorer.score_trace(parsed, req.live_gi, req.mask,
-                                                  conv_id=req.conv_id)
-            return {"scores_q": [_q(s) for s in sc], "tau_q": _q(tau),
-                    "checkpoint_id": bundle.checkpoint_id, "timings_ms": timings}
+                                                  conv_id=req.conv_id, gf=req.gf)
+            doom = scorer.last_doom                      # set by the same forward, under lock
+            nbr = scorer.last_nbr_blocks
+            out = {"scores_q": [_q(s) for s in sc], "tau_q": _q(tau),
+                   "checkpoint_id": bundle.checkpoint_id, "timings_ms": timings}
+            if doom is not None:
+                out["doom_q"] = _q(doom)
+            log.info("score/trace contract=dev conv=%s n_msgs=%d n_chunks=%d n_live=%d "
+                     "n_mask=%d heads=curator%s embed_ms=%s forward_ms=%s tau_q=%d %s%s "
+                     "neighbors=%s status=200",
+                     conv_sha8(req.conv_id), len(req.messages), len(parsed.chunks),
+                     len(req.live_gi), len(req.mask), "+doom" if doom is not None else "",
+                     timings.get("embed"), timings.get("forward"), out["tau_q"],
+                     _score_stats(out["scores_q"]),
+                     f" doom_q={out['doom_q']}" if doom is not None else "",
+                     nbr if nbr is not None else False)
+            return out
 
     @app.post("/v1/score/tools")
     def score_tools(req: ScoreToolsBody, request: Request):
         _auth(request)
         if isinstance(req, ScoreToolsV1Request):     # contract-field dispatch
-            return _score_tools_v1(req)
+            out = _score_tools_v1(req)
+            log.info("score/tools contract=v1 conv=%s n_nodes=%d n_tools=%d %s status=200",
+                     conv_sha8(req.conv_id), len(req.nodes), len(req.tools),
+                     _score_stats(out["scores_q"]))
+            return out
         with lock:
             sg, toks, names = scorer.score_request_tools(req.messages, req.tools)
         if names is None:                                # ineligible/failed: fail-open shape
+            log.info("score/tools contract=dev conv=%s n_msgs=%d n_tools=%d fail_open_shape=1 "
+                     "status=200", conv_sha8(req.conv_id), len(req.messages), len(req.tools))
             return {"names": [], "scores_q": [], "tokens": [],
                     "checkpoint_id": bundle.checkpoint_id}
-        return {"names": names, "scores_q": [_q(s) for s in sg],
-                "tokens": [int(t) for t in toks], "checkpoint_id": bundle.checkpoint_id}
+        out = {"names": names, "scores_q": [_q(s) for s in sg],
+               "tokens": [int(t) for t in toks], "checkpoint_id": bundle.checkpoint_id}
+        log.info("score/tools contract=dev conv=%s n_msgs=%d n_tools=%d %s status=200",
+                 conv_sha8(req.conv_id), len(req.messages), len(names),
+                 _score_stats(out["scores_q"]))
+        return out
+
+    def _rules_response(scores_q: dict[str, int], cands: list[dict], fire_step: int) -> dict:
+        """Both contracts' rules response: the existing fields plus the per-rule roster view
+        [{eid, text, p_q, fire_step}] for the CURRENT step. Rule text is server-owned
+        (rules.json) — returning it is data-plane-clean; fire_step echoes the requested step
+        (the governor's dedupe key). Fail-open keeps rules=[] alongside scores_q={}."""
+        by_eid = {r["eid"]: r for r in cands}
+        return {"scores_q": scores_q,
+                "rules": [{"eid": eid, "text": by_eid[eid]["text"], "p_q": q,
+                           "fire_step": int(fire_step)}
+                          for eid, q in scores_q.items() if eid in by_eid],
+                "tau_hint_q": RULE_TAU_HINT_Q, "checkpoint_id": bundle.checkpoint_id,
+                "description": RULE_TAU_DESCRIPTION}
+
+    def _score_rules_v1(req: ScoreRulesV1Request):
+        _v1_checkpoint_guard(req.checkpoint_id)
+        n = len(req.nodes)
+        if not req.nodes:
+            raise HTTPException(status_code=422,
+                                detail="nodes must be non-empty (mirror the step-0 task-chunk "
+                                       "fallback client-side)")
+        if any(not (0 <= a < n and 0 <= b < n) for (a, b) in req.edges_supersession):
+            raise HTTPException(status_code=422,
+                                detail=f"edges_supersession out of range for {n} nodes")
+        cands = rule_defaults                        # roster + text live server-side on v1
+        with lock:
+            try:
+                # rule texts are SERVER data: embed them with the scorer's backend, exactly
+                # as the dev path does (untruncated — assemble's exact cache key).
+                scorer._embed([r["text"] for r in cands])
+                rule_embs = [scorer.cache[r["text"]] for r in cands]
+                sc, forward_ms = v1graph.score_rules(
+                    bundle, req.nodes, req.task_emb, req.sys_emb, req.edges_supersession,
+                    req.cur_step, rule_embs)
+                scores = {cands[k]["eid"]: float(sc[k]) for k in range(len(sc))}
+            except Exception as e:
+                log.debug("v1 rule scoring exception detail", exc_info=True)
+                count_fail_open(log, f"v1 rule scoring failed ({type(e).__name__}) -> fail-open")
+                scores, forward_ms = {}, 0.0
+        out = _rules_response({eid: _q(s) for eid, s in scores.items()}, cands, req.cur_step)
+        log.info("score/rules contract=v1 conv=%s n_nodes=%d n_rules=%d fire_step=%d "
+                 "forward_ms=%s status=200", conv_sha8(req.conv_id), n, len(out["rules"]),
+                 req.cur_step, forward_ms)
+        return out
 
     @app.post("/v1/score/rules")
-    def score_rules(req: ScoreRulesRequest, request: Request):
-        """Rule head — NOT wired into any proxy consumer yet; tau_hint_q is advisory only."""
+    def score_rules(req: ScoreRulesBody, request: Request):
+        """Rule head — tau_hint_q is advisory only (bench calibration owns the firing tau)."""
         _auth(request)
+        if isinstance(req, ScoreRulesV1Request):     # contract-field dispatch
+            return _score_rules_v1(req)
         cands = req.rules if req.rules is not None else rule_defaults
         if any(not (isinstance(r, dict) and r.get("eid") and r.get("text")) for r in cands):
             raise HTTPException(status_code=422, detail="rules items must carry eid and text")
         with lock:
             scores = scorer.score_request_rules(req.messages, req.tools, cands, req.step)
-        return {"scores_q": {eid: _q(s) for eid, s in scores.items()},
-                "tau_hint_q": RULE_TAU_HINT_Q, "checkpoint_id": bundle.checkpoint_id,
-                "description": RULE_TAU_DESCRIPTION}
+        out = _rules_response({eid: _q(s) for eid, s in scores.items()}, cands, req.step)
+        log.info("score/rules contract=dev conv=%s n_msgs=%d n_rules=%d fire_step=%d "
+                 "fail_open_shape=%d status=200", conv_sha8(req.conv_id), len(req.messages),
+                 len(out["rules"]), req.step, int(not scores))
+        return out
+
+    @app.post("/v1/neighbors")
+    def neighbors(req: NeighborsBody, request: Request):
+        """Cross-trace neighbor cost baseline — called ONCE per conversation by the proxy
+        (the neighbor set is per-task constant; the client caches the result). null median =
+        hoods off / <4 neighbor costs (the runaway signal stays inert, reference semantics)."""
+        _auth(request)
+        contract = "v1" if isinstance(req, NeighborsV1Request) else "dev"
+        if isinstance(req, NeighborsV1Request):
+            _v1_checkpoint_guard(req.checkpoint_id)
+        costs: list[float] = []
+        if bundle.hoods is not None:
+            if isinstance(req, NeighborsV1Request):
+                task_vec = np.asarray(req.task_vec, dtype=np.float32)
+            elif req.task_text:
+                with lock:                           # dev: embed via the request's embed backend
+                    task_vec = np.asarray(scorer._embed([req.task_text[:2000]])[0],
+                                          dtype=np.float32)
+            else:
+                task_vec = np.zeros(1024, dtype=np.float32)
+            costs = bundle.hoods.neighbor_costs(task_vec)
+        median = float(statistics.median(costs)) if len(costs) >= 4 else None
+        log.info("neighbors contract=%s conv=%s active=%s nbr_count=%d median=%s status=200",
+                 contract, conv_sha8(req.conv_id), bundle.hoods is not None, len(costs),
+                 "null" if median is None else round(median, 1))
+        return {"nbr_cost_median": median, "nbr_count": len(costs),
+                "neighbors_active": bundle.hoods is not None,
+                "checkpoint_id": bundle.checkpoint_id}
 
     @app.post("/v1/score/gate")
     def score_gate(req: ScoreGateRequest, request: Request):
@@ -306,9 +500,13 @@ def create_app() -> FastAPI:
         with lock:
             s = scorer.score_request_gate(req.messages, req.tools, req.brief)
         if s is None:                                    # ineligible/failed/empty brief:
+            log.info("score/gate contract=dev conv=%s n_msgs=%d fail_open=1 status=200",
+                     conv_sha8(req.conv_id), len(req.messages))
             return {"score_q": GRID, "tau_q": GATE_TAU_Q, "fire": True,   # fail open = serve
                     "fail_open": True, "checkpoint_id": bundle.checkpoint_id}
         sq = _q(s)
+        log.info("score/gate contract=dev conv=%s n_msgs=%d score_q=%d fire=%s status=200",
+                 conv_sha8(req.conv_id), len(req.messages), sq, sq >= GATE_TAU_Q)
         return {"score_q": sq, "tau_q": GATE_TAU_Q, "fire": sq >= GATE_TAU_Q,
                 "fail_open": False, "checkpoint_id": bundle.checkpoint_id}
 

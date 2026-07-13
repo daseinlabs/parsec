@@ -27,6 +27,9 @@ services:
       DASEIN_SERVE_TAU: ${DASEIN_SERVE_TAU-0.999}   # export DASEIN_SERVE_TAU= for calibrated
       DASEIN_TARGET_COV: ${DASEIN_TARGET_COV:-0.70}
       DASEIN_BRAIN_KEY: ${DASEIN_BRAIN_KEY:-}
+      # DEBUG adds per-request detail incl. the full GNN score vectors
+      DASEIN_BRAIN_LOG: ${DASEIN_BRAIN_LOG:-INFO}
+      DASEIN_BRAIN_LOG_JSON: ${DASEIN_BRAIN_LOG_JSON:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # linux docker parity; no-op on Docker Desktop
     restart: unless-stopped

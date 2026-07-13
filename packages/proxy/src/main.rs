@@ -37,12 +37,20 @@ fn main() -> anyhow::Result<()> {
         Command::Proxy => {
             // Long-running service: fail-open events are a first-class metric
             // (§8.3) and must be VISIBLE — stderr, RUST_LOG-filterable
-            // (default info). Hook/statusline stay subscriber-free: their
-            // stdout is protocol, and a stray log line would corrupt it.
+            // (default info; DASEIN_VERBOSE=1 flips the default to debug for
+            // a per-request pipeline trace — counts/hashes/timings only,
+            // never message text or auth headers). Hook/statusline stay
+            // subscriber-free: their stdout is protocol, and a stray log
+            // line would corrupt it.
+            let default_filter = if std::env::var("DASEIN_VERBOSE").ok().as_deref() == Some("1") {
+                "info,dasein_proxy=debug"
+            } else {
+                "info"
+            };
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::try_from_default_env()
-                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter)),
                 )
                 .with_writer(std::io::stderr)
                 .init();

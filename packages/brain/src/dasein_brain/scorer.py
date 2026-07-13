@@ -10,9 +10,12 @@ engine is engine::freeze, ported client-side; THIS class is only the scorer:
                           exact truncated text over EmbeddingClient's sha1 cache.
   _trace_scores()       — the trace-level GNN forward (L387-494), het path only (the ckpt is
                           hetgraph): _het_node_graph + _het_readout + score_decided, raw
-                          sigmoid scores, calibrated global tau. Neighbors OFF in v0 (nf=None,
-                          +3 zero struct cols — valid: trained under 20% block dropout). Doom
-                          head not scored (gf=None never reached).
+                          sigmoid scores, calibrated global tau. Neighbors default OFF
+                          (nf=None, +3 zero struct cols — valid: trained under 20% block
+                          dropout); DASEIN_HOODS_PKL mounts the hoods artifact and attaches
+                          the top-x=2 cross-trace blocks (assemble_trace order, no serve-time
+                          dropout). Doom head scored only when the request carries gf (the
+                          client-computed loop_feats 4-vector) — exposed as self.last_doom.
   score_request_tools() — the tool-schema head (L798-843) through the vendored
                           build_tool_spec + assemble_trace + collate_traces, nf=None,
                           RandomState(0); (None, None, None) = fail-open.
@@ -39,16 +42,20 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
+from ._log import count_fail_open, get_logger
 from .bundle import Bundle
 from .vendored.chunking import chunk_assistant, chunk_observation, reasoning_chunk
 from .vendored.embedding import EmbeddingClient
-from .vendored.pyg_model import attach_hetero, attach_steps, attach_task, edges
+from .vendored.pyg_model import (attach_blocks, attach_hetero, attach_steps,
+                                 attach_task, edges)
 from .vendored.torch_curator import (decided_extra_feats, decided_rerank_feats,
                                      node_struct_with_type, struct_features,
                                      struct_type_features)
 
 _EMBED_DIM = 1024          # bge-large / hash backend width; xe is the 3x tri-embedding
 _NSCACHE_CONVS = 64        # per-conversation node-struct caches kept (LRU; byte-identical reuse)
+
+log = get_logger("scorer")
 
 
 def _text(m) -> str:
@@ -158,6 +165,14 @@ class TraceScorer:
         self._nscaches: OrderedDict[str, dict] = OrderedDict()
         self._embed_ms = 0.0
         self._forward_ms = 0.0
+        # cross-trace neighborhoods (nf): None = OFF (v0 default, +3 zero block-parity cols);
+        # an ArtifactFetcher when DASEIN_HOODS_PKL is mounted. TRACE path only — the tool/rule/
+        # gate heads assemble with nf=None even in the reference proxy.
+        self.nf = bundle.hoods
+        # per-call telemetry mirrors of the reference curator (read by app.py right after the
+        # scoring call, under the app lock; pure functions of the request, not serving state):
+        self.last_doom: float | None = None       # sigmoid(doom head) when gf rode the request
+        self.last_nbr_blocks: int | None = None   # blocks attached this call (None = nf off)
 
     # ---- embeddings (curator L281-286) ----
     def _embed(self, texts):
@@ -215,7 +230,8 @@ class TraceScorer:
     # ---- trace-level GNN forward (curator._trace_scores L387-494, het path) ----
     def _trace_scores(self, chunks, task_text: str, cur_step: int, is_admission: float,
                       recent: str = "", mask_js: list[int] | None = None, sys_text: str = "",
-                      het_steps: list | None = None, T: int = 0, nscache: dict | None = None):
+                      het_steps: list | None = None, T: int = 0, nscache: dict | None = None,
+                      gf: list[float] | None = None):
         n_own = len(chunks)
         zed = np.zeros(np.asarray(self._embed([chunks[0].text[:2000]])[0]).shape[0],
                        dtype=np.float32)
@@ -248,6 +264,15 @@ class TraceScorer:
             h = self.model._embed_nodes(torch.from_numpy(xe), torch.from_numpy(xs), ei, et)
             didx = torch.tensor(decided, dtype=torch.long)
             u_dec = self.model.score_decided(h, didx, torch.from_numpy(dstruct))
+            # DOOM head — rides the SAME forward (zero extra message passes). Scored only when
+            # the request carried gf (the client-computed loop_feats trajectory) and the ckpt
+            # has a doom head of that width. Pooled over the OWN live chunks only (reference
+            # curator L479-484: aidx = arange(n_own) — never task/block/step/hub rows).
+            if gf is not None and self.bundle.doom_gf and len(gf) == self.bundle.doom_gf:
+                pooled = h[:n_own].mean(dim=0, keepdim=True)
+                gft = torch.tensor(list(gf), dtype=torch.float32)
+                self.last_doom = float(torch.sigmoid(
+                    self.model.doom_head(self.model._doom_in(pooled, gft)).reshape(())))
         self._forward_ms += (time.perf_counter() - t0) * 1000.0
         # the calibrated global tau for AC_TARGET_COV OVERRIDES the budget head on every call of
         # a calibrated ckpt (curator L469-478); the bundle guarantees the table, so the free-
@@ -271,7 +296,25 @@ class TraceScorer:
         ntype = ["observation"] * n_own
         xe, xs, ei, et = attach_task(xe, xs, ei, et, temb, causal=True)
         ntype.append("task")
-        xs = np.hstack([xs, np.zeros((xs.shape[0], 3), np.float32)])   # nf=None width parity
+        # NEIGHBOR BLOCKS between attach_task and attach_steps — assemble_trace's order is the
+        # law (trace_train.py L61-78). NO dropout at serve (the rng branch is training-only);
+        # the anchor query is the task content embedding this request already computed. nf=None
+        # (or no task statement) keeps the +3 zero block-parity cols — bit-identical to v0.
+        self.last_nbr_blocks = None
+        if self.nf is not None and task_text:
+            blocks = self.nf.blocks(temb[:cdim])         # cosine top-x over the artifact anchors
+            _b0 = xe.shape[0]
+            xe, xs, ei, et = attach_blocks(xe, xs, ei, et, blocks, list(range(n_own)),
+                                           cdim, causal=True)
+            ntype += ["observation"] * (xe.shape[0] - _b0)
+            self.last_nbr_blocks = len(blocks)
+            if not blocks:                               # measured, never silent (reference
+                count_fail_open(log, "hoods live but ZERO neighbor blocks attached")   # _degrade)
+            else:
+                log.debug("neighbor blocks attached n_blocks=%d n_nodes=%d",
+                          len(blocks), xe.shape[0] - _b0)
+        else:
+            xs = np.hstack([xs, np.zeros((xs.shape[0], 3), np.float32)])   # nf=None width parity
         _n0 = xe.shape[0]
         xe, xs, ei, et = attach_steps(xe, xs, ei, et, chunks, n_own)
         ntype += ["step"] * (xe.shape[0] - _n0)
@@ -373,16 +416,19 @@ class TraceScorer:
 
     # ---- request-level entry points ----
     def score_trace(self, parsed: ParsedTrace, live_gi: list[int], mask: list[int],
-                    conv_id: str = ""):
+                    conv_id: str = "", gf: list[float] | None = None):
         """(scores over live rows, tau, timings_ms). mask rows carry real scores; the rest stay
-        at the never-cut 1.0 default."""
+        at the never-cut 1.0 default. When `gf` (the client-computed loop_feats 4-vector) rides
+        in and the ckpt has a doom head, `self.last_doom` carries sigmoid(doom) after the call
+        (same forward — the reference's curator.last_doom seam); None otherwise."""
         lc = [parsed.chunks[g] for g in live_gi]
         self._embed_ms = 0.0
         self._forward_ms = 0.0
+        self.last_doom = None
         sc, tau = self._trace_scores(lc, parsed.task_text, parsed.cur_step, is_admission=1.0,
                                      recent=parsed.recent_cmds, mask_js=list(mask),
                                      sys_text=parsed.sys_text, het_steps=parsed.het_steps,
-                                     T=parsed.T, nscache=self._nscache_for(conv_id))
+                                     T=parsed.T, nscache=self._nscache_for(conv_id), gf=gf)
         return sc, tau, {"embed": round(self._embed_ms, 3), "forward": round(self._forward_ms, 3)}
 
     def score_request_tools(self, messages: list[dict], tools: list[dict]):
@@ -422,8 +468,10 @@ class TraceScorer:
             names = [tn.get("name", "") for tn in spec["tool_nodes"]]
             return sg, np.asarray(d["tool_tok"], np.float32), names
         except Exception as e:
-            print(f"[scorer] tool scoring failed ({type(e).__name__}: {e}) -> full tools served",
-                  flush=True)
+            # WARNING carries the exception TYPE only (an exception message can embed raw
+            # request text — the data-plane rule applies to logs); full detail at DEBUG.
+            log.debug("tool scoring exception detail", exc_info=True)
+            count_fail_open(log, f"tool scoring failed ({type(e).__name__}) -> full tools served")
             return None, None, None
 
     def score_request_rules(self, messages: list[dict], tools: list[dict],
@@ -476,8 +524,8 @@ class TraceScorer:
             return {candidate_rules[k]["eid"]: float(sc[k])
                     for k in range(min(len(sc), len(candidate_rules)))}
         except Exception as e:
-            print(f"[scorer] rule scoring failed ({type(e).__name__}: {e}) -> fail-open",
-                  flush=True)
+            log.debug("rule scoring exception detail", exc_info=True)
+            count_fail_open(log, f"rule scoring failed ({type(e).__name__}) -> fail-open")
             return {}
 
     def score_request_gate(self, messages: list[dict], tools: list[dict], brief_text: str,
@@ -527,6 +575,6 @@ class TraceScorer:
                     h, torch.tensor([gi], dtype=torch.long), torch.from_numpy(gstats)))
             return float(sg.reshape(-1)[0])
         except Exception as e:
-            print(f"[scorer] gate scoring failed ({type(e).__name__}: {e}) -> fail-open",
-                  flush=True)
+            log.debug("gate scoring exception detail", exc_info=True)
+            count_fail_open(log, f"gate scoring failed ({type(e).__name__}) -> fail-open")
             return None

@@ -9,13 +9,16 @@
 
 use serde_json::{json, Value};
 
+use crate::adjudicator;
 use crate::noreread::{
     load_session, prune_sessions, read_tool_range, save_session, Gate, SessionState,
 };
 
 pub fn run(event: &str) -> anyhow::Result<()> {
     let mut input = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
+    // A stdin read error must not become a non-zero exit (hooks NEVER fail
+    // the session) — treat it as an empty payload and fall through.
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     let payload: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
     let session_id = payload
         .get("session_id")
@@ -81,9 +84,81 @@ pub fn run(event: &str) -> anyhow::Result<()> {
                 );
             }
         }
+        "Stop" => {
+            // Already a forced continuation from a previous Stop block —
+            // never pin the agent in a loop: exit silently, no row (the
+            // reference cc_runner.py:376-378 semantics).
+            if payload
+                .get("stop_hook_active")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+            run_stop(&payload, &session_id, &cwd);
+        }
         _ => {}
     }
     Ok(())
+}
+
+/// The continue directive fed back on a blocked stop — the reference steer
+/// (arms/dasein.py `_CONTINUE_STEER` + the DELIVER text) adapted to the
+/// "stopped with no submittable work product while looping" case.
+const STOP_BLOCK_REASON: &str = "Your work is not yet complete: there is no submittable edit on \
+disk and your recent actions were repeating without producing new information. Do not stop yet — \
+take a DIFFERENT concrete step toward the code change that resolves the task, make the edit, \
+verify it, then stop.";
+
+/// Stop-hook SUBMIT adjudicator (Track C). `DASEIN_ADJUDICATOR` =
+/// - `advise` (default): record a JSONL row, print NOTHING;
+/// - `block`: additionally print ONE `{"decision":"block"}` when the stop
+///   looks premature (CONTINUE verdict, no submittable edit, mechanical
+///   stall) within the per-session `DASEIN_ADJ_MAX_BLOCKS` budget (default
+///   2 — the governor's validated coach+bank ceiling);
+/// - `off`: skip entirely (no row).
+///
+/// Fail-open discipline: every internal error path returns silently (exit
+/// 0); stdout carries ONLY the block-decision JSON, never anything else.
+fn run_stop(payload: &Value, session_id: &str, cwd: &str) {
+    let mode_env = std::env::var("DASEIN_ADJUDICATOR").unwrap_or_default();
+    let mode = match mode_env.trim() {
+        "off" => return,
+        "block" => "block",
+        _ => "advise",
+    };
+    let messages = payload
+        .get("transcript_path")
+        .and_then(Value::as_str)
+        .map(|p| {
+            adjudicator::messages_from_transcript(p, adjudicator::MAX_MSGS, adjudicator::OBS_CAP)
+        })
+        .unwrap_or_default();
+    // Pure function of the transcript bytes — the probe below is telemetry
+    // only and never feeds the verdict.
+    let adj = adjudicator::adjudicate(&messages);
+    let probe = adjudicator::disk_probe(cwd);
+    let mut blocked = false;
+    if mode == "block" && adj.verdict == "CONTINUE" && !adj.has_edit && adj.mech_stalled {
+        let max_blocks: u32 = std::env::var("DASEIN_ADJ_MAX_BLOCKS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(2);
+        let mut st = load_session(session_id);
+        if st.adj_blocks < max_blocks {
+            st.note_adj_block();
+            // The budget must be durable BEFORE we block: an unsaved counter
+            // could block every stop, so a failed save downgrades to advise.
+            if save_session(session_id, &st).is_ok() {
+                blocked = true;
+                println!(
+                    "{}",
+                    json!({ "decision": "block", "reason": STOP_BLOCK_REASON })
+                );
+            }
+        }
+    }
+    let _ = adjudicator::append_row(&adjudicator::row(&adj, session_id, mode, probe, blocked));
 }
 
 /// The Pro flip-on (DIRECTION.md §7: "plugin → proxy (manages)"): when this

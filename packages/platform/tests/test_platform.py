@@ -32,6 +32,12 @@ CONTRACTS_EXAMPLE = (
     / "examples"
     / "savings-ledger.example.json"
 )
+# The seams-bearing example (capture + governor optional fields) — the mirror
+# must accept EVERY schema-optional field, not just the minimal row (the gap
+# that let capture-seam rows 422 at ingest).
+CONTRACTS_GOVERNOR_EXAMPLE = (
+    CONTRACTS_EXAMPLE.parent / "savings-ledger.governor.example.json"
+)
 
 
 @pytest.fixture()
@@ -140,6 +146,17 @@ def test_pydantic_model_accepts_contracts_example() -> None:
     example = json.loads(CONTRACTS_EXAMPLE.read_text())
     row = LedgerRow.model_validate(example)
     assert row.cache_prefix_sha8 == example["cachePrefixSha8"]
+
+
+def test_pydantic_model_accepts_governor_example() -> None:
+    """Every schema-OPTIONAL field (capture seams + governor seams) must pass
+    the mirror too — extra="forbid" turns a missing mirror field into a 422
+    at ingest, silently dropping real rows."""
+    example = json.loads(CONTRACTS_GOVERNOR_EXAMPLE.read_text())
+    row = LedgerRow.model_validate(example)
+    assert row.governor_mode == "advise"
+    assert row.gov_rule_fires == example["gov_rule_fires"]
+    assert row.checkpoint_id == example["checkpoint_id"]
 
 
 def test_ledger_ingest_to_summary(client: TestClient) -> None:

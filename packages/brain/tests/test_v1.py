@@ -421,9 +421,11 @@ def test_v1_no_raw_text_representable():
     pattern-constrained to a fixed-format id — free text has no slot, by construction."""
     import types
     from typing import Union, get_args, get_origin
-    from dasein_brain.app import (ScoreToolsV1Request, ScoreTraceV1Request, V1Node, V1Tool)
+    from dasein_brain.app import (NeighborsV1Request, ScoreRulesV1Request,
+                                  ScoreToolsV1Request, ScoreTraceV1Request, V1Node, V1Tool)
     checked = []
-    for model in (V1Node, V1Tool, ScoreTraceV1Request, ScoreToolsV1Request):
+    for model in (V1Node, V1Tool, ScoreTraceV1Request, ScoreToolsV1Request,
+                  ScoreRulesV1Request, NeighborsV1Request):
         assert model.model_config.get("extra") == "forbid", model  # nothing rides uncontracted
         for name, f in model.model_fields.items():
             ann = f.annotation
@@ -439,6 +441,8 @@ def test_v1_no_raw_text_representable():
         "ScoreTraceV1Request.conv_id", "ScoreTraceV1Request.checkpoint_id",
         "ScoreTraceV1Request.target_cov",
         "ScoreToolsV1Request.conv_id", "ScoreToolsV1Request.checkpoint_id",
+        "ScoreRulesV1Request.conv_id", "ScoreRulesV1Request.checkpoint_id",
+        "NeighborsV1Request.conv_id", "NeighborsV1Request.checkpoint_id",
     }, checked
 
 
@@ -450,14 +454,18 @@ def test_v1_schema_and_example_valid(client):
     schema = json.loads(SCHEMA.read_text())
     example = json.loads(EXAMPLE.read_text())
     expected = {"score_trace_request", "score_trace_response",
-                "score_tools_request", "score_tools_response"}
+                "score_tools_request", "score_tools_response",
+                "score_rules_request", "score_rules_response",
+                "neighbors_request", "neighbors_response"}
     assert set(example) == expected
     for key, inst in example.items():
         jsonschema.validate(inst, schema | {"$ref": f"#/$defs/{key}"})
         jsonschema.validate(inst, schema)               # the top-level oneOf accepts it too
-    for ep in ("trace", "tools"):
+    for ep in ("trace", "tools", "rules"):
         r = client.post(f"/v1/score/{ep}", json=example[f"score_{ep}_request"])
         assert r.status_code == 409, r.text             # parsed OK; placeholder ckpt rejected
+    r = client.post("/v1/neighbors", json=example["neighbors_request"])
+    assert r.status_code == 409, r.text                 # same checkpoint handshake
 
 
 # ---- symbol-graph liveness regression (the tree-sitter fallback bugfix) ------------------------

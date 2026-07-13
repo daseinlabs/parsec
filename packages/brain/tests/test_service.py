@@ -77,13 +77,17 @@ def _trace_payload() -> dict:
 
 def test_health_and_bundle():
     client = TestClient(create_app())
-    assert client.get("/health").json() == {"status": "ok"}
+    h = client.get("/health").json()
+    assert h["status"] == "ok"
+    assert isinstance(h["fail_opens"], int) and isinstance(h["requests"], int)   # counted, alertable
     b = client.get("/v1/bundle").json()
     assert b["contract"] == "brain-api-dev/v0"
     assert b["tau_q"] == GOLDEN_TAU_Q
     assert b["grid"] == 1_000_000
     assert b["heads"] == ["curator", "tool", "rule", "gate"]
-    assert b["neighbors"] is False
+    assert b["neighbors"] is False               # DASEIN_HOODS_PKL unset in the hermetic suite
+    assert b["doom"] == {"gf": 4, "served": True}
+    assert "hoods_anchors" not in b
     assert b["flags"]["AC_HUBPROPS"] == "off"
     assert len(b["checkpoint_id"]) == 64
 

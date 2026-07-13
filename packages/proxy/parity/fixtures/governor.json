@@ -1,0 +1,1413 @@
+{
+ "loop_fracs": [
+  {
+   "name": "empty",
+   "cmds": [],
+   "expected": []
+  },
+  {
+   "name": "single",
+   "cmds": [
+    "ls -la"
+   ],
+   "expected": [
+    0.0
+   ]
+  },
+  {
+   "name": "two_distinct",
+   "cmds": [
+    "ls -la",
+    "cat foo.py"
+   ],
+   "expected": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "name": "identical_eight",
+   "cmds": [
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py",
+    "pytest -x tests/test_a.py"
+   ],
+   "expected": [
+    0.0,
+    0.5,
+    0.6666666666666666,
+    0.75,
+    0.8,
+    0.8333333333333334,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "name": "alternating_pair",
+   "cmds": [
+    "git diff",
+    "pytest -q",
+    "git diff",
+    "pytest -q",
+    "git diff",
+    "pytest -q",
+    "git diff",
+    "pytest -q",
+    "git diff",
+    "pytest -q"
+   ],
+   "expected": [
+    0.0,
+    0.0,
+    0.3333333333333333,
+    0.5,
+    0.6,
+    0.6666666666666666,
+    0.8333333333333334,
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "name": "near_dup_boundary",
+   "cmds": [
+    "python manage.py test app1 app2 app3",
+    "python manage.py test app1 app2 app4",
+    "python manage.py test app5 app6 app7",
+    "grep -rn TODO src",
+    "python manage.py test app1 app2 app3",
+    "python manage.py test app1 app2 app3",
+    "make build"
+   ],
+   "expected": [
+    0.0,
+    0.5,
+    0.3333333333333333,
+    0.25,
+    0.4,
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "recover_then_loop",
+   "cmds": [
+    "a b c",
+    "d e f",
+    "g h i",
+    "a b c",
+    "a b c",
+    "a b c",
+    "j k l",
+    "a b c"
+   ],
+   "expected": [
+    0.0,
+    0.0,
+    0.0,
+    0.25,
+    0.4,
+    0.5,
+    0.5,
+    0.6666666666666666
+   ]
+  },
+  {
+   "name": "empty_strings",
+   "cmds": [
+    "",
+    "",
+    "ls",
+    "",
+    "ls"
+   ],
+   "expected": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.2
+   ]
+  },
+  {
+   "name": "window_rollover",
+   "cmds": [
+    "cmd0",
+    "cmd1",
+    "cmd2",
+    "cmd3",
+    "cmd4",
+    "cmd0",
+    "cmd0",
+    "cmd0",
+    "cmd0",
+    "cmd0",
+    "cmd0",
+    "cmd0"
+   ],
+   "expected": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.16666666666666666,
+    0.3333333333333333,
+    0.5,
+    0.6666666666666666,
+    0.8333333333333334,
+    1.0,
+    1.0
+   ]
+  }
+ ],
+ "loop_feats": [
+  {
+   "name": "empty",
+   "lf": [],
+   "t": 0,
+   "expected": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "name": "single_t0",
+   "lf": [
+    0.5
+   ],
+   "t": 0,
+   "expected": [
+    0.5,
+    0.5,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "name": "mid",
+   "lf": [
+    0.0,
+    0.1,
+    0.4,
+    0.5,
+    0.66,
+    0.83
+   ],
+   "t": 4,
+   "expected": [
+    0.66,
+    0.52,
+    0.56,
+    0.6
+   ]
+  },
+  {
+   "name": "t_clamped_high",
+   "lf": [
+    0.0,
+    0.2,
+    0.9
+   ],
+   "t": 99,
+   "expected": [
+    0.9,
+    0.3666666666666667,
+    0.9,
+    0.3333333333333333
+   ]
+  },
+  {
+   "name": "t_negative",
+   "lf": [
+    0.3,
+    0.4
+   ],
+   "t": -7,
+   "expected": [
+    0.3,
+    0.3,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "name": "threshold_edge",
+   "lf": [
+    0.34,
+    0.34,
+    0.33,
+    0.34,
+    0.5,
+    0.34,
+    0.2
+   ],
+   "t": 6,
+   "expected": [
+    0.2,
+    0.3466666666666667,
+    -0.14,
+    0.6666666666666666
+   ]
+  },
+  {
+   "name": "slope_negative",
+   "lf": [
+    0.8,
+    0.7,
+    0.5,
+    0.2
+   ],
+   "t": 3,
+   "expected": [
+    0.2,
+    0.4666666666666666,
+    -0.6000000000000001,
+    0.75
+   ]
+  }
+ ],
+ "is_test_path": [
+  {
+   "name": "/testbed/django/db/models/query.py",
+   "path": "/testbed/django/db/models/query.py",
+   "expected": false
+  },
+  {
+   "name": "/testbed/tests/queries/test_qs.py",
+   "path": "/testbed/tests/queries/test_qs.py",
+   "expected": true
+  },
+  {
+   "name": "tests/test_x.py",
+   "path": "tests/test_x.py",
+   "expected": true
+  },
+  {
+   "name": "test_foo.py",
+   "path": "test_foo.py",
+   "expected": true
+  },
+  {
+   "name": "tests_foo.py",
+   "path": "tests_foo.py",
+   "expected": true
+  },
+  {
+   "name": "conftest.py",
+   "path": "conftest.py",
+   "expected": true
+  },
+  {
+   "name": "a/test/b.c",
+   "path": "a/test/b.c",
+   "expected": true
+  },
+  {
+   "name": "testing/module.rs",
+   "path": "testing/module.rs",
+   "expected": true
+  },
+  {
+   "name": "foo_test.py",
+   "path": "foo_test.py",
+   "expected": true
+  },
+  {
+   "name": "foo_tests.go",
+   "path": "foo_tests.go",
+   "expected": true
+  },
+  {
+   "name": "attest.py",
+   "path": "attest.py",
+   "expected": false
+  },
+  {
+   "name": "contest.py",
+   "path": "contest.py",
+   "expected": false
+  },
+  {
+   "name": "protest_x.py",
+   "path": "protest_x.py",
+   "expected": false
+  },
+  {
+   "name": "reproduce_issue.py",
+   "path": "reproduce_issue.py",
+   "expected": true
+  },
+  {
+   "name": "repro.py",
+   "path": "repro.py",
+   "expected": true
+  },
+  {
+   "name": "repro_bug.sh",
+   "path": "repro_bug.sh",
+   "expected": true
+  },
+  {
+   "name": "bug.py",
+   "path": "bug.py",
+   "expected": true
+  },
+  {
+   "name": "debug.py",
+   "path": "debug.py",
+   "expected": false
+  },
+  {
+   "name": "src\\tests\\a.py",
+   "path": "src\\tests\\a.py",
+   "expected": true
+  },
+  {
+   "name": "'quoted/path/test_y.py'",
+   "path": "'quoted/path/test_y.py'",
+   "expected": true
+  },
+  {
+   "name": "/TESTBED/PKG/MOD.PY",
+   "path": "/TESTBED/PKG/MOD.PY",
+   "expected": false
+  },
+  {
+   "name": "latest.py",
+   "path": "latest.py",
+   "expected": false
+  }
+ ],
+ "edited_src_files": [
+  {
+   "name": "run_redirect_log",
+   "action": "python x.py > log",
+   "expected": []
+  },
+  {
+   "name": "run_redirect_txt",
+   "action": "python x.py > out.txt",
+   "expected": []
+  },
+  {
+   "name": "redirect_to_src",
+   "action": "echo 'fn main() {}' >> src/lib.rs",
+   "expected": [
+    "src/lib.rs"
+   ]
+  },
+  {
+   "name": "redirect_dev_null",
+   "action": "pytest -q > /dev/null",
+   "expected": []
+  },
+  {
+   "name": "redirect_tmp_scratch",
+   "action": "git show HEAD:setup.py > /tmp/setup_old.py",
+   "expected": []
+  },
+  {
+   "name": "redirect_tmp_relative",
+   "action": "cat a.py > tmp/scratch.py",
+   "expected": []
+  },
+  {
+   "name": "sed_i_testbed",
+   "action": "sed -i 's/a/b/' /testbed/django/db/models/query.py",
+   "expected": [
+    "/testbed/django/db/models/query.py"
+   ]
+  },
+  {
+   "name": "sed_i_test_excluded",
+   "action": "sed -i 's/x/y/' tests/test_app.py",
+   "expected": []
+  },
+  {
+   "name": "tee_src",
+   "action": "echo 'code' | tee /src/app.js",
+   "expected": [
+    "/src/app.js"
+   ]
+  },
+  {
+   "name": "patch_marker_no_src_ext",
+   "action": "patch -p1 < changes.diff",
+   "expected": []
+  },
+  {
+   "name": "git_apply_patchfile",
+   "action": "git apply fix.patch",
+   "expected": []
+  },
+  {
+   "name": "git_apply_names_src",
+   "action": "git apply --check fix.patch && git apply fix.patch # touches src/main.rs",
+   "expected": [
+    "src/main.rs"
+   ]
+  },
+  {
+   "name": "apply_patch_block",
+   "action": "apply_patch << 'EOF'\n*** Update File: src/main.rs\nEOF",
+   "expected": [
+    "src/main.rs"
+   ]
+  },
+  {
+   "name": "open_w_testbed",
+   "action": "python -c \"open('/testbed/pkg/util.py','w').write(s)\"",
+   "expected": [
+    "/testbed/pkg/util.py"
+   ]
+  },
+  {
+   "name": "dot_write_marker",
+   "action": "python -c \"f=open('/testbed/mod.py', 'w'); f.write(x)\"",
+   "expected": [
+    "/testbed/mod.py"
+   ]
+  },
+  {
+   "name": "str_replace_marker",
+   "action": "str_replace /w/e.rs old new",
+   "expected": [
+    "/w/e.rs"
+   ]
+  },
+  {
+   "name": "heredoc_scratch",
+   "action": "cat > /tmp/fix.py << 'EOF'\nimport re\nopen('/testbed/pkg/mod.py','w').write(src)\nEOF\npython /tmp/fix.py",
+   "expected": []
+  },
+  {
+   "name": "heredoc_then_real_edit",
+   "action": "cat > /tmp/fix.py << 'EOF'\nimport re\nopen('/testbed/pkg/mod.py','w').write(src)\nEOF\npython /tmp/fix.py\nsed -i 's/a/b/' /testbed/pkg/other.py",
+   "expected": [
+    "/testbed/pkg/other.py"
+   ]
+  },
+  {
+   "name": "heredoc_unclosed",
+   "action": "cat >> /tmp/x.sh <<PATCH\nopen('/testbed/live.py','w')\nno close here",
+   "expected": []
+  },
+  {
+   "name": "heredoc_two_bodies",
+   "action": "cat > /tmp/a.py << 'A'\nopen('/testbed/one.py','w')\nA\ncat > /tmp/b.py << 'B'\nopen('/testbed/two.py','w')\nB\n",
+   "expected": []
+  },
+  {
+   "name": "quoted_path",
+   "action": "sed -i 's/a/b/' '/testbed/pkg/space name.py'",
+   "expected": [
+    "name.py"
+   ]
+  },
+  {
+   "name": "no_marker_no_redirect",
+   "action": "grep -rn 'def main' src/",
+   "expected": []
+  },
+  {
+   "name": "empty",
+   "action": "",
+   "expected": []
+  },
+  {
+   "name": "uppercase_marker",
+   "action": "SED -I s/a/b/ /SRC/APP.PY",
+   "expected": [
+    "/src/app.py"
+   ]
+  },
+  {
+   "name": "multiline_mixed",
+   "action": "ls -la\ntee src/one.py < in\npython run.py > run.log",
+   "expected": [
+    "run.py",
+    "src/one.py"
+   ]
+  }
+ ],
+ "struct_edited_src": [
+  {
+   "name": "extra_actions_edit",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "tool": "Edit",
+       "name": "Edit",
+       "file_path": "/src/x.py",
+       "old_string": "a",
+       "new_string": "b",
+       "command": "edit x.py"
+      }
+     ]
+    }
+   },
+   "expected": [
+    "/src/x.py"
+   ]
+  },
+  {
+   "name": "extra_actions_bash_no_edit",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "tool": "Bash",
+       "name": "Bash",
+       "command": "ls",
+       "file_path": "/src/x.py"
+      }
+     ]
+    }
+   },
+   "expected": []
+  },
+  {
+   "name": "native_tool_use_write",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "writing"
+     },
+     {
+      "type": "tool_use",
+      "id": "t1",
+      "name": "Write",
+      "input": {
+       "file_path": "src/y.go",
+       "content": "pkg"
+      }
+     }
+    ]
+   },
+   "expected": [
+    "src/y.go"
+   ]
+  },
+  {
+   "name": "native_type_underscore",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "_type": "ToolUseBlock",
+      "name": "MultiEdit",
+      "input": {
+       "file_path": "lib/z.ts",
+       "edits": []
+      }
+     }
+    ]
+   },
+   "expected": [
+    "lib/z.ts"
+   ]
+  },
+  {
+   "name": "path_key_variants",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "name": "str_replace_editor",
+      "input": {
+       "path": "/w/e.rs"
+      }
+     },
+     {
+      "type": "tool_use",
+      "id": "b",
+      "name": "apply_patch",
+      "input": {
+       "file": "m/n.c"
+      }
+     },
+     {
+      "type": "tool_use",
+      "id": "c",
+      "name": "notebookedit",
+      "input": {
+       "filename": "q.py"
+      }
+     }
+    ]
+   },
+   "expected": [
+    "/w/e.rs",
+    "m/n.c",
+    "q.py"
+   ]
+  },
+  {
+   "name": "tmp_and_tests_excluded",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "name": "Edit",
+      "input": {
+       "file_path": "/tmp/s.py"
+      }
+     },
+     {
+      "type": "tool_use",
+      "id": "b",
+      "name": "Edit",
+      "input": {
+       "file_path": "tmp/t.py"
+      }
+     },
+     {
+      "type": "tool_use",
+      "id": "c",
+      "name": "Edit",
+      "input": {
+       "file_path": "tests/test_a.py"
+      }
+     },
+     {
+      "type": "tool_use",
+      "id": "d",
+      "name": "Edit",
+      "input": {
+       "file_path": "README.md"
+      }
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "name": "case_and_padding",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "name": " EDIT ",
+      "input": {
+       "file_path": "/src/UP.PY"
+      }
+     }
+    ]
+   },
+   "expected": [
+    "/src/up.py"
+   ]
+  },
+  {
+   "name": "missing_name",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "input": {
+       "file_path": "/src/x.py"
+      }
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "name": "nonstr_path_skipped",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "name": "Edit",
+      "input": {
+       "file_path": [
+        "x.py"
+       ]
+      }
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "name": "falsy_path_falls_through",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "name": "Edit",
+      "input": {
+       "file_path": "",
+       "path": "/real/deal.py"
+      }
+     }
+    ]
+   },
+   "expected": [
+    "/real/deal.py"
+   ]
+  },
+  {
+   "name": "quoted_path_stripped",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "a",
+      "name": "Edit",
+      "input": {
+       "file_path": "'/src/q.py'"
+      }
+     }
+    ]
+   },
+   "expected": [
+    "/src/q.py"
+   ]
+  },
+  {
+   "name": "plain_text_message",
+   "message": {
+    "role": "assistant",
+    "content": "no tools here"
+   },
+   "expected": []
+  }
+ ],
+ "budget_features": [
+  {
+   "name": "too_short",
+   "messages": [
+    {
+     "role": "assistant",
+     "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "role": "user",
+     "content": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+     "role": "assistant",
+     "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "role": "user",
+     "content": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+     "role": "assistant",
+     "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "role": "user",
+     "content": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+   ],
+   "expected": [
+    0.0,
+    0
+   ]
+  },
+  {
+   "name": "six_plain_steps",
+   "messages": [
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    }
+   ],
+   "expected": [
+    1050.0,
+    6
+   ]
+  },
+  {
+   "name": "supervisor_excluded",
+   "messages": [
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "user",
+     "content": "[SUPERVISOR] MANDATORY RULE ..."
+    },
+    {
+     "role": "user",
+     "content": "[CONTEXT RESET marker here"
+    }
+   ],
+   "expected": [
+    1050.0,
+    6
+   ]
+  },
+  {
+   "name": "tool_call_args_counted",
+   "messages": [
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "t",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "content": "oooooooooooooooooooooooooooooooooooooooo"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "t",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "content": "oooooooooooooooooooooooooooooooooooooooo"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "t",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "content": "oooooooooooooooooooooooooooooooooooooooo"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "t",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "content": "oooooooooooooooooooooooooooooooooooooooo"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "t",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "content": "oooooooooooooooooooooooooooooooooooooooo"
+    },
+    {
+     "role": "assistant",
+     "content": "",
+     "tool_calls": [
+      {
+       "id": "t",
+       "type": "function",
+       "function": {
+        "name": "Bash",
+        "arguments": "{\"command\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "content": "oooooooooooooooooooooooooooooooooooooooo"
+    }
+   ],
+   "expected": [
+    750.75,
+    6
+   ]
+  },
+  {
+   "name": "obs_before_first_step_dropped",
+   "messages": [
+    {
+     "role": "user",
+     "content": "preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble preamble "
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    }
+   ],
+   "expected": [
+    315.0,
+    6
+   ]
+  },
+  {
+   "name": "unicode_chars_counted",
+   "messages": [
+    {
+     "role": "assistant",
+     "content": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα"
+    },
+    {
+     "role": "user",
+     "content": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+    },
+    {
+     "role": "assistant",
+     "content": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα"
+    },
+    {
+     "role": "user",
+     "content": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+    },
+    {
+     "role": "assistant",
+     "content": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα"
+    },
+    {
+     "role": "user",
+     "content": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+    },
+    {
+     "role": "assistant",
+     "content": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα"
+    },
+    {
+     "role": "user",
+     "content": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+    },
+    {
+     "role": "assistant",
+     "content": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα"
+    },
+    {
+     "role": "user",
+     "content": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+    },
+    {
+     "role": "assistant",
+     "content": "αααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααααα"
+    },
+    {
+     "role": "user",
+     "content": "ββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββββ"
+    }
+   ],
+   "expected": [
+    840.0,
+    6
+   ]
+  },
+  {
+   "name": "trailing_assistant_no_obs",
+   "messages": [
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+     "role": "user",
+     "content": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+     "role": "assistant",
+     "content": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    }
+   ],
+   "expected": [
+    825.0,
+    7
+   ]
+  }
+ ],
+ "action_of": [
+  {
+   "name": "extra_actions_command",
+   "message": {
+    "role": "assistant",
+    "content": "prose",
+    "extra": {
+     "actions": [
+      {
+       "tool": "Bash",
+       "name": "Bash",
+       "command": "ls -la /tmp"
+      }
+     ]
+    }
+   },
+   "expected": "ls -la /tmp"
+  },
+  {
+   "name": "extra_actions_query_fallback",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "tool": "Grep",
+       "name": "Grep",
+       "command": "",
+       "query": "needle"
+      }
+     ]
+    }
+   },
+   "expected": "needle"
+  },
+  {
+   "name": "extra_actions_multi_join",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat a.py"
+      },
+      {
+       "command": "",
+       "query": "def x"
+      },
+      {
+       "command": ""
+      }
+     ]
+    }
+   },
+   "expected": "cat a.py ; def x ; "
+  },
+  {
+   "name": "tool_calls_args_command",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "1",
+      "type": "function",
+      "function": {
+       "name": "Bash",
+       "arguments": "{\"command\": \"make test\"}"
+      }
+     }
+    ]
+   },
+   "expected": "make test"
+  },
+  {
+   "name": "tool_calls_args_nonjson",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "1",
+      "type": "function",
+      "function": {
+       "name": "X",
+       "arguments": "not json at all"
+      }
+     }
+    ]
+   },
+   "expected": "not json at all"
+  },
+  {
+   "name": "tool_calls_args_json_list",
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "1",
+      "type": "function",
+      "function": {
+       "name": "X",
+       "arguments": "[1, 2]"
+      }
+     }
+    ]
+   },
+   "expected": "[1, 2]"
+  },
+  {
+   "name": "bash_code_block",
+   "message": {
+    "role": "assistant",
+    "content": "I'll run this:\n```bash\npytest -x\n```\ndone"
+   },
+   "expected": "pytest -x"
+  },
+  {
+   "name": "sh_code_block",
+   "message": {
+    "role": "assistant",
+    "content": "```sh\necho hi\n```"
+   },
+   "expected": "echo hi"
+  },
+  {
+   "name": "anon_code_block",
+   "message": {
+    "role": "assistant",
+    "content": "```\nls\n```"
+   },
+   "expected": "ls"
+  },
+  {
+   "name": "plain_text",
+   "message": {
+    "role": "assistant",
+    "content": "just thinking out loud"
+   },
+   "expected": "just thinking out loud"
+  },
+  {
+   "name": "empty_content",
+   "message": {
+    "role": "assistant",
+    "content": ""
+   },
+   "expected": ""
+  }
+ ]
+}

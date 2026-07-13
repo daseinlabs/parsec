@@ -128,6 +128,10 @@ pub struct SessionState {
     pub blocked_rereads: u64,
     pub tokens_saved: u64,
     pub loops_broken: u64,
+    /// Stop-hook adjudicator blocks issued this session (Track C block
+    /// mode's per-session budget, `DASEIN_ADJ_MAX_BLOCKS`).
+    #[serde(default)]
+    pub adj_blocks: u32,
 }
 
 /// What the gate decides for one tool call.
@@ -559,6 +563,11 @@ impl SessionState {
         if !edited.is_empty() {
             self.evict_basenames(&edited);
         }
+    }
+
+    /// Bump the Stop-hook block budget (Track C, block mode only).
+    pub fn note_adj_block(&mut self) {
+        self.adj_blocks += 1;
     }
 }
 

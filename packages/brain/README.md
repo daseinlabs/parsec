@@ -79,14 +79,23 @@ Env: `DASEIN_CKPT`, `DASEIN_RULES_JSON`, `DASEIN_EMBED_URL`,
 `DASEIN_SERVE_TAU` (explicit operating-point override — the reference's
 `AC_SERVE_TAU` dial, namespaced so `_flags` can keep popping stray `AC_*`;
 used by `scripts/e2e_smoke.sh` to force deterministic cuts),
-`DASEIN_BRAIN_KEY` (optional bearer auth on `/v1/*`; `/health` stays open).
+`DASEIN_BRAIN_KEY` (optional bearer auth on `/v1/*`; `/health` stays open),
+`DASEIN_HOODS_PKL` (hoods artifact path; **unset = neighbors OFF**, exactly the
+v0 serving; set-but-missing/corrupt = refuse to start — train/serve-skew
+guard, no auto-fetch), `DASEIN_NEIGHBORS` (runaway cost top-k, default 16),
+`DASEIN_NEIGHBORS_X` (GNN block top-x, default 2 — the trained value, do not
+change), `DASEIN_BRAIN_LOG` (level, default INFO), `DASEIN_BRAIN_LOG_JSON=1`
+(JSON-lines logs). Logs never carry raw message/task text or tool schemas;
+conversation ids ride as sha8 prefixes only.
 
 ## Endpoints
 
-- `GET /health` → `{"status":"ok"}`
+- `GET /health` → `{"status":"ok", "fail_opens": n, "requests": n}` —
+  fail-open events are counted and alertable (CLAUDE.md)
 - `GET /v1/bundle` → checkpoint id, resolved `tau_q`, grid (1e6), served
-  `contracts` (`brain-api-dev/v0` + `brain-api/v1`), heads, neighbors=false,
-  flag snapshot
+  `contracts` (`brain-api-dev/v0` + `brain-api/v1`), heads, `neighbors`
+  (true when the hoods artifact is mounted, + `hoods_anchors` count),
+  `doom` (`{gf, served}` — the ckpt's doom-head gf width), flag snapshot
 - `POST /v1/score/trace` — dispatches on the request `contract`:
   - `brain-api-dev/v0`: internal messages in; the server re-parses with the
     vendored chunker and refuses (**409**) when its sha256(`step:kind:tokens`…)
@@ -98,11 +107,22 @@ used by `scripts/e2e_smoke.sh` to force deterministic cuts),
     `decided_struct`, and `edges_supersession` (client-computed rel-4 pairs —
     the only text-dependent edge relation). **409** on `checkpoint_id`
     mismatch with the bundle; 422 on mask/width/edge-range drift.
+  - Both accept an optional `gf` (the client-computed `loop_feats` 4-vector,
+    each value in [-1, 1]) and then return `doom_q` = sigmoid(doom head) on
+    the 1e-6 grid, pooled over the request's own chunk rows only — same
+    forward, zero extra cost. No `gf` ⇒ no `doom_q` (v0 behavior).
   - Both return the same shape: per-row `scores_q` (non-mask rows exactly
     1000000) + constant calibrated `tau_q` + `checkpoint_id` + `timings_ms`
     (v1 `embed` is structurally 0.0 — the server embeds nothing). The two
-    paths are bit-identical on the same conversation (`tests/test_v1.py`).
-    Client fails open on any error.
+    paths are bit-identical on the same conversation (`tests/test_v1.py`) —
+    including with neighbors mounted and doom scored
+    (`tests/test_neighbors_doom.py`). Client fails open on any error.
+  - With `DASEIN_HOODS_PKL` mounted, the top-x=2 cross-trace neighbor blocks
+    attach into the trace graph (assemble_trace order: after `attach_task`,
+    before `attach_steps`; rels 5/6; **no serve-time dropout**). Anchor query:
+    dev = the task text embedded via the request backend; v1 = the payload
+    `task_emb`. Unset ⇒ nf=None, +3 zero block-parity cols, bit-identical to
+    the committed goldens.
 - `POST /v1/score/tools` — same dispatch:
   - `brain-api-dev/v0`: internal messages + native tool defs.
   - `brain-api/v1`: `nodes` (tool-spec pipeline view), `task_emb`, `sys_emb?`,
@@ -113,15 +133,29 @@ used by `scripts/e2e_smoke.sh` to force deterministic cuts),
     `names: []` = ineligible/failed ⇒ serve the full roster (fail-open).
     `prune()` itself (rank-to-target 0.70, keep-set frozen per conversation) is
     ported client-side.
-- `POST /v1/score/rules` → `{scores_q: {eid: int}, tau_hint_q, checkpoint_id,
-  description}`. Scores each candidate rule's fire-probability at `step`
-  through the vendored assemble path (`AC_RULE=on` scoped to the assemble
-  call); a fire step with no step node (pure-reasoning turn) clamps to the
-  nearest **earlier** step node, exactly as trained. `rules` omitted ⇒ the
-  bundle roster's `active`+`always_on` subset (shipped `rules.json`: `rule1
-  rule2 rule3 rule4 rule6 rule7`; candidate/retired eids are never scored
-  unrequested). `scores_q: {}` = ineligible/failed ⇒ fail open (ungated fire
-  is the baseline).
+- `POST /v1/score/rules` → `{scores_q: {eid: int}, rules: [{eid, text, p_q,
+  fire_step}], tau_hint_q, checkpoint_id, description}` — both contracts:
+  - `brain-api-dev/v0`: internal messages + tools + `step`; `rules` omitted ⇒
+    the bundle roster's `active`+`always_on` subset (shipped `rules.json`:
+    `rule1 rule2 rule3 rule4 rule6 rule7`; candidate/retired eids are never
+    scored unrequested). Scores each candidate's fire-probability at `step`
+    through the vendored assemble path (`AC_RULE=on` scoped to the assemble
+    call); a fire step with no step node (pure-reasoning turn) clamps to the
+    nearest **earlier** step node, exactly as trained.
+  - `brain-api/v1`: the trace-shaped graph payload (`nodes` = the tool-spec
+    pipeline view, `task_emb`, `sys_emb?`, `edges_supersession`) + `cur_step`.
+    The rule ROSTER and TEXT live server-side; the server embeds its own
+    roster — returning that text is data-plane-clean (nothing of the user's
+    leaves). Parity with dev is pinned (`tests/test_neighbors_doom.py`).
+  - `scores_q: {}` (+ `rules: []`) = ineligible/failed ⇒ fail open (ungated
+    fire is the baseline). `fire_step` echoes the requested step — the
+    consumer's `(eid, fire_step)` dedupe key.
+- `POST /v1/neighbors` → `{nbr_cost_median, nbr_count, neighbors_active,
+  checkpoint_id}` — the runaway cost baseline, called ONCE per conversation
+  (the neighbor set is per-task constant; the client caches it). dev body:
+  `task_text`; v1 body: `task_vec` (client-embedded, 409 on checkpoint
+  mismatch). Median = MEDIAN realized cost of the top-16 nearest anchors;
+  `null` when hoods are off or <4 costs — the runaway signal stays inert.
 - `POST /v1/score/gate` → `{score_q, tau_q: 500000, fire: score_q >= tau_q,
   fail_open, checkpoint_id}` for the codescout `brief` (vendored
   `attach_brief` + `brief_stats`; the scout-record scalars zero-fill at serve

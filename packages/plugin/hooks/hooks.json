@@ -34,6 +34,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
+            "args": ["hook", "Stop"],
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

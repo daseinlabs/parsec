@@ -33,6 +33,7 @@ use sha2::{Digest, Sha256};
 
 use dasein_engine::embed::{Embedder, HashEmbedder};
 use dasein_engine::freeze::{BirthQuery, ChunkScorer, ScoreError, ScoreResult};
+use dasein_engine::pystr::char_prefix;
 
 use crate::featurize;
 
@@ -187,14 +188,32 @@ pub fn build_embedder(cfg: &BrainConfig) -> Result<Box<dyn Embedder + Send>, Sco
 #[derive(Deserialize)]
 struct BundleInfo {
     checkpoint_id: String,
+    /// `{"gf": int, "served": bool}` — whether this bundle scores a doom
+    /// head. Absent on pre-doom brains (their v1 models are extra=forbid, so
+    /// sending `gf` to them would 422 every trace: version-skew guard).
+    #[serde(default)]
+    doom: Option<DoomInfo>,
+}
+
+#[derive(Deserialize)]
+struct DoomInfo {
+    #[serde(default)]
+    served: bool,
+}
+
+impl BundleInfo {
+    fn doom_served(&self) -> bool {
+        self.doom.as_ref().is_some_and(|d| d.served)
+    }
 }
 
 /// `GET /v1/bundle` — the v1 handshake: the checkpoint the brain serves,
-/// which every v1 payload must name (§8.2 matched-pair guard, 409 on drift).
-fn fetch_checkpoint_id(
+/// which every v1 payload must name (§8.2 matched-pair guard, 409 on drift),
+/// plus the capability flags the client gates optional fields on (doom/gf).
+fn fetch_bundle(
     http: &reqwest::blocking::Client,
     cfg: &BrainConfig,
-) -> Result<String, ScoreError> {
+) -> Result<BundleInfo, ScoreError> {
     let mut req = http.get(format!("{}/v1/bundle", cfg.url));
     if let Some(k) = &cfg.key {
         req = req.bearer_auth(k);
@@ -209,7 +228,12 @@ fn fetch_checkpoint_id(
     let info: BundleInfo = resp
         .json()
         .map_err(|e| ScoreError(format!("brain bundle decode: {e}")))?;
-    Ok(info.checkpoint_id)
+    tracing::debug!(
+        checkpoint = %info.checkpoint_id,
+        doom_served = info.doom_served(),
+        "brain /v1/bundle handshake ok"
+    );
+    Ok(info)
 }
 
 /// Per-conversation id salt: deliberately NON-derivable server-side (the
@@ -237,6 +261,10 @@ struct TraceResponse {
     #[serde(default)]
     #[allow(dead_code)]
     timings_ms: Value,
+    /// Doom head on the 1e-6 grid — present iff the request carried `gf`
+    /// AND the checkpoint has a doom head (wire contract addition).
+    #[serde(default)]
+    doom_q: Option<i64>,
 }
 
 /// Telemetry the proxy reads back after a serve (ledger capture seams).
@@ -244,6 +272,10 @@ struct TraceResponse {
 pub struct BrainStats {
     pub brain_ms: f64,
     pub checkpoint_id: Option<String>,
+    /// HTTP trace-score round trips (birth steps scored) — tracing seam.
+    pub trace_calls: u64,
+    /// Latest doom_q seen (governor consumer resets it per serve).
+    pub last_doom_q: Option<i64>,
 }
 
 /// (cur_step, live-set fingerprint, scores_q, tau_q) of the last response.
@@ -262,10 +294,19 @@ pub struct BrainScorer {
     /// per-pool scores too).
     cache: ScoreCache,
     pub stats: BrainStats,
+    /// Attach the governor's 4-float `gf` (loop_feats) to score/trace bodies
+    /// — set by the server when `DASEIN_GOVERNOR != off`; false = today's
+    /// wire, byte-identical (doom head not scored).
+    pub attach_gf: bool,
     // ── v1-contract state (unused in dev mode) ─────────────────────────────
     /// /v1/bundle handshake result; None until the first successful GET
     /// (retried per score() — an unreachable brain is a per-step fail-open).
     v1_checkpoint: Option<String>,
+    /// Did the handshaken bundle advertise a served doom head? `gf` is
+    /// attached on the v1 wire only when true (pre-gf brains are
+    /// extra=forbid: an unknown key is a 422 = total curation outage).
+    /// Refreshed with every handshake (incl. the 409 re-pair).
+    v1_doom: bool,
     /// Client embedder, built lazily on the first v1 score (blocking
     /// context — Freezer::serve always runs inside spawn_blocking).
     v1_embedder: Option<Box<dyn Embedder + Send>>,
@@ -289,7 +330,9 @@ impl BrainScorer {
             http,
             cache: Mutex::new(None),
             stats: BrainStats::default(),
+            attach_gf: false,
             v1_checkpoint: None,
+            v1_doom: false,
             v1_embedder: None,
             v1_embed_cache: HashMap::new(),
             conv_salt,
@@ -309,7 +352,11 @@ impl BrainScorer {
     /// (including the handshake) on the next serve.
     fn v1_body(&mut self, q: &BirthQuery) -> Result<Value, ScoreError> {
         if self.v1_checkpoint.is_none() {
-            self.v1_checkpoint = Some(fetch_checkpoint_id(&self.http, &self.cfg)?);
+            let info = fetch_bundle(&self.http, &self.cfg)?;
+            // Finding 6: gate `gf` on the handshake's doom capability — a
+            // pre-gf v1 brain (extra=forbid) would 422 every trace body.
+            self.v1_doom = info.doom_served();
+            self.v1_checkpoint = Some(info.checkpoint_id);
         }
         if self.v1_embedder.is_none() {
             self.v1_embedder = Some(build_embedder(&self.cfg)?);
@@ -339,6 +386,11 @@ impl ChunkScorer for BrainScorer {
             .as_ref()
         {
             if *step == q.cur_step && *cached_fp == fp {
+                tracing::debug!(
+                    conv = %self.conv_id,
+                    cur_step = q.cur_step,
+                    "brain score served from same-live-set cache"
+                );
                 return Ok(ScoreResult {
                     scores_q: scores.clone(),
                     tau_q: *tau,
@@ -346,7 +398,7 @@ impl ChunkScorer for BrainScorer {
             }
         }
 
-        let body = match self.cfg.contract {
+        let mut body = match self.cfg.contract {
             BrainContract::Dev => json!({
                 "contract": "brain-api-dev/v0",
                 "conv_id": self.conv_id,
@@ -359,6 +411,24 @@ impl ChunkScorer for BrainScorer {
             }),
             BrainContract::V1 => self.v1_body(q)?,
         };
+        // Governor doom head input (wire contract addition, both contracts):
+        // loop_feats over the SAME internal view being scored. Omitted when
+        // the governor is off or there are no commands — today's behavior.
+        // v1 additionally requires the handshaken bundle to SERVE a doom head
+        // (pre-gf v1 servers are extra=forbid — sending gf would 422 every
+        // trace, a total curation outage on version skew). Dev models ignore
+        // extras, so dev attaches unconditionally.
+        let gf_capable = match self.cfg.contract {
+            BrainContract::Dev => true,
+            BrainContract::V1 => self.v1_doom, // set by the handshake above
+        };
+        if self.attach_gf && gf_capable {
+            if let Some(gf) = crate::governor::gf_of(q.messages) {
+                if let Some(o) = body.as_object_mut() {
+                    o.insert("gf".into(), json!(gf));
+                }
+            }
+        }
         let t0 = Instant::now();
         let mut req = self
             .http
@@ -378,16 +448,43 @@ impl ChunkScorer for BrainScorer {
                 self.v1_checkpoint = None;
             }
             let detail = resp.text().unwrap_or_default();
+            // char-clip, never byte-slice: a multi-byte char straddling the
+            // boundary panicked inside spawn_blocking and dropped the taken
+            // freezer (memo loss) — same pattern as the count_tokens probe.
             return Err(ScoreError(format!(
                 "brain {status}: {}",
-                &detail[..detail.len().min(200)]
+                detail.chars().take(200).collect::<String>()
             )));
         }
         let r: TraceResponse = resp
             .json()
             .map_err(|e| ScoreError(format!("brain response decode: {e}")))?;
-        self.stats.brain_ms += t0.elapsed().as_secs_f64() * 1000.0;
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        self.stats.brain_ms += elapsed_ms;
+        // the whole GNN score vector, index-aligned to the live chunk set —
+        // model outputs only, no text (data-plane rule)
+        tracing::debug!(
+            conv = %self.conv_id,
+            cur_step = q.cur_step,
+            scores_q = ?r.scores_q,
+            tau_q = r.tau_q,
+            "GNN trace score vector"
+        );
+        tracing::debug!(
+            conv = %self.conv_id,
+            cur_step = q.cur_step,
+            live = q.live.len(),
+            scores = r.scores_q.len(),
+            tau_q = r.tau_q,
+            checkpoint = %r.checkpoint_id,
+            elapsed_ms = elapsed_ms as u64,
+            "brain /v1/score/trace ok"
+        );
         self.stats.checkpoint_id = Some(r.checkpoint_id);
+        self.stats.trace_calls += 1;
+        if let Some(dq) = r.doom_q {
+            self.stats.last_doom_q = Some(dq);
+        }
         if r.scores_q.len() != q.live.len() {
             return Err(ScoreError(format!(
                 "brain returned {} scores for {} live chunks",
@@ -464,6 +561,7 @@ pub async fn score_tools(
     if let Some(k) = &cfg.key {
         req = req.bearer_auth(k);
     }
+    let t0 = Instant::now();
     let resp = req.send().await.ok()?;
     if !resp.status().is_success() {
         tracing::warn!("brain score/tools {}: full roster served", resp.status());
@@ -474,8 +572,27 @@ pub async fn score_tools(
         || ts.names.len() != ts.scores_q.len()
         || ts.names.len() != ts.tokens.len()
     {
+        tracing::debug!(
+            names = ts.names.len(),
+            scores = ts.scores_q.len(),
+            tokens = ts.tokens.len(),
+            "brain score/tools response malformed — full roster served"
+        );
         return None;
     }
+    tracing::debug!(
+        conv = %conv_id,
+        names = ?ts.names,
+        scores_q = ?ts.scores_q,
+        tokens = ?ts.tokens,
+        "GNN tool score vector"
+    );
+    tracing::debug!(
+        conv = %conv_id,
+        tools = ts.names.len(),
+        elapsed_ms = t0.elapsed().as_millis() as u64,
+        "brain /v1/score/tools ok"
+    );
     Some(ts)
 }
 
@@ -491,7 +608,7 @@ fn build_v1_tools_body(
         .timeout(cfg.timeout)
         .build()
         .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
-    let checkpoint_id = fetch_checkpoint_id(&http, cfg)?;
+    let checkpoint_id = fetch_bundle(&http, cfg)?.checkpoint_id;
     let embedder = build_embedder(cfg)?;
     let mut cache = HashMap::new();
     featurize::build_v1_tools_payload(
@@ -503,6 +620,249 @@ fn build_v1_tools_body(
         conv_id,
         &checkpoint_id,
     )
+}
+
+// ── governor consumers: /v1/score/rules + /v1/neighbors ────────────────────
+
+/// task_text per the reference query rule: the FIRST user message's internal
+/// text, clipped to 2000 chars.
+fn first_user_text(internal: &[Value]) -> String {
+    for m in internal {
+        if m.get("role").and_then(Value::as_str) == Some("user") {
+            let t = match m.get("content") {
+                Some(Value::String(s)) => s.as_str(),
+                _ => "",
+            };
+            return char_prefix(t, 2000).to_string();
+        }
+    }
+    String::new()
+}
+
+/// `/v1/score/rules` response (wire contract: existing fields plus the
+/// `rules` roster scored at the CURRENT step). A response without `rules`
+/// (an older brain) carries no text to deliver — the caller fires nothing.
+#[derive(Deserialize)]
+pub struct RulesResponse {
+    #[serde(default)]
+    pub rules: Vec<crate::governor::RuleScore>,
+    #[serde(default)]
+    pub tau_hint_q: Option<i64>,
+    #[serde(default)]
+    pub checkpoint_id: String,
+}
+
+/// Score the server-side rule roster at `cur_step` (dev + v1 bodies, the
+/// score_tools pattern). None = anything failed (transport, non-2xx incl.
+/// the 501 v1-unsupported detail, decode) — the governor skips rules this
+/// turn and retries next request (fail-open).
+pub async fn score_rules(
+    client: &reqwest::Client,
+    cfg: &BrainConfig,
+    conv_id: &str,
+    internal: &[Value],
+    tools: &Value,
+    cur_step: i64,
+) -> Option<RulesResponse> {
+    let body = match cfg.contract {
+        BrainContract::Dev => json!({
+            "contract": "brain-api-dev/v0",
+            "conv_id": conv_id,
+            "messages": internal,
+            "tools": tools.as_array().cloned().unwrap_or_default(),
+            "step": cur_step,
+        }),
+        BrainContract::V1 => {
+            let cfg2 = cfg.clone();
+            let conv2 = conv_id.to_string();
+            let internal2 = internal.to_vec();
+            let built = tokio::task::spawn_blocking(move || {
+                build_v1_rules_body(&cfg2, &conv2, &internal2, cur_step)
+            })
+            .await
+            .ok()?;
+            match built {
+                Ok(Some(body)) => body,
+                Ok(None) => return None, // nothing chunkable: skip rules
+                Err(e) => {
+                    tracing::warn!("v1 rules featurization failed ({e}): rules skipped");
+                    return None;
+                }
+            }
+        }
+    };
+    let mut req = client
+        .post(format!("{}/v1/score/rules", cfg.url))
+        .timeout(cfg.timeout)
+        .json(&body);
+    if let Some(k) = &cfg.key {
+        req = req.bearer_auth(k);
+    }
+    let resp = req.send().await.ok()?;
+    if !resp.status().is_success() {
+        tracing::warn!(
+            "brain score/rules {}: rules skipped (fail-open)",
+            resp.status()
+        );
+        return None;
+    }
+    resp.json().await.ok()
+}
+
+/// Blocking v1 rules-request assembly: the SAME v1 trace payload shape as
+/// score/trace (chunks/steps as opaque ids + vectors, `cur_step` included)
+/// built over the full internal view with an empty decided mask. Ok(None) =
+/// ineligible (fail-open, rules skipped).
+fn build_v1_rules_body(
+    cfg: &BrainConfig,
+    conv_id: &str,
+    internal: &[Value],
+    cur_step: i64,
+) -> Result<Option<Value>, ScoreError> {
+    use dasein_engine::chunking::{accumulated_chunks, ChunkMode};
+    use dasein_engine::messages::{assistant_chunks_of, reasoning_chunks_of, steps_of};
+
+    let http = reqwest::blocking::Client::builder()
+        .timeout(cfg.timeout)
+        .build()
+        .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
+    let checkpoint_id = fetch_bundle(&http, cfg)?.checkpoint_id;
+    let embedder = build_embedder(cfg)?;
+    let steps = steps_of(internal);
+    let t_last = steps.len().max(1) - 1;
+    let mut chunks = accumulated_chunks(&steps, t_last, Some(10), ChunkMode::Fixed);
+    chunks.extend(
+        assistant_chunks_of(internal)
+            .into_iter()
+            .filter(|c| c.step <= t_last as i64),
+    );
+    chunks.extend(
+        reasoning_chunks_of(internal)
+            .into_iter()
+            .filter(|c| c.step <= t_last as i64),
+    );
+    chunks.sort_by_key(|c| c.step);
+    if chunks.is_empty() {
+        return Ok(None);
+    }
+    let live_owner = vec![0usize; chunks.len()];
+    let q = BirthQuery {
+        cur_step,
+        task_text: first_user_text(internal),
+        recent_cmds: String::new(),
+        live: &chunks,
+        live_owner: &live_owner,
+        live_gi: (0..chunks.len()).collect(),
+        messages: internal,
+        chunk_checksum: String::new(),
+        mask: Vec::new(),
+    };
+    let mut cache = HashMap::new();
+    let mut payload = featurize::build_v1_trace_payload(
+        &q,
+        &*embedder,
+        &mut cache,
+        featurize::changeprone(),
+        &fresh_salt(conv_id),
+        conv_id,
+        &checkpoint_id,
+        &cfg.target_cov,
+    )?;
+    // The rules request is the TRACE payload shape minus the decision-side
+    // fields: the brain's ScoreRulesV1Request is extra=forbid, so carrying
+    // mask/decided_struct/target_cov 422s live (guarded by
+    // tests/proxy_governor.rs::v1_governor_bodies_match_brain_schema).
+    if let Some(o) = payload.as_object_mut() {
+        o.remove("mask");
+        o.remove("decided_struct");
+        o.remove("target_cov");
+    }
+    Ok(Some(payload))
+}
+
+/// `/v1/neighbors` response: null median when hoods are off or fewer than 4
+/// cost-bearing neighbours exist (reference: runaway stays inert).
+#[derive(Debug, Clone, Deserialize)]
+pub struct NeighborsInfo {
+    pub nbr_cost_median: Option<f64>,
+    #[serde(default)]
+    pub nbr_count: i64,
+    #[serde(default)]
+    pub neighbors_active: bool,
+    #[serde(default)]
+    pub checkpoint_id: String,
+}
+
+/// Fetch the per-task neighbour-cost baseline ONCE per conversation (the
+/// neighbour set is per-task constant; the caller caches the result in
+/// ConvState). None = failure — retried on the next request (fail-open,
+/// runaway stays inert meanwhile).
+pub async fn fetch_neighbors(
+    client: &reqwest::Client,
+    cfg: &BrainConfig,
+    conv_id: &str,
+    internal: &[Value],
+) -> Option<NeighborsInfo> {
+    let task_text = first_user_text(internal);
+    if task_text.is_empty() {
+        return None; // reference: no task text, no neighbours
+    }
+    let body = match cfg.contract {
+        BrainContract::Dev => json!({
+            "contract": "brain-api-dev/v0",
+            "conv_id": conv_id,
+            "task_text": task_text,
+        }),
+        BrainContract::V1 => {
+            // The client embeds the task head locally; raw text stays
+            // unrepresentable on the v1 wire.
+            let cfg2 = cfg.clone();
+            let built = tokio::task::spawn_blocking(move || -> Result<Value, ScoreError> {
+                let http = reqwest::blocking::Client::builder()
+                    .timeout(cfg2.timeout)
+                    .build()
+                    .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
+                let checkpoint_id = fetch_bundle(&http, &cfg2)?.checkpoint_id;
+                let embedder = build_embedder(&cfg2)?;
+                let vecs = embedder
+                    .embed(&[task_text.as_str()])
+                    .map_err(|e| ScoreError(format!("task embed: {e}")))?;
+                let task_vec = vecs.into_iter().next().unwrap_or_default();
+                Ok(json!({"checkpoint_id": checkpoint_id, "task_vec": task_vec}))
+            })
+            .await
+            .ok()?;
+            match built {
+                Ok(mut b) => {
+                    if let Some(o) = b.as_object_mut() {
+                        o.insert("contract".into(), json!("brain-api/v1"));
+                        o.insert("conv_id".into(), json!(conv_id));
+                    }
+                    b
+                }
+                Err(e) => {
+                    tracing::warn!("v1 neighbors featurization failed ({e}): neighbors skipped");
+                    return None;
+                }
+            }
+        }
+    };
+    let mut req = client
+        .post(format!("{}/v1/neighbors", cfg.url))
+        .timeout(cfg.timeout)
+        .json(&body);
+    if let Some(k) = &cfg.key {
+        req = req.bearer_auth(k);
+    }
+    let resp = req.send().await.ok()?;
+    if !resp.status().is_success() {
+        tracing::warn!(
+            "brain neighbors {}: neighbors skipped (fail-open)",
+            resp.status()
+        );
+        return None;
+    }
+    resp.json().await.ok()
 }
 
 #[derive(Debug, Clone, PartialEq)]

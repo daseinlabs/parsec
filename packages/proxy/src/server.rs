@@ -44,6 +44,7 @@ use dasein_engine::freeze::{FreezeConfig, Freezer};
 use dasein_engine::pystr::py_json_dumps;
 
 use crate::brain::{self, BrainConfig, BrainScorer};
+use crate::governor::{self, GovMode};
 use crate::internal::to_internal;
 use crate::splice::{self, FoldMap};
 
@@ -59,6 +60,9 @@ pub struct ConvState {
     pub last_fps: Vec<String>,
     pub freezer: Option<Freezer<BrainScorer>>,
     pub tool_keep: Option<HashSet<String>>,
+    /// Governor latches/accumulators (contract Track B item 3) — a CACHE:
+    /// losing it only ever makes the governor LESS likely to fire.
+    pub gov: governor::GovMemo,
     /// Eviction clock (reference sessions.py TTL semantics). Memos are pure
     /// caches, so evicting a live conversation only costs replay round trips
     /// and one provider-cache re-seed — never bytes.
@@ -72,6 +76,7 @@ impl Default for ConvState {
             last_fps: Vec::new(),
             freezer: None,
             tool_keep: None,
+            gov: governor::GovMemo::default(),
             touched: std::time::Instant::now(),
         }
     }
@@ -113,6 +118,13 @@ pub struct AppState {
     /// Real-scorer path (docs/brain-serving-v0.md). None = v0 passthrough
     /// curation exactly as before.
     pub brain: Option<BrainConfig>,
+    /// Governor dials (DASEIN_GOVERNOR et al.) — Off by default: zero
+    /// behavior change, zero extra brain calls.
+    pub governor: governor::GovernorConfig,
+    /// Governor-seam fail-opens (rules/neighbors/signal errors): the request
+    /// is NEVER failed or altered beyond passthrough — but every skip is
+    /// counted, per the fail-open-but-measured rule.
+    pub gov_fail_open_count: AtomicU64,
     /// Idle/self-shutdown bookkeeping: epoch-seconds of the last inbound
     /// request and the number currently in flight.
     pub last_request_epoch_s: AtomicU64,
@@ -136,6 +148,21 @@ impl AppState {
         ledger_path: PathBuf,
         brain: Option<BrainConfig>,
     ) -> Self {
+        Self::with_brain_governor(
+            upstream_base,
+            ledger_path,
+            brain,
+            governor::GovernorConfig::from_env(),
+        )
+    }
+
+    /// Explicit-governor constructor (tests inject a config; env untouched).
+    pub fn with_brain_governor(
+        upstream_base: String,
+        ledger_path: PathBuf,
+        brain: Option<BrainConfig>,
+        gov: governor::GovernorConfig,
+    ) -> Self {
         Self {
             upstream_base,
             client: reqwest::Client::new(),
@@ -143,6 +170,8 @@ impl AppState {
             fail_open_count: AtomicU64::new(0),
             ledger_path,
             brain,
+            governor: gov,
+            gov_fail_open_count: AtomicU64::new(0),
             last_request_epoch_s: AtomicU64::new(epoch_s()),
             in_flight: AtomicU64::new(0),
         }
@@ -204,6 +233,23 @@ pub fn run() -> anyhow::Result<()> {
         }
     }
     let state = Arc::new(AppState::with_brain(upstream, ledger, brain));
+    if state.governor.mode != GovMode::Off {
+        tracing::info!(
+            mode = state.governor.mode.as_str(),
+            rule_tau = state.governor.rule_tau,
+            doom_thresh = state.governor.doom_thresh,
+            doom_k = state.governor.doom_k,
+            runaway_ratio = state.governor.runaway_ratio,
+            kill_floor_tok = state.governor.kill_floor_tok,
+            horizon_step = state.governor.horizon_step,
+            "governor active (DASEIN_GOVERNOR) — directives {}",
+            if state.governor.mode == GovMode::On {
+                "INJECTED"
+            } else {
+                "recorded only (advise)"
+            }
+        );
+    }
 
     // Lifecycle dials: DASEIN_PROXY_IDLE_EXIT_S (0/unset = run forever — the
     // manual default; the plugin's SessionStart auto-start sets 1800 so the
@@ -399,6 +445,50 @@ struct PlanStats {
     tools_total: Option<usize>,
     tools_kept: Option<usize>,
     tools_pre_prune_sha8: Option<String>,
+    // ── detailed-tracing seams (contract Track B item 6) ───────────────────
+    /// Conversation turn = assistant messages in the internal view.
+    turn: i64,
+    /// Fold-map size after this call / folds newly recorded this call.
+    folds_total: usize,
+    folds_new: usize,
+    /// Brain trace round trips this request (birth steps scored/replayed).
+    births_scored: u64,
+    /// Message indices carrying a cache anchor in the served body.
+    anchors: Vec<usize>,
+    curate_ms: f64,
+    /// Governor seams — Some only when DASEIN_GOVERNOR != off.
+    gov: Option<GovStats>,
+}
+
+/// Ledger seams for the governor (contract Track B item 5) — recorded in
+/// advise AND on; absent when off so existing rows stay byte-identical.
+#[derive(Clone)]
+struct GovStats {
+    mode: &'static str,
+    runaway_factor: f64,
+    loop_frac: f64,
+    doom_q: Option<i64>,
+    n_src: usize,
+    cum_tok: f64,
+    rule_fires: usize,
+    directive_injected: bool,
+    /// Some(...) once fetched: the median, or null when hoods are inert.
+    nbr_cost_median: Option<Option<f64>>,
+}
+
+/// One-shot governor consumables burned by THIS request's directives —
+/// committed to the live memo only after upstream 2xx (the same
+/// anthropic_shapes.py:484 bug class as fingerprints: a 429/529 means the
+/// model never saw the directive, so the latch must survive for the retry).
+/// The kill latch is deliberately NOT here — it re-appends every turn and
+/// un-latching on failure would flap; it commits immediately.
+#[derive(Clone, Default)]
+struct GovCommit {
+    /// Rule fires delivered this turn: (eid, fire_step) dedupe inserts.
+    fired: Vec<(String, i64)>,
+    coach_fired: bool,
+    bank_fired: bool,
+    horizon_fired: bool,
 }
 
 struct Plan {
@@ -411,6 +501,8 @@ struct Plan {
     /// cur_fps proven byte-identical to the prior successful call.
     cache_prefix_sha8: String,
     stats: PlanStats,
+    /// One-shot governor latches awaiting the 2xx commit (None when off).
+    gov_commit: Option<GovCommit>,
 }
 
 /// Internal-view token mass (reference _PROMPT diag: Σ len(_text(m))//4).
@@ -432,12 +524,25 @@ fn internal_mass(msgs: &[Value]) -> i64 {
 /// equality branch forwards every turn verbatim while recording folds — the
 /// wire freeze is live even before a curator cuts anything).
 async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow::Result<Plan> {
+    let t_curate = std::time::Instant::now();
     if body.get("messages").and_then(Value::as_array).is_none() {
         anyhow::bail!("body has no messages array");
     }
     let internal = to_internal(body);
     let conv_id = conversation_id(headers, &internal);
-    let mut stats = PlanStats::default();
+    tracing::debug!(
+        conv = %conv_id,
+        internal_msgs = internal.len(),
+        internal_tokens = internal_mass(&internal),
+        "curate: internal view built"
+    );
+    let mut stats = PlanStats {
+        turn: internal
+            .iter()
+            .filter(|m| m.get("role").and_then(Value::as_str) == Some("assistant"))
+            .count() as i64,
+        ..PlanStats::default()
+    };
     lock(&st.convs).entry(conv_id.clone()).or_default().touched = std::time::Instant::now();
 
     // sessions.py new-run reset: a request with no assistant turn is turn 1
@@ -446,8 +551,11 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
     let has_assistant = internal
         .iter()
         .any(|m| m.get("role").and_then(Value::as_str) == Some("assistant"));
-    if !has_assistant {
-        lock(&st.convs).remove(&conv_id);
+    if !has_assistant && lock(&st.convs).remove(&conv_id).is_some() {
+        tracing::debug!(
+            conv = %conv_id,
+            "no assistant turn — fresh run, stale memo (folds/freezer/tool keep-set) reset"
+        );
     }
 
     // The Freezer path: serve() replays un-replayed birth steps (brain round
@@ -455,6 +563,7 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
     // HTTP client. The freezer is TAKEN from the memo and put back after; a
     // racing request on the same conversation just rebuilds the memo from
     // scratch (pure fold — identical bytes, extra latency only).
+    let mut gov_doom_q: Option<i64> = None;
     let curated_internal: Vec<Value> = if let Some(bcfg) = &st.brain {
         let taken = lock(&st.convs)
             .entry(conv_id.clone())
@@ -464,25 +573,41 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         let internal_in = internal.clone();
         let bcfg2 = bcfg.clone();
         let conv2 = conv_id.clone();
+        let attach_gf = st.governor.mode != GovMode::Off;
         // Freezer (and its blocking HTTP scorer) is built AND driven on a
         // blocking thread — reqwest::blocking panics on async runtime threads.
-        let (fz, served, fails_before) = tokio::task::spawn_blocking(move || {
+        let (fz, served, fails_before, calls_before) = tokio::task::spawn_blocking(move || {
             let mut fz = taken.unwrap_or_else(|| {
                 Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
             });
+            // Governor doom input rides the same trace calls; the latest
+            // doom is harvested per request, so reset before the serve.
+            fz.scorer.attach_gf = attach_gf;
+            fz.scorer.stats.last_doom_q = None;
             let fails_before = fz.scorer_fail_opens;
+            let calls_before = fz.scorer.stats.trace_calls;
             let served = fz.serve(&internal_in);
-            (fz, served, fails_before)
+            (fz, served, fails_before, calls_before)
         })
         .await
         .map_err(|e| anyhow::anyhow!("freezer task panicked: {e}"))?;
         stats.scorer_fail_opens = fz.scorer_fail_opens - fails_before;
         stats.brain_ms = fz.scorer.stats.brain_ms;
         stats.checkpoint_id = fz.scorer.stats.checkpoint_id.clone();
+        stats.births_scored = fz.scorer.stats.trace_calls - calls_before;
+        gov_doom_q = fz.scorer.stats.last_doom_q;
         lock(&st.convs).entry(conv_id.clone()).or_default().freezer = Some(fz);
         match served {
             Ok(c) => {
                 stats.freeze_cut_tokens = (internal_mass(&internal) - internal_mass(&c)).max(0);
+                tracing::debug!(
+                    conv = %conv_id,
+                    cut_tokens = stats.freeze_cut_tokens,
+                    brain_ms = stats.brain_ms,
+                    scorer_fail_opens = stats.scorer_fail_opens,
+                    checkpoint = stats.checkpoint_id.as_deref().unwrap_or("-"),
+                    "freezer served"
+                );
                 c
             }
             // Invalid internal shape: the reference raises out of curate()
@@ -498,18 +623,22 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         let cs = convs.entry(conv_id.clone()).or_default();
         (cs.folds.clone(), cs.last_fps.clone())
     };
-    let curated = splice::apply_curation(body, &curated_internal, Some(&mut folds));
+    let folds_before = folds.len();
+    let mut curated = splice::apply_curation(body, &curated_internal, Some(&mut folds));
+    stats.folds_total = folds.len();
+    stats.folds_new = folds.len().saturating_sub(folds_before);
     // Folds MAY commit before the send: they memoize served bytes and replay
     // idempotently — unlike fingerprints, which assert "upstream has cached
     // these bytes" and must wait for the 2xx (see below).
     lock(&st.convs).entry(conv_id.clone()).or_default().folds = folds;
-
-    let prior = if prior_fps.is_empty() {
-        None
-    } else {
-        Some(prior_fps.as_slice())
-    };
-    let (mut out, cur_fps) = splice::place_cache_breakpoint(&curated, false, prior);
+    tracing::debug!(
+        conv = %conv_id,
+        turn = stats.turn,
+        folds_total = stats.folds_total,
+        folds_new = stats.folds_new,
+        births_scored = stats.births_scored,
+        "curate: fold-back done"
+    );
 
     // Tool-schema keep-set (reference _prepare_anthropic step 10): score the
     // roster ONCE per conversation via the brain tool head, freeze the
@@ -517,6 +646,8 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
     // seam: scoring failure = full roster + retry next request. Added guard
     // vs the reference: a client-forced tool_choice is served the full
     // roster (the reference could 400 upstream on a pruned forced tool).
+    // Runs BEFORE breakpoints (it never touches messages/system, so the
+    // served bytes are unchanged by the reorder).
     if let Some(bcfg) = &st.brain {
         if bcfg.tool_prune {
             if let Some(tools) = body
@@ -531,7 +662,14 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                     .tool_keep
                     .clone();
                 let keep = match keep {
-                    Some(k) => Some(k),
+                    Some(k) => {
+                        tracing::debug!(
+                            conv = %conv_id,
+                            keep = k.len(),
+                            "tool-prune: reusing frozen keep-set"
+                        );
+                        Some(k)
+                    }
                     None => {
                         match brain::score_tools(&st.client, bcfg, &conv_id, &internal, tools).await
                         {
@@ -543,11 +681,28 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                                     bcfg.tool_cut,
                                 );
                                 let kset: HashSet<String> = res.keep.iter().cloned().collect();
+                                // The GNN tool-head predictions behind the
+                                // decision — one line per tool so a mis-prune
+                                // is diagnosable from the log alone (tool
+                                // names are harness identifiers, never user
+                                // code — same class as conv ids).
+                                for (i, name) in ts.names.iter().enumerate() {
+                                    tracing::debug!(
+                                        conv = %conv_id,
+                                        tool = %name,
+                                        score_q = ts.scores_q[i],
+                                        tokens = ts.tokens[i],
+                                        kept = kset.contains(name),
+                                        "tool-prune: GNN tool-head score"
+                                    );
+                                }
                                 tracing::info!(
                                     conv = %conv_id,
                                     kept = res.keep.len(),
                                     total = ts.names.len(),
                                     saved_tok = res.tokens_saved,
+                                    kept_tok = res.tokens_kept,
+                                    cut_frac = format!("{:.3}", res.cut_frac).as_str(),
                                     "tool-prune keep-set frozen"
                                 );
                                 lock(&st.convs)
@@ -562,8 +717,14 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                 };
                 let forced =
                     body.pointer("/tool_choice/type").and_then(Value::as_str) == Some("tool");
+                if forced {
+                    tracing::debug!(
+                        conv = %conv_id,
+                        "tool-prune: client-forced tool_choice — full roster served"
+                    );
+                }
                 if let (Some(keep), false) = (keep, forced) {
-                    let src: Vec<Value> = out
+                    let src: Vec<Value> = curated
                         .get("tools")
                         .or(Some(tools))
                         .and_then(Value::as_array)
@@ -578,7 +739,7 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                         })
                         .collect();
                     stats.tools_kept = Some(kept.len());
-                    if let Some(o) = out.as_object_mut() {
+                    if let Some(o) = curated.as_object_mut() {
                         o.insert("tools".into(), Value::Array(kept));
                     }
                 }
@@ -586,12 +747,56 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         }
     }
 
+    // ── governor stage (contract Track B item 4) ────────────────────────────
+    // off  => byte-identical current behavior INCLUDING directive_appended=
+    //         false (zero extra brain calls);
+    // advise => compute + record only, wire untouched;
+    // on   => advise + append the directive turn via append_user_text.
+    // Fail-open at every seam: a governor error never fails or alters the
+    // request beyond passthrough — counted in gov_fail_open_count.
+    let mut directive_appended = false;
+    let mut gov_commit: Option<GovCommit> = None;
+    if st.governor.mode != GovMode::Off {
+        let (mut gov_stats, directive, commit) =
+            govern_stage(st, &conv_id, body, &internal, &curated_internal, gov_doom_q).await;
+        if let (GovMode::On, Some(text)) = (st.governor.mode, directive) {
+            curated = splice::append_user_text(&curated, &text);
+            directive_appended = true;
+            gov_stats.directive_injected = true;
+        }
+        stats.gov = Some(gov_stats);
+        gov_commit = Some(commit);
+    }
+
+    let prior = if prior_fps.is_empty() {
+        None
+    } else {
+        Some(prior_fps.as_slice())
+    };
+    let (out, cur_fps) = splice::place_cache_breakpoint(&curated, directive_appended, prior);
+    stats.anchors = anchor_indices(&out);
+    let frozen_len = cur_fps
+        .iter()
+        .zip(prior_fps.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    tracing::debug!(
+        conv = %conv_id,
+        fps = cur_fps.len(),
+        prior_fps = prior_fps.len(),
+        frozen_prefix = frozen_len,
+        anchors = ?stats.anchors,
+        directive_appended,
+        "cache breakpoint placed"
+    );
+
     let frozen = cur_fps
         .iter()
         .zip(prior_fps.iter())
         .take_while(|(a, b)| a == b)
         .map(|(a, _)| a.as_str());
     let cache_prefix_sha8 = sha8_of_fps(frozen);
+    stats.curate_ms = t_curate.elapsed().as_secs_f64() * 1000.0;
 
     Ok(Plan {
         conv_id,
@@ -599,7 +804,227 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         cur_fps,
         cache_prefix_sha8,
         stats,
+        gov_commit,
     })
+}
+
+/// Message indices carrying a cache anchor in the served body (tracing seam).
+fn anchor_indices(out: &Value) -> Vec<usize> {
+    out.get("messages")
+        .and_then(Value::as_array)
+        .map(|msgs| {
+            msgs.iter()
+                .enumerate()
+                .filter(|(_, m)| {
+                    m.get("content")
+                        .and_then(Value::as_array)
+                        .is_some_and(|blocks| {
+                            blocks.iter().any(|b| b.get("cache_control").is_some())
+                        })
+                })
+                .map(|(i, _)| i)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The governor's per-request work (mode != off): note the doom score, fetch
+/// the neighbour baseline once per conversation, compute the pure signal
+/// layer, evaluate triggers/latches, score + fire rules, and return (ledger
+/// seams, the joined directive text if any, the one-shot latch commit). The
+/// CALLER decides whether the directive touches the wire (mode == on only) —
+/// advise runs the identical evaluation as a dry-run.
+///
+/// Memo discipline: all persistent-cache updates (dooms, nbr median) are
+/// TARGETED mutations under short locks — never clone→write-back, which
+/// raced write_ledger's in-place `billed_in_cum +=` (lost update). One-shot
+/// consumables (rule-fire dedupe inserts, bank/coach/horizon latches) burn
+/// on a SCRATCH copy and only reach the live memo via the caller's 2xx
+/// commit. Every internal failure fail-opens in place (skip + count) — this
+/// function cannot fail the request.
+async fn govern_stage(
+    st: &Arc<AppState>,
+    conv_id: &str,
+    body: &Value,
+    internal: &[Value],
+    curated_internal: &[Value],
+    doom_q: Option<i64>,
+) -> (GovStats, Option<String>, GovCommit) {
+    let cfg = &st.governor;
+    // note_doom before govern (reference cadence): this request's trace
+    // scoring already ran, so its doom is part of this turn's decision.
+    // Accumulator, not a consumable — targeted push, immediate.
+    if let Some(dq) = doom_q {
+        lock(&st.convs)
+            .entry(conv_id.to_string())
+            .or_default()
+            .gov
+            .note_doom(dq as f64 / 1_000_000.0);
+    }
+    // Neighbour-cost baseline: fetched ONCE per conversation (per-task
+    // constant); a failed fetch stays None and retries next turn. Cache,
+    // not a consumable — check-then-set under the lock (a racing request
+    // fetching the same constant is harmless; first writer wins).
+    let need_nbr = lock(&st.convs)
+        .entry(conv_id.to_string())
+        .or_default()
+        .gov
+        .nbr_cost_median
+        .is_none();
+    if need_nbr {
+        if let Some(bcfg) = &st.brain {
+            match brain::fetch_neighbors(&st.client, bcfg, conv_id, internal).await {
+                Some(nb) => {
+                    let mut convs = lock(&st.convs);
+                    let gov = &mut convs.entry(conv_id.to_string()).or_default().gov;
+                    if gov.nbr_cost_median.is_none() {
+                        gov.nbr_cost_median = Some(nb.nbr_cost_median);
+                    }
+                    tracing::info!(
+                        conv = %&conv_id[..conv_id.len().min(12)],
+                        nbr_count = nb.nbr_count,
+                        neighbors_active = nb.neighbors_active,
+                        nbr_cost_median = ?nb.nbr_cost_median,
+                        "governor: neighbour baseline fetched"
+                    );
+                }
+                None => {
+                    st.gov_fail_open_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        } else {
+            // No brain: hoods can never answer — record "fetched, inert" so
+            // the runaway arm is knowingly off rather than retried forever.
+            let mut convs = lock(&st.convs);
+            let gov = &mut convs.entry(conv_id.to_string()).or_default().gov;
+            if gov.nbr_cost_median.is_none() {
+                gov.nbr_cost_median = Some(None);
+            }
+        }
+    }
+    // Pure evaluation over a snapshot; one-shot latches burn on a SCRATCH
+    // copy only (committed by the caller after upstream 2xx — a 429/529
+    // must not consume DELIVER/HORIZON or a rule fire the model never saw).
+    let snapshot = lock(&st.convs)
+        .entry(conv_id.to_string())
+        .or_default()
+        .gov
+        .clone();
+    let sig = governor::compute_signals(cfg, curated_internal, body, &snapshot);
+    let mut scratch = snapshot.clone();
+    let plan = governor::evaluate_triggers(cfg, &sig, &mut scratch);
+    // The kill latch commits IMMEDIATELY (check-then-set): it re-appends
+    // every turn anyway, and un-latching on upstream failure would flap.
+    if scratch.kill_latched && !snapshot.kill_latched {
+        lock(&st.convs)
+            .entry(conv_id.to_string())
+            .or_default()
+            .gov
+            .kill_latched = true;
+    }
+    let mut directives = plan.directives.clone();
+    let mut rule_fires = 0usize;
+    let mut fired_pairs: Vec<(String, i64)> = Vec::new();
+    // Rule delivery (skipped on a killed run, like the reference's early
+    // return; and with no brain there is no roster to score).
+    if !plan.kill {
+        if let Some(bcfg) = &st.brain {
+            let tools = body.get("tools").cloned().unwrap_or_else(|| json!([]));
+            match brain::score_rules(
+                &st.client,
+                bcfg,
+                conv_id,
+                curated_internal,
+                &tools,
+                sig.cur_step,
+            )
+            .await
+            {
+                Some(rr) => {
+                    // Dedupes against the snapshot's fired set + within this
+                    // call; the inserts land on scratch and commit on 2xx.
+                    let fired = governor::rule_fires(&rr.rules, cfg.tau_q(), &mut scratch);
+                    rule_fires = fired.len();
+                    fired_pairs = fired.iter().map(|r| (r.eid.clone(), r.fire_step)).collect();
+                    if !fired.is_empty() {
+                        tracing::info!(
+                            conv = %&conv_id[..conv_id.len().min(12)],
+                            step = sig.cur_step,
+                            eids = ?fired.iter().map(|r| r.eid.as_str()).collect::<Vec<_>>(),
+                            tau_q = cfg.tau_q(),
+                            tau_hint_q = ?rr.tau_hint_q,
+                            "governor: rule fire"
+                        );
+                        directives.push(governor::rules_directive(&fired));
+                    }
+                }
+                None => {
+                    // 404/500/501/transport: skip rules this turn, counted.
+                    st.gov_fail_open_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+    // Governor flag trace: DEBUG full dict every turn; INFO on any action.
+    tracing::debug!(
+        conv = %&conv_id[..conv_id.len().min(12)],
+        step = sig.cur_step,
+        cum_tok = sig.cum_tok.round(),
+        nsteps = sig.nsteps,
+        n_src = sig.n_src,
+        lf = ?sig.lf_last,
+        gf = ?sig.gf,
+        runaway = (sig.runaway_factor * 1000.0).round() / 1000.0,
+        mech = sig.mech_flagged,
+        head = sig.head_flagged,
+        budget = sig.budget_flagged,
+        bank = sig.bank_flagged,
+        doomed = sig.doomed_flagged,
+        floor_ok = sig.floor_ok,
+        kill_latched = scratch.kill_latched,
+        coach_fired = scratch.coach_fired,
+        bank_fired = scratch.bank_fired,
+        horizon_fired = scratch.horizon_fired,
+        dooms = snapshot.dooms.len(),
+        billed_in_cum = snapshot.billed_in_cum,
+        "governor: flag trace"
+    );
+    if plan.kill || plan.deliver || plan.horizon || rule_fires > 0 {
+        tracing::info!(
+            conv = %&conv_id[..conv_id.len().min(12)],
+            step = sig.cur_step,
+            mode = cfg.mode.as_str(),
+            kill = plan.kill,
+            kill_new = plan.kill_new,
+            deliver = plan.deliver,
+            horizon = plan.horizon,
+            rule_fires,
+            "governor: directive(s) armed"
+        );
+    }
+    let gov_stats = GovStats {
+        mode: cfg.mode.as_str(),
+        runaway_factor: sig.runaway_factor,
+        loop_frac: sig.lf_last.unwrap_or(0.0),
+        doom_q,
+        n_src: sig.n_src,
+        cum_tok: sig.cum_tok,
+        rule_fires,
+        directive_injected: false, // the caller flips it on actual injection
+        nbr_cost_median: scratch.nbr_cost_median,
+    };
+    let commit = GovCommit {
+        fired: fired_pairs,
+        coach_fired: scratch.coach_fired && !snapshot.coach_fired,
+        bank_fired: scratch.bank_fired && !snapshot.bank_fired,
+        horizon_fired: scratch.horizon_fired && !snapshot.horizon_fired,
+    };
+    let directive = if directives.is_empty() {
+        None
+    } else {
+        Some(directives.join("\n\n"))
+    };
+    (gov_stats, directive, commit)
 }
 
 /// curating_proxy._is_client_metadata_call: Claude Code housekeeping (title
@@ -613,8 +1038,37 @@ fn is_client_metadata_call(body: &Value) -> bool {
 
 // ── §8.4 count_tokens counterfactual ────────────────────────────────────────
 
-/// Free probe: the ORIGINAL inbound body against upstream count_tokens. Any
-/// failure returns None — the ledger records null, never an estimate (§8.4).
+/// count_tokens accepts a SUBSET of the /v1/messages body; anything else is
+/// a 400 "Extra inputs are not permitted". Claude Code always sends
+/// `metadata` (plus max_tokens/stream/temperature), so probing with the raw
+/// body verbatim failed on EVERY real CC request — savings read as
+/// unmeasured across whole sessions. Keep only the token-bearing fields the
+/// endpoint accepts; none of the stripped fields affect the count.
+const COUNT_TOKENS_FIELDS: &[&str] = &[
+    "model",
+    "messages",
+    "system",
+    "tools",
+    "tool_choice",
+    "thinking",
+];
+
+/// The probe body: the ORIGINAL (pre-curation) content, narrowed to the
+/// count_tokens field set. None when the inbound body isn't a JSON object —
+/// the caller falls back to the raw bytes (which then fail loudly upstream).
+fn probe_body(body: &Value) -> Option<Vec<u8>> {
+    let obj = body.as_object()?;
+    let narrowed: Map<String, Value> = obj
+        .iter()
+        .filter(|(k, _)| COUNT_TOKENS_FIELDS.contains(&k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    serde_json::to_vec(&Value::Object(narrowed)).ok()
+}
+
+/// Free probe: the ORIGINAL inbound content (narrowed per [`probe_body`])
+/// against upstream count_tokens. Any failure returns None — the ledger
+/// records null, never an estimate (§8.4).
 async fn count_tokens_probe(st: &AppState, headers: &HeaderMap, raw: Bytes) -> Option<i64> {
     let resp = match st
         .client
@@ -751,6 +1205,19 @@ fn write_ledger(
     // input-side billed sum is uncached + cache read + cache write.
     let billed_side =
         g("input_tokens") + g("cache_read_input_tokens") + g("cache_creation_input_tokens");
+
+    // Governor accumulator (mode != off): billed input-side tokens per
+    // conversation feed the kill floor + runaway numerator. Post-response by
+    // construction — SSE rows land here at stream end (or abort) too, and
+    // fail-open rows accrue as well (finding 5: the kill floor must not
+    // undercount on exactly the blow-out conversations it exists for).
+    if st.governor.mode != GovMode::Off && !conv_id.is_empty() && billed_side > 0 {
+        lock(&st.convs)
+            .entry(conv_id.to_string())
+            .or_default()
+            .gov
+            .billed_in_cum += billed_side;
+    }
     match counterfactual {
         Some(cf) => tracing::info!(
             conv = %&conv_id[..conv_id.len().min(12)],
@@ -803,6 +1270,27 @@ fn write_ledger(
         if let Some(s8) = &stats.tools_pre_prune_sha8 {
             o.insert("tools_pre_prune_sha8".into(), json!(s8));
         }
+        // Governor seams (contract Track B item 5) — only when mode != off,
+        // so pre-governor rows stay schema-identical.
+        if let Some(gv) = &stats.gov {
+            let r3 = |x: f64| (x * 1000.0).round() / 1000.0;
+            o.insert("governor_mode".into(), json!(gv.mode));
+            o.insert("gov_runaway_factor".into(), json!(r3(gv.runaway_factor)));
+            o.insert("gov_loop_frac".into(), json!(r3(gv.loop_frac)));
+            if let Some(dq) = gv.doom_q {
+                o.insert("gov_doom_q".into(), json!(dq));
+            }
+            o.insert("gov_n_src".into(), json!(gv.n_src));
+            o.insert("gov_cum_tok".into(), json!(gv.cum_tok.round()));
+            o.insert("gov_rule_fires".into(), json!(gv.rule_fires));
+            o.insert(
+                "gov_directive_injected".into(),
+                json!(gv.directive_injected),
+            );
+            if let Some(median) = gv.nbr_cost_median {
+                o.insert("nbr_cost_median".into(), json!(median));
+            }
+        }
     }
     if let Some(dir) = st.ledger_path.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -831,10 +1319,14 @@ struct SseUsageScan {
     buf: String,
     merged: Map<String, Value>,
     saw: bool,
+    /// Relay telemetry (tracing seam): raw bytes relayed + data events seen.
+    bytes: u64,
+    events: u64,
 }
 
 impl SseUsageScan {
     fn feed(&mut self, chunk: &[u8]) {
+        self.bytes += chunk.len() as u64;
         self.buf.push_str(&String::from_utf8_lossy(chunk));
         while let Some(pos) = self.buf.find('\n') {
             let line: String = self.buf.drain(..=pos).collect();
@@ -846,6 +1338,7 @@ impl SseUsageScan {
         let Some(payload) = line.strip_prefix("data:") else {
             return;
         };
+        self.events += 1;
         let payload = payload.trim();
         if payload.is_empty() || payload == "[DONE]" {
             return;
@@ -903,6 +1396,10 @@ async fn count_tokens_passthrough(
     raw: Bytes,
 ) -> Response {
     let _guard = InFlight::enter(&st);
+    tracing::debug!(
+        bytes = raw.len(),
+        "inbound /v1/messages/count_tokens — verbatim passthrough, no memo touch"
+    );
     relay_buffered(&st, "/v1/messages/count_tokens", &headers, raw).await
 }
 
@@ -953,11 +1450,29 @@ fn bad_gateway(e: &reqwest::Error) -> Response {
 async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Bytes) -> Response {
     let _guard = InFlight::enter(&st);
     let body: Option<Value> = serde_json::from_slice(&raw).ok();
+    if let Some(b) = body.as_ref() {
+        let model = b.get("model").and_then(Value::as_str).unwrap_or("?");
+        let n_msgs = b
+            .get("messages")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        let n_tools = b.get("tools").and_then(Value::as_array).map_or(0, Vec::len);
+        let stream = b.get("stream").and_then(Value::as_bool).unwrap_or(false);
+        tracing::debug!(
+            bytes = raw.len(),
+            model,
+            messages = n_msgs,
+            tools = n_tools,
+            stream,
+            "inbound /v1/messages"
+        );
+    }
 
     // Claude Code housekeeping (title/topic generation): forwarded untouched
     // and unbilled — no curation state advance, no probe, no ledger row.
     if let Some(b) = body.as_ref() {
         if is_client_metadata_call(b) {
+            tracing::debug!("client-metadata call (title/topic) — relayed untouched, unbilled");
             return relay_buffered(&st, "/v1/messages", &headers, raw).await;
         }
         record_inbound(&headers, b, &raw);
@@ -982,14 +1497,30 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
     let fail_open = plan.is_none();
     let stats = plan.as_ref().map(|p| p.stats.clone()).unwrap_or_default();
 
-    // (e) §8.4 counterfactual — always on the ORIGINAL inbound bytes.
-    let counterfactual = count_tokens_probe(&st, &headers, raw.clone()).await;
+    // (e) §8.4 counterfactual — always on the ORIGINAL inbound content,
+    // narrowed to the count_tokens field set (CC's `metadata` 400s there).
+    let t_probe = std::time::Instant::now();
+    let probe_bytes = body
+        .as_ref()
+        .and_then(probe_body)
+        .map(Bytes::from)
+        .unwrap_or_else(|| raw.clone());
+    let counterfactual = count_tokens_probe(&st, &headers, probe_bytes).await;
+    let probe_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
+    tracing::debug!(counterfactual = ?counterfactual, "count_tokens probe done");
 
     // (f) forward: curated body, or the original verbatim on fail-open.
     let send = plan
         .as_ref()
         .map(|p| Bytes::from(p.out_bytes.clone()))
         .unwrap_or_else(|| raw.clone());
+    tracing::debug!(
+        in_bytes = raw.len(),
+        out_bytes = send.len(),
+        fail_open,
+        "forwarding to upstream /v1/messages"
+    );
+    let t_upstream = std::time::Instant::now();
     let resp = match st
         .client
         .post(st.url("/v1/messages"))
@@ -1002,22 +1533,102 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         Err(e) => return bad_gateway(&e),
     };
     let status = resp.status();
+    tracing::debug!(
+        status = %status,
+        first_byte_ms = t_upstream.elapsed().as_millis() as u64,
+        "upstream responded"
+    );
 
-    // (d) CRITICAL ORDERING: commit this call's fingerprints only now that
-    // the upstream 2xx proves Anthropic cached these bytes. The reference
-    // wrote them before the send (anthropic_shapes.py:484) — a failed call
-    // anchored the retry on bytes Anthropic never cached.
+    // Per-request pipeline trace (contract Track B item 6): stage timings +
+    // fold/anchor/tool telemetry. Structured fields only — no message text.
+    tracing::info!(
+        conv = %plan
+            .as_ref()
+            .map(|p| &p.conv_id[..p.conv_id.len().min(12)])
+            .unwrap_or("?"),
+        turn = stats.turn,
+        curate_ms = (stats.curate_ms * 10.0).round() / 10.0,
+        brain_ms = (stats.brain_ms * 10.0).round() / 10.0,
+        probe_ms = (probe_ms * 10.0).round() / 10.0,
+        upstream_ms = (t_upstream.elapsed().as_secs_f64() * 10_000.0).round() / 10.0,
+        births_scored = stats.births_scored,
+        folds_total = stats.folds_total,
+        folds_new = stats.folds_new,
+        anchors = ?stats.anchors,
+        tools_kept = ?stats.tools_kept,
+        tools_total = ?stats.tools_total,
+        governor = stats
+            .gov
+            .as_ref()
+            .map(|g| g.mode)
+            .unwrap_or(st.governor.mode.as_str()),
+        gov_directive = stats
+            .gov
+            .as_ref()
+            .map(|g| g.directive_injected)
+            .unwrap_or(false),
+        fail_open,
+        status = status.as_u16(),
+        ledger = %st.ledger_path.display(),
+        "request pipeline"
+    );
+
+    // (d) CRITICAL ORDERING: commit this call's fingerprints — and the
+    // governor's one-shot consumables (rule-fire dedupe inserts, bank/coach/
+    // horizon latches) — only now that the upstream 2xx proves the model saw
+    // these bytes. The reference wrote fps before the send
+    // (anthropic_shapes.py:484) — a failed call anchored the retry on bytes
+    // Anthropic never cached; the same class of bug would burn a DELIVER/
+    // HORIZON/rule fire on a 429/529 the model never received. Targeted
+    // merge into the LIVE memo (extend/OR), never a whole-struct write.
     if status.is_success() {
         if let Some(p) = &plan {
-            lock(&st.convs)
-                .entry(p.conv_id.clone())
-                .or_default()
-                .last_fps = p.cur_fps.clone();
+            let mut convs = lock(&st.convs);
+            let cs = convs.entry(p.conv_id.clone()).or_default();
+            cs.last_fps = p.cur_fps.clone();
+            if let Some(gc) = &p.gov_commit {
+                if !gc.fired.is_empty() || gc.coach_fired || gc.bank_fired || gc.horizon_fired {
+                    for f in &gc.fired {
+                        cs.gov.fired.insert(f.clone());
+                    }
+                    cs.gov.coach_fired |= gc.coach_fired;
+                    cs.gov.bank_fired |= gc.bank_fired;
+                    cs.gov.horizon_fired |= gc.horizon_fired;
+                    tracing::debug!(
+                        conv = %p.conv_id,
+                        fired = gc.fired.len(),
+                        coach = gc.coach_fired,
+                        bank = gc.bank_fired,
+                        horizon = gc.horizon_fired,
+                        "governor one-shot latches committed (upstream 2xx)"
+                    );
+                }
+            }
+            drop(convs);
+            tracing::debug!(
+                conv = %p.conv_id,
+                fps = p.cur_fps.len(),
+                "fingerprints committed (upstream 2xx confirms cache)"
+            );
         }
+    } else if plan.is_some() {
+        tracing::debug!(
+            status = %status,
+            "upstream non-2xx — fingerprints and governor one-shot latches NOT \
+             committed, the retry re-fires"
+        );
     }
 
     let row_ctx = RowCtx {
-        conv_id: plan.as_ref().map(|p| p.conv_id.clone()).unwrap_or_default(),
+        // Finding 5: on curation fail-open the billed usage must still
+        // accrue to the conversation's governor memo (the kill floor
+        // undercounts on exactly the blow-out conversations otherwise) —
+        // derive the id from the body when it parses; "" when it doesn't.
+        conv_id: plan.as_ref().map(|p| p.conv_id.clone()).unwrap_or_else(|| {
+            body.as_ref()
+                .map(|b| conversation_id(&headers, &to_internal(b)))
+                .unwrap_or_default()
+        }),
         model: body
             .as_ref()
             .and_then(|b| b.get("model"))
@@ -1039,23 +1650,39 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
 
     if wants_stream && status.is_success() {
         // Relay the SSE bytes UNMODIFIED while scanning for usage; the
-        // ledger row is written when the upstream stream ends.
+        // ledger row is written when the upstream stream ends — or on DROP
+        // when the client aborts mid-stream (finding 4a: the chained
+        // finalizer is never polled on abort, but input tokens were already
+        // billed at message_start; StreamFinalize's Drop keeps the row +
+        // billed_in_cum accrual from vanishing).
+        tracing::debug!(conv = %row_ctx.conv_id, "relaying SSE stream");
         let scan = Arc::new(Mutex::new(SseUsageScan::default()));
         let scan_tee = scan.clone();
+        let relayed = Arc::new(AtomicU64::new(0));
+        let relayed_tee = relayed.clone();
         let tee = resp.bytes_stream().map(move |r| {
             if let Ok(b) = &r {
+                relayed_tee.fetch_add(b.len() as u64, Ordering::Relaxed);
                 lock(&scan_tee).feed(b);
             }
             r.map_err(io::Error::other)
         });
-        let st2 = st.clone();
         // The stream outlives this handler; its own guard keeps the idle
         // sweep from shooting the proxy mid-SSE.
         let stream_guard = InFlight::enter(&st);
+        let mut fin = StreamFinalize {
+            st: st.clone(),
+            row_ctx,
+            counterfactual,
+            stats,
+            scan,
+            relayed,
+            t_stream: t_upstream,
+            done: false,
+        };
         let finalize = futures_util::stream::once(async move {
             let _guard = stream_guard;
-            let usage = lock(&scan).finish();
-            write_ledger(&st2, &row_ctx, counterfactual, usage.as_ref(), &stats);
+            fin.finalize(true);
             Ok::<Bytes, io::Error>(Bytes::new())
         });
         return respond(status, ct, Body::from_stream(tee.chain(finalize)));
@@ -1072,6 +1699,70 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
     };
     write_ledger(&st, &row_ctx, counterfactual, usage.as_ref(), &stats);
     respond(status, ct, Body::from(bytes))
+}
+
+/// Stream-end bookkeeping that must survive a client abort (finding 4a): a
+/// dropped response body never polls the chained once-finalizer, so the
+/// ledger row and the governor's billed_in_cum accrual run from Drop too.
+/// Measurement honesty on the abort path: only what the scan actually
+/// OBSERVED is written — an aborted stream that never saw usage
+/// (no message_start) writes NO row, exactly as before.
+struct StreamFinalize {
+    st: Arc<AppState>,
+    row_ctx: RowCtx,
+    counterfactual: Option<i64>,
+    stats: PlanStats,
+    scan: Arc<Mutex<SseUsageScan>>,
+    relayed: Arc<AtomicU64>,
+    t_stream: std::time::Instant,
+    done: bool,
+}
+
+impl StreamFinalize {
+    fn finalize(&mut self, completed: bool) {
+        if self.done {
+            return;
+        }
+        self.done = true;
+        let (usage, sse_bytes, sse_events) = {
+            let mut s = lock(&self.scan);
+            (s.finish(), s.bytes, s.events)
+        };
+        tracing::debug!(
+            conv = %self.row_ctx.conv_id,
+            relayed_bytes = self.relayed.load(Ordering::Relaxed),
+            usage_seen = usage.is_some(),
+            completed,
+            stream_ms = self.t_stream.elapsed().as_millis() as u64,
+            "SSE stream ended — writing ledger row"
+        );
+        tracing::info!(
+            conv = %&self.row_ctx.conv_id[..self.row_ctx.conv_id.len().min(12)],
+            stream_ms = (self.t_stream.elapsed().as_secs_f64() * 10_000.0).round() / 10.0,
+            sse_bytes,
+            sse_events,
+            aborted = !completed,
+            "stream relayed"
+        );
+        if !completed && usage.is_none() {
+            // Aborted before message_start: nothing was observed — never
+            // fabricate a row (§8.4).
+            return;
+        }
+        write_ledger(
+            &self.st,
+            &self.row_ctx,
+            self.counterfactual,
+            usage.as_ref(),
+            &self.stats,
+        );
+    }
+}
+
+impl Drop for StreamFinalize {
+    fn drop(&mut self) {
+        self.finalize(false);
+    }
 }
 
 #[cfg(test)]
@@ -1096,5 +1787,50 @@ mod tests {
         assert_eq!(evicted, 2);
         assert!(convs.contains_key("hot"));
         assert_eq!(convs.len(), 1);
+    }
+
+    #[test]
+    fn probe_body_narrows_to_count_tokens_fields() {
+        // The real CC body shape that 400'd the probe: metadata + max_tokens
+        // + stream must be stripped; token-bearing fields survive verbatim.
+        let body = serde_json::json!({
+            "model": "claude-fable-5",
+            "max_tokens": 32000,
+            "stream": true,
+            "temperature": 1.0,
+            "metadata": {"user_id": "u_123"},
+            "system": "be terse",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"name": "Bash", "input_schema": {"type": "object"}}],
+            "tool_choice": {"type": "auto"},
+            "thinking": {"type": "enabled", "budget_tokens": 1024}
+        });
+        let probed: Value =
+            serde_json::from_slice(&probe_body(&body).expect("object body")).unwrap();
+        // The narrow preserves the BODY's key order (preserve_order); compare
+        // as sets — field order is irrelevant to count_tokens.
+        let mut keys: Vec<&str> = probed
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+        keys.sort_unstable();
+        let mut expect = vec![
+            "messages",
+            "model",
+            "system",
+            "thinking",
+            "tool_choice",
+            "tools",
+        ];
+        expect.sort_unstable();
+        assert_eq!(keys, expect);
+        for k in ["metadata", "max_tokens", "stream", "temperature"] {
+            assert!(probed.get(k).is_none(), "{k} must be stripped");
+        }
+        assert_eq!(probed["messages"], body["messages"]);
+        // Non-object bodies fall back to raw at the call site.
+        assert!(probe_body(&serde_json::json!("nope")).is_none());
     }
 }

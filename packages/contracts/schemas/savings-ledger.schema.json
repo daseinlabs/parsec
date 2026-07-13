@@ -108,6 +108,56 @@
    "type": "string",
    "pattern": "^[0-9a-f]{8}$",
    "description": "Hash of the pre-prune roster (sorted names) — joins served traffic back to the full-roster identity without storing schemas."
+  },
+  "governor_mode": {
+   "enum": [
+    "advise",
+    "on"
+   ],
+   "description": "Governor seams (all gov_* fields + nbr_cost_median) are present only when DASEIN_GOVERNOR != off; pre-governor rows stay schema-identical. 'advise' = signals recorded, wire untouched; 'on' = directives may be injected."
+  },
+  "gov_runaway_factor": {
+   "type": "number",
+   "minimum": 0,
+   "description": "billed input-side cumulative tokens / neighbour-cost median (rounded to 3 decimals); 0 = no opinion (hoods inert/unfetched)."
+  },
+  "gov_loop_frac": {
+   "type": "number",
+   "minimum": 0,
+   "maximum": 1,
+   "description": "Latest loop_fracs value (rounded to 3 decimals); 0 when fewer than 6 commands exist (the reference gate)."
+  },
+  "gov_doom_q": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 1000000,
+   "description": "Doom-head sigmoid on the 1e-6 grid for this request's trace scoring; absent when the doom head was not scored this request."
+  },
+  "gov_n_src": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Distinct non-test source files the agent's own actions edited (the BANK do-no-harm signal)."
+  },
+  "gov_cum_tok": {
+   "type": "number",
+   "minimum": 0,
+   "description": "Char-derived double-cumsum context tokens (governor._budget_features port, rounded to integer) — NOT billed tokens."
+  },
+  "gov_rule_fires": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Rule fires delivered (or, in advise mode, recorded) this turn after the (eid, fire_step) dedupe."
+  },
+  "gov_directive_injected": {
+   "type": "boolean",
+   "description": "True when a governor directive turn was actually appended to the served body this request (always false in advise mode)."
+  },
+  "nbr_cost_median": {
+   "type": [
+    "number",
+    "null"
+   ],
+   "description": "Neighbour-cost median from /v1/neighbors (billed-input-token denominated), cached per conversation; null = fetched but hoods inert (<4 cost-bearing neighbours). Absent until fetched."
   }
  }
 }

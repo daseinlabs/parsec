@@ -37,3 +37,26 @@ class LedgerRow(BaseModel):
     billed_cache_write_tokens: int = Field(ge=0)
     cache_prefix_sha8: str = Field(alias="cachePrefixSha8", pattern=r"^[0-9a-f]{8}$")
     fail_open: bool
+
+    # ── optional capture seams (real-scorer path; schema-optional) ──────────
+    # extra="forbid" + a mirror missing these meant every capture-seam row
+    # 422'd at ingest — caught by the governor-example drift guard.
+    model: str | None = None
+    checkpoint_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    brain_ms: float | None = Field(default=None, ge=0)
+    scorer_fail_opens: int | None = Field(default=None, ge=0)
+    freeze_cut_tokens: int | None = Field(default=None, ge=0)
+    tools_total: int | None = Field(default=None, ge=0)
+    tools_kept: int | None = Field(default=None, ge=0)
+    tools_pre_prune_sha8: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")
+
+    # ── optional governor seams (savings-ledger delta 4; schema-optional) ───
+    governor_mode: Literal["advise", "on"] | None = None
+    gov_runaway_factor: float | None = Field(default=None, ge=0)
+    gov_loop_frac: float | None = Field(default=None, ge=0)
+    gov_doom_q: int | None = Field(default=None, ge=0)
+    gov_n_src: int | None = Field(default=None, ge=0)
+    gov_cum_tok: float | None = Field(default=None, ge=0)
+    gov_rule_fires: int | None = Field(default=None, ge=0)
+    gov_directive_injected: bool | None = None
+    nbr_cost_median: float | None = None

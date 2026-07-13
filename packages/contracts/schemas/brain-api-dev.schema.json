@@ -11,7 +11,9 @@
   { "$ref": "#/$defs/score_rules_request" },
   { "$ref": "#/$defs/score_rules_response" },
   { "$ref": "#/$defs/score_gate_request" },
-  { "$ref": "#/$defs/score_gate_response" }
+  { "$ref": "#/$defs/score_gate_response" },
+  { "$ref": "#/$defs/neighbors_request" },
+  { "$ref": "#/$defs/neighbors_response" }
  ],
  "$defs": {
   "grid_q": {
@@ -19,6 +21,13 @@
    "minimum": 0,
    "maximum": 1000000,
    "description": "fixed-point score on the 1e-6 grid (engine SCORE_SCALE): q = round(sigmoid * 1_000_000)"
+  },
+  "gf": {
+   "type": "array",
+   "items": { "type": "number", "minimum": -1, "maximum": 1 },
+   "minItems": 4,
+   "maxItems": 4,
+   "description": "doom-head run-state input, client-computed loop_feats over the conversation's ACTION stream: [current loop fraction, trailing-3 mean, slope over 3 steps, trailing-6 fraction >= 0.34]. Slope can be negative. Omitted = doom not scored (v0 behavior). 4 bounded numbers — no text channel."
   },
   "score_trace_request": {
    "type": "object",
@@ -48,7 +57,8 @@
      "pattern": "^[0-9a-f]{64}$",
      "description": "sha256 over '\\n'.join('{step}:{kind}:{tokens}') of the client's parsed chunk array — the live cross-language chunker-parity guard; mismatch = 409, fail open"
     },
-    "target_cov": { "enum": ["0.90", "0.80", "0.70", "0.60", "0.50"] }
+    "target_cov": { "enum": ["0.90", "0.80", "0.70", "0.60", "0.50"] },
+    "gf": { "$ref": "#/$defs/gf" }
    }
   },
   "score_trace_response": {
@@ -63,6 +73,7 @@
     },
     "tau_q": { "$ref": "#/$defs/grid_q", "description": "the checkpoint's calibrated tau for target_cov — constant per (ckpt, cov)" },
     "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "doom_q": { "$ref": "#/$defs/grid_q", "description": "sigmoid(doom head) on the 1e-6 grid — present iff the request carried gf, the checkpoint has a doom head, and a forward ran (empty live_gi/mask early-returns score nothing and omit it)" },
     "timings_ms": {
      "type": "object",
      "additionalProperties": false,
@@ -126,12 +137,27 @@
   "score_rules_response": {
    "type": "object",
    "additionalProperties": false,
-   "required": ["scores_q", "tau_hint_q", "checkpoint_id", "description"],
+   "required": ["scores_q", "rules", "tau_hint_q", "checkpoint_id", "description"],
    "properties": {
     "scores_q": {
      "type": "object",
      "additionalProperties": { "$ref": "#/$defs/grid_q" },
      "description": "eid -> quantized raw sigmoid(score_rules); {} = ineligible/failed -> fail open (ungated fire is the baseline)"
+    },
+    "rules": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eid", "text", "p_q", "fire_step"],
+      "properties": {
+       "eid": { "type": "string" },
+       "text": { "type": "string", "description": "the rule's directive text — SERVER-owned (rules.json / the request's candidate list); returning it is data-plane-clean (nothing of the user's leaves)" },
+       "p_q": { "$ref": "#/$defs/grid_q", "description": "same value as scores_q[eid]" },
+       "fire_step": { "type": "integer", "minimum": 0, "description": "echoes the requested fire step — the consumer's (eid, fire_step) dedupe key" }
+      }
+     },
+     "description": "the scored roster at the CURRENT step, aligned with scores_q; [] on the fail-open path"
     },
     "tau_hint_q": { "$ref": "#/$defs/grid_q", "description": "ADVISORY ONLY (the rule-head handoff's ~0.15; scores are compressed, ranking is the signal) — the firing tau MUST be bench-calibrated per checkpoint before any consumer fires on it" },
     "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -160,6 +186,28 @@
     "tau_q": { "$ref": "#/$defs/grid_q", "description": "constant 500000 — the reference's locked gate tau 0.5" },
     "fire": { "type": "boolean", "description": "score_q >= tau_q: serve the brief" },
     "fail_open": { "type": "boolean", "description": "true when scoring was ineligible/failed (empty brief, empty roster, error) — the fail-open event marker (counted, alertable)" },
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+   }
+  },
+  "neighbors_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["contract", "conv_id", "task_text"],
+   "description": "POST /v1/neighbors — cross-trace neighbor cost baseline for the proxy's runaway signal. Called ONCE per conversation (the neighbor set is per-task constant; the client caches the result in its conversation memo).",
+   "properties": {
+    "contract": { "const": "brain-api-dev/v0" },
+    "conv_id": { "type": "string", "maxLength": 128 },
+    "task_text": { "type": "string", "description": "the first user message's internal text[:2000] (RAW TEXT — dev only); the server embeds it with the request embed backend as the anchor query" }
+   }
+  },
+  "neighbors_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["nbr_cost_median", "nbr_count", "neighbors_active", "checkpoint_id"],
+   "properties": {
+    "nbr_cost_median": { "type": ["number", "null"], "description": "MEDIAN realized cost (cumulative billed input tokens) of the top-k (DASEIN_NEIGHBORS=16) nearest anchors carrying cost metadata; null when hoods are off or fewer than 4 costs were found — the runaway signal stays inert (reference semantics)" },
+    "nbr_count": { "type": "integer", "minimum": 0, "description": "how many neighbor cost samples were found (0 when hoods are off / no task statement / pre-cost artifact)" },
+    "neighbors_active": { "type": "boolean", "description": "the hoods artifact is mounted (DASEIN_HOODS_PKL) — mirrors /v1/bundle neighbors" },
     "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
    }
   }

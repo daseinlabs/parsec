@@ -12,8 +12,10 @@
 //! - Cloud topology carries BYOK API keys only; subscription OAuth tokens are
 //!   never routed through our infrastructure (§3).
 
+pub mod adjudicator;
 pub mod brain;
 pub mod featurize;
+pub mod governor;
 pub mod hook;
 pub mod internal;
 pub mod measure;
