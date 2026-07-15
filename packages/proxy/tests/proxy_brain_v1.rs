@@ -486,6 +486,68 @@ async fn v1_tools_payload_names_ride_schemas_do_not() {
     assert_eq!(rows[0]["tools_kept"], 1);
 }
 
+/// Reactive unfreeze: a tool_use in the prefix naming a pruned tool re-adds
+/// it to the frozen keep-set — the model gets the schema back from the next
+/// request on, and the keep-set only ever grows (no per-turn re-prune).
+#[tokio::test]
+async fn v1_tool_prune_reactive_unfreeze_on_prefix_call() {
+    let ctx = setup().await;
+    let tools = json!([
+        {"name": "Read", "description": "reads files from the local filesystem",
+         "input_schema": {"type": "object", "properties": {"file_path": {"type": "string"}}}},
+        {"name": "Bash", "description": "executes shell commands in a sandbox",
+         "input_schema": {"type": "object"}},
+        {"name": "Grep", "description": "searches file contents with regex",
+         "input_schema": {"type": "object"}},
+        {"name": "Glob", "description": "fast file pattern matching tool",
+         "input_schema": {"type": "object"}}
+    ]);
+    let mut b = body(convo_turn1());
+    b["tools"] = tools.clone();
+    post_messages(&ctx, &b).await;
+
+    // turn 1 froze the keep-set to exactly Read (mock scores first name high).
+    let sent = ctx.upstream.reqs.lock().unwrap().clone();
+    assert_eq!(sent[0]["tools"].as_array().unwrap().len(), 1);
+
+    // turn 2: the model reached for pruned Grep anyway — the harness still
+    // owns the real tool, so the call executed; its schema must come back.
+    let mut msgs = convo_turn1();
+    msgs.push(json!({"role": "assistant", "content": [
+        {"type": "text", "text": "Searching for the symbol."},
+        {"type": "tool_use", "id": "toolu_2", "name": "Grep",
+         "input": {"pattern": "handler"}}
+    ]}));
+    msgs.push(json!({"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_2", "content": "no matches"}
+    ]}));
+    let mut b2 = body(msgs);
+    b2["tools"] = tools.clone();
+    post_messages(&ctx, &b2).await;
+
+    let sent = ctx.upstream.reqs.lock().unwrap().clone();
+    let names: Vec<&str> = sent[1]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Read", "Grep"], "pruned Grep not unfrozen");
+    assert_eq!(
+        ctx.brain.tools_reqs.lock().unwrap().len(),
+        1,
+        "unfreeze must reuse the frozen keep-set, not re-score"
+    );
+
+    let rows = ledger_rows(&ctx);
+    assert_eq!(rows[1]["tools_kept"], 2);
+    assert_eq!(rows[1]["tools_unfrozen"], 1);
+    assert!(
+        rows[0].get("tools_unfrozen").is_none(),
+        "turn 1 unfroze nothing — field must be absent"
+    );
+}
+
 // ── live cross-contract parity (#[ignore]: needs a running brain) ───────────
 
 /// One BirthQuery scored through BOTH contracts against a REAL brain —

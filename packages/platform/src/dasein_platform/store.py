@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS api_keys (
     key_hash   TEXT PRIMARY KEY,
     account_id TEXT NOT NULL
 );
+-- Stripe customer -> account. Written at checkout.session.completed (the only
+-- event that carries client_reference_id); read by customer.subscription.*
+-- events, which carry only the customer id.
+CREATE TABLE IF NOT EXISTS stripe_customers (
+    customer_id TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ledger (
     request_id                  TEXT PRIMARY KEY,
     account_id                  TEXT NOT NULL,
@@ -56,6 +63,14 @@ class Store(abc.ABC):
 
     @abc.abstractmethod
     def account_for_key(self, key_hash: str) -> str | None: ...
+
+    @abc.abstractmethod
+    def link_customer(self, customer_id: str, account_id: str) -> None:
+        """Record the Stripe customer -> account mapping (idempotent; a
+        re-checkout by the same customer re-points to the new account)."""
+
+    @abc.abstractmethod
+    def account_for_customer(self, customer_id: str) -> str | None: ...
 
     @abc.abstractmethod
     def add_ledger_row(self, account_id: str, row: dict[str, Any]) -> None:
@@ -105,6 +120,23 @@ class SQLiteStore(Store):
         with self._lock:
             row = self._conn.execute(
                 "SELECT account_id FROM api_keys WHERE key_hash = ?", (key_hash,)
+            ).fetchone()
+        return row["account_id"] if row else None
+
+    def link_customer(self, customer_id: str, account_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO stripe_customers (customer_id, account_id) VALUES (?, ?) "
+                "ON CONFLICT(customer_id) DO UPDATE SET account_id = excluded.account_id",
+                (customer_id, account_id),
+            )
+            self._conn.commit()
+
+    def account_for_customer(self, customer_id: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT account_id FROM stripe_customers WHERE customer_id = ?",
+                (customer_id,),
             ).fetchone()
         return row["account_id"] if row else None
 

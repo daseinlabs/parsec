@@ -109,6 +109,16 @@
    "pattern": "^[0-9a-f]{8}$",
    "description": "Hash of the pre-prune roster (sorted names) — joins served traffic back to the full-roster identity without storing schemas."
   },
+  "tools_unfrozen": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Pruned tools re-added to the keep-set THIS request because the prefix called them (reactive unfreeze) — present only on the request that unfroze them."
+  },
+  "curator_insists": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Insist-valve fires this request: the agent re-asked for content the curator had cut and the valve served it full — the per-request over-cut (regret) signal."
+  },
   "governor_mode": {
    "enum": [
     "advise",

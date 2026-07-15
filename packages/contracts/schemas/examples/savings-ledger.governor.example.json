@@ -14,6 +14,8 @@
  "checkpoint_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
  "brain_ms": 41.3,
  "freeze_cut_tokens": 1873,
+ "tools_unfrozen": 1,
+ "curator_insists": 2,
  "governor_mode": "advise",
  "gov_runaway_factor": 0.42,
  "gov_loop_frac": 0.333,

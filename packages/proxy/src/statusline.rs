@@ -220,7 +220,7 @@ pub fn savings_report() -> anyhow::Result<()> {
     }
     if !sessions.is_empty() {
         printed = true;
-        sessions.sort_by(|a, b| b.1.cmp(&a.1));
+        sessions.sort_by_key(|s| std::cmp::Reverse(s.1));
         let (mut blocked, mut tokens, mut loops) = (0u64, 0u64, 0u64);
         for (_, _, st) in &sessions {
             blocked += st.blocked_rereads;

@@ -23,10 +23,18 @@ from dasein_platform.stripe_webhook import verify_stripe_signature
 
 
 def create_app(store: Store | None = None) -> FastAPI:
-    """Build the app. `store` defaults to SQLite at DASEIN_PLATFORM_DB; a
-    Supabase-Postgres Store drops in here later without touching routes."""
+    """Build the app. Store precedence: explicit `store` arg (tests) →
+    Postgres when DASEIN_PLATFORM_DB_URL is set (Supabase, §7c) → SQLite at
+    DASEIN_PLATFORM_DB (zero-infrastructure default)."""
     app = FastAPI(title="dasein-platform", version="0.1.0")
-    app.state.store = store or SQLiteStore()
+    if store is None:
+        if os.environ.get("DASEIN_PLATFORM_DB_URL"):
+            from dasein_platform.pgstore import PostgresStore
+
+            store = PostgresStore()
+        else:
+            store = SQLiteStore()
+    app.state.store = store
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -48,13 +56,22 @@ def create_app(store: Store | None = None) -> FastAPI:
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid payload")
         obj = event.get("data", {}).get("object", {})
-        account_id = obj.get("client_reference_id") or obj.get("metadata", {}).get(
-            "account_id"
+        # Only checkout.session carries client_reference_id; Subscription
+        # objects carry metadata only if set at checkout and ALWAYS carry the
+        # customer id — so checkout links customer -> account, and
+        # subscription events resolve through that mapping.
+        customer_id = obj.get("customer")
+        account_id = (
+            obj.get("client_reference_id")
+            or obj.get("metadata", {}).get("account_id")
+            or (customer_id and app.state.store.account_for_customer(customer_id))
         )
         handled = False
         if account_id:
             event_type = event.get("type", "")
             if event_type == "checkout.session.completed":
+                if customer_id:
+                    app.state.store.link_customer(customer_id, account_id)
                 app.state.store.set_entitlement(account_id, True)
                 handled = True
             elif event_type == "customer.subscription.deleted":
@@ -66,7 +83,11 @@ def create_app(store: Store | None = None) -> FastAPI:
                 )
                 handled = True
         # Always 2xx on a verified event so Stripe does not retry event types
-        # we deliberately ignore.
+        # we deliberately ignore — but an UNRESOLVABLE subscription event is
+        # an entitlement leak (a cancellation we could not revoke); flag it in
+        # the response so it shows in the Stripe dashboard's delivery log.
+        if not handled and event.get("type", "").startswith("customer.subscription."):
+            return {"received": True, "handled": False, "unresolved_account": True}
         return {"received": True, "handled": handled}
 
     @app.post("/keys", status_code=201)

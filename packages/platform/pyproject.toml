@@ -7,10 +7,16 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic>=2",
-    "PyJWT",
+    # [crypto] pulls `cryptography` for the JWKS (ES256/RS256) verification
+    # path — new Supabase projects sign with asymmetric keys.
+    "PyJWT[crypto]",
 ]
 
 [project.optional-dependencies]
+postgres = [
+    "psycopg[binary]",
+    "psycopg-pool",
+]
 test = [
     "pytest",
     "httpx",

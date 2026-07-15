@@ -55,6 +55,8 @@ use crate::splice::{self, FoldMap};
 /// fold memo (replayable from scratch — losing it costs brain round trips,
 /// never bytes); `tool_keep` is the once-per-conversation frozen keep-set
 /// (re-pruning per turn would vary the prefix and bust the provider cache).
+/// It grows monotonically via the reactive unfreeze — a cache too, since the
+/// unfreezes replay from the tool_use blocks still in the prefix.
 pub struct ConvState {
     pub folds: FoldMap,
     pub last_fps: Vec<String>,
@@ -442,8 +444,15 @@ struct PlanStats {
     /// Internal-view chars/4 the freezer trimmed THIS call (uncut − rendered)
     /// — a diagnostic, never a savings claim (§8.4).
     freeze_cut_tokens: i64,
+    /// Insist-valve fires THIS call: the agent re-asked for content the
+    /// curator had cut, and the valve served it full. The per-request
+    /// over-cut (regret) signal — 0 on a well-calibrated cut.
+    curator_insists: u64,
     tools_total: Option<usize>,
     tools_kept: Option<usize>,
+    /// Pruned tools re-added THIS request because the prefix called them
+    /// (reactive unfreeze) — Some only on the request that unfroze them.
+    tools_unfrozen: Option<usize>,
     tools_pre_prune_sha8: Option<String>,
     // ── detailed-tracing seams (contract Track B item 6) ───────────────────
     /// Conversation turn = assistant messages in the internal view.
@@ -523,6 +532,45 @@ fn internal_mass(msgs: &[Value]) -> i64 {
 /// passthrough shape (internal text == original text, so apply_curation's
 /// equality branch forwards every turn verbatim while recording folds — the
 /// wire freeze is live even before a curator cuts anything).
+/// Tool names the assistant has already reached for anywhere in this
+/// conversation prefix — the demand signal for the reactive keep-set
+/// unfreeze. Scanning the full incoming prefix (not just the newest turn)
+/// makes every past unfreeze re-derivable after a memo eviction: served
+/// bytes stay a pure function of (prefix, checkpoint, config).
+fn prefix_tool_use_names(messages: Option<&Value>) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for m in messages.and_then(Value::as_array).into_iter().flatten() {
+        if m.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        for b in m
+            .get("content")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if b.get("type").and_then(Value::as_str) == Some("tool_use") {
+                if let Some(n) = b.get("name").and_then(Value::as_str) {
+                    out.insert(n.to_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// What the curator decided during ONE serve() — deltas of the freezer's cut
+/// registries across the call, computed on the blocking thread while the
+/// freezer is still in hand. Diagnostics for the curator decision log only.
+struct CutDelta {
+    /// Insist-valve fires (re-asked cut content served full).
+    insists: u64,
+    /// Chunks newly cut (file-ranged or not, e.g. bash observations).
+    chunks: u64,
+    /// Newly cut (file, lo, hi) ranges, sorted for deterministic log order.
+    ranges: Vec<(String, i64, i64)>,
+}
+
 async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow::Result<Plan> {
     let t_curate = std::time::Instant::now();
     if body.get("messages").and_then(Value::as_array).is_none() {
@@ -576,33 +624,89 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         let attach_gf = st.governor.mode != GovMode::Off;
         // Freezer (and its blocking HTTP scorer) is built AND driven on a
         // blocking thread — reqwest::blocking panics on async runtime threads.
-        let (fz, served, fails_before, calls_before) = tokio::task::spawn_blocking(move || {
-            let mut fz = taken.unwrap_or_else(|| {
-                Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
-            });
-            // Governor doom input rides the same trace calls; the latest
-            // doom is harvested per request, so reset before the serve.
-            fz.scorer.attach_gf = attach_gf;
-            fz.scorer.stats.last_doom_q = None;
-            let fails_before = fz.scorer_fail_opens;
-            let calls_before = fz.scorer.stats.trace_calls;
-            let served = fz.serve(&internal_in);
-            (fz, served, fails_before, calls_before)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("freezer task panicked: {e}"))?;
+        let (fz, served, fails_before, calls_before, cut_delta) =
+            tokio::task::spawn_blocking(move || {
+                let mut fz = taken.unwrap_or_else(|| {
+                    Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
+                });
+                // Governor doom input rides the same trace calls; the latest
+                // doom is harvested per request, so reset before the serve.
+                fz.scorer.attach_gf = attach_gf;
+                fz.scorer.stats.last_doom_q = None;
+                let fails_before = fz.scorer_fail_opens;
+                let calls_before = fz.scorer.stats.trace_calls;
+                // Cut-registry watermarks for the curator decision log. Deltas
+                // saturate: a memo reset (client edit) mid-conversation clears
+                // the registries, and a from-scratch replay then reads as all-new
+                // cuts — which is what it is.
+                let insists_before = fz.insists;
+                let chunks_before = fz.dropped_count();
+                let ranges_before: HashMap<String, usize> = fz
+                    .dropped_ranges()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.len()))
+                    .collect();
+                let served = fz.serve(&internal_in);
+                let mut ranges: Vec<(String, i64, i64)> = Vec::new();
+                for (file, after) in fz.dropped_ranges() {
+                    let skip = ranges_before
+                        .get(file)
+                        .copied()
+                        .unwrap_or(0)
+                        .min(after.len());
+                    for &(lo, hi) in &after[skip..] {
+                        ranges.push((file.clone(), lo, hi));
+                    }
+                }
+                ranges.sort();
+                let cut_delta = CutDelta {
+                    insists: fz.insists.saturating_sub(insists_before),
+                    chunks: (fz.dropped_count().saturating_sub(chunks_before)) as u64,
+                    ranges,
+                };
+                (fz, served, fails_before, calls_before, cut_delta)
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("freezer task panicked: {e}"))?;
         stats.scorer_fail_opens = fz.scorer_fail_opens - fails_before;
         stats.brain_ms = fz.scorer.stats.brain_ms;
         stats.checkpoint_id = fz.scorer.stats.checkpoint_id.clone();
         stats.births_scored = fz.scorer.stats.trace_calls - calls_before;
         gov_doom_q = fz.scorer.stats.last_doom_q;
         lock(&st.convs).entry(conv_id.clone()).or_default().freezer = Some(fz);
+        // Curator decision log — the per-cut twin of the tool-prune score
+        // lines: one line per range cut this call, so an over-cut is
+        // diagnosable from the log alone. File paths already ride verbatim
+        // in the served re-read pointers (data plane local — tracing output
+        // never leaves the machine). Logged on the error path too: steps
+        // that committed before a mid-serve failure would otherwise vanish
+        // from the log (the next request's watermark starts above them).
+        for (file, lo, hi) in &cut_delta.ranges {
+            tracing::debug!(
+                conv = %conv_id,
+                file = %file,
+                lo,
+                hi,
+                "curator: range cut — digest + re-read pointer served"
+            );
+        }
+        stats.curator_insists = cut_delta.insists;
+        if cut_delta.insists > 0 {
+            tracing::info!(
+                conv = %conv_id,
+                insists = cut_delta.insists,
+                "curator: insist valve — agent re-asked cut content (over-cut signal)"
+            );
+        }
         match served {
             Ok(c) => {
                 stats.freeze_cut_tokens = (internal_mass(&internal) - internal_mass(&c)).max(0);
                 tracing::debug!(
                     conv = %conv_id,
                     cut_tokens = stats.freeze_cut_tokens,
+                    cut_chunks = cut_delta.chunks,
+                    cut_ranges = cut_delta.ranges.len(),
+                    insists = cut_delta.insists,
                     brain_ms = stats.brain_ms,
                     scorer_fail_opens = stats.scorer_fail_opens,
                     checkpoint = stats.checkpoint_id.as_deref().unwrap_or("-"),
@@ -715,6 +819,39 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                         }
                     }
                 };
+                // Reactive unfreeze (added vs the reference, like the forced
+                // guard below): if the model reached for a pruned tool anyway
+                // — a tool_use in the prefix naming a roster tool outside the
+                // keep-set — serve its full schema from this request on. The
+                // keep-set only ever GROWS, so the provider cache busts once
+                // per unfrozen tool, never per turn; a mis-prune costs the
+                // model one schema-blind call instead of losing the tool for
+                // the whole conversation.
+                let keep = keep.map(|mut k| {
+                    let called = prefix_tool_use_names(body.get("messages"));
+                    let unfroze: Vec<String> = tools
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|t| t.get("name").and_then(Value::as_str))
+                        .filter(|n| called.contains(*n) && !k.contains(*n))
+                        .map(str::to_owned)
+                        .collect();
+                    if !unfroze.is_empty() {
+                        tracing::info!(
+                            conv = %conv_id,
+                            tools = ?unfroze,
+                            "tool-prune: reactive unfreeze — prefix calls pruned tools"
+                        );
+                        stats.tools_unfrozen = Some(unfroze.len());
+                        k.extend(unfroze);
+                        lock(&st.convs)
+                            .entry(conv_id.clone())
+                            .or_default()
+                            .tool_keep = Some(k.clone());
+                    }
+                    k
+                });
                 let forced =
                     body.pointer("/tool_choice/type").and_then(Value::as_str) == Some("tool");
                 if forced {
@@ -1261,11 +1398,17 @@ fn write_ledger(
         if stats.freeze_cut_tokens > 0 {
             o.insert("freeze_cut_tokens".into(), json!(stats.freeze_cut_tokens));
         }
+        if stats.curator_insists > 0 {
+            o.insert("curator_insists".into(), json!(stats.curator_insists));
+        }
         if let Some(t) = stats.tools_total {
             o.insert("tools_total".into(), json!(t));
         }
         if let Some(k) = stats.tools_kept {
             o.insert("tools_kept".into(), json!(k));
+        }
+        if let Some(u) = stats.tools_unfrozen {
+            o.insert("tools_unfrozen".into(), json!(u));
         }
         if let Some(s8) = &stats.tools_pre_prune_sha8 {
             o.insert("tools_pre_prune_sha8".into(), json!(s8));

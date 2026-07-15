@@ -397,6 +397,17 @@ impl<S: ChunkScorer> Freezer<S> {
         self.insists = 0;
     }
 
+    /// Read-only cut registries for the serving layer's curator decision
+    /// logs (which file ranges were cut, how many chunks total) —
+    /// diagnostics only, never an input to the fold.
+    pub fn dropped_ranges(&self) -> &HashMap<String, Vec<(i64, i64)>> {
+        &self.dropped_ranges
+    }
+
+    pub fn dropped_count(&self) -> usize {
+        self.dropped.len()
+    }
+
     /// Registries snapshot for parity assertions (sorted, deterministic).
     pub fn registry_snapshot(&self) -> Value {
         let mut dropped: Vec<&String> = self.dropped.iter().collect();

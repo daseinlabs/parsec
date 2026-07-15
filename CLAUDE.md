@@ -17,8 +17,10 @@ decisions. Non-negotiables when writing code here:
 - **Dependency direction**: `bench → proxy → engine`; `brain`/`trainer` import
   `contracts` only, never client crates. Training code must not be a runtime
   dependency of serving.
-- **No TypeScript.** Client = Rust (`dasein` binary + plugin markdown/JSON);
-  server = Python.
+- **No TypeScript in client/plugin code.** Client = Rust (`dasein` binary +
+  plugin markdown/JSON); server = Python. The §7b rationale (runtime
+  guarantee, binary auditability) is client-only — the web dashboard
+  (`packages/frontend`, Next.js) is exempt.
 - **Parity is the port's definition of done**: Rust must match the Python
   reference byte-for-byte on freezing and vector-for-vector on featurization.
 

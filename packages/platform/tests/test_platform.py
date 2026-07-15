@@ -9,7 +9,9 @@ contracts example.
 from __future__ import annotations
 
 import json
+import os
 import time
+import uuid
 from pathlib import Path
 
 import jwt
@@ -61,10 +63,13 @@ def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def stripe_event(event_type: str, account_id: str = ACCOUNT, **obj_extra) -> bytes:
-    return json.dumps(
-        {"type": event_type, "data": {"object": {"client_reference_id": account_id, **obj_extra}}}
-    ).encode()
+def stripe_event(event_type: str, account_id: str | None = ACCOUNT, **obj_extra) -> bytes:
+    """account_id=None mimics real subscription events, which carry only the
+    customer id — never client_reference_id (checkout-session-only field)."""
+    obj = {**obj_extra}
+    if account_id is not None:
+        obj["client_reference_id"] = account_id
+    return json.dumps({"type": event_type, "data": {"object": obj}}).encode()
 
 
 def test_health(client: TestClient) -> None:
@@ -104,35 +109,70 @@ def test_stripe_webhook_rejects_bad_signature(client: TestClient) -> None:
     assert resp.status_code == 400
 
 
+def post_event(client: TestClient, payload: bytes) -> dict:
+    resp = client.post(
+        "/webhooks/stripe",
+        content=payload,
+        headers={"Stripe-Signature": sign_payload(payload, STRIPE_SECRET)},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 def test_stripe_webhook_flips_entitlement(client: TestClient) -> None:
+    """Realistic event shapes: checkout carries client_reference_id +
+    customer; subscription events carry ONLY the customer id and must resolve
+    through the mapping recorded at checkout."""
     key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
     assert client.get(f"/keys/validate/{key}").json() == {
         "valid": True,
         "entitled": False,
     }
 
-    payload = stripe_event("checkout.session.completed")
-    resp = client.post(
-        "/webhooks/stripe",
-        content=payload,
-        headers={"Stripe-Signature": sign_payload(payload, STRIPE_SECRET)},
+    body = post_event(
+        client, stripe_event("checkout.session.completed", customer="cus_123")
     )
-    assert resp.status_code == 200 and resp.json()["handled"] is True
+    assert body["handled"] is True
     assert client.get(f"/keys/validate/{key}").json() == {
         "valid": True,
         "entitled": True,
     }
 
-    payload = stripe_event("customer.subscription.deleted")
-    client.post(
-        "/webhooks/stripe",
-        content=payload,
-        headers={"Stripe-Signature": sign_payload(payload, STRIPE_SECRET)},
+    # Cancellation: no client_reference_id, no metadata — customer id only.
+    body = post_event(
+        client,
+        stripe_event("customer.subscription.deleted", account_id=None, customer="cus_123"),
     )
+    assert body["handled"] is True
     assert client.get(f"/keys/validate/{key}").json() == {
         "valid": True,
         "entitled": False,
     }
+
+    # Reactivation via subscription.updated, same resolution path.
+    body = post_event(
+        client,
+        stripe_event(
+            "customer.subscription.updated",
+            account_id=None,
+            customer="cus_123",
+            status="active",
+        ),
+    )
+    assert body["handled"] is True
+    assert client.get(f"/keys/validate/{key}").json()["entitled"] is True
+
+
+def test_stripe_subscription_event_for_unknown_customer_is_flagged(
+    client: TestClient,
+) -> None:
+    """A subscription event we cannot map to an account is an entitlement
+    leak — it must be flagged in the response, not silently swallowed."""
+    body = post_event(
+        client,
+        stripe_event("customer.subscription.deleted", account_id=None, customer="cus_ghost"),
+    )
+    assert body == {"received": True, "handled": False, "unresolved_account": True}
 
 
 def test_validate_unknown_key(client: TestClient) -> None:
@@ -157,6 +197,8 @@ def test_pydantic_model_accepts_governor_example() -> None:
     assert row.governor_mode == "advise"
     assert row.gov_rule_fires == example["gov_rule_fires"]
     assert row.checkpoint_id == example["checkpoint_id"]
+    assert row.tools_unfrozen == example["tools_unfrozen"]
+    assert row.curator_insists == example["curator_insists"]
 
 
 def test_ledger_ingest_to_summary(client: TestClient) -> None:
@@ -201,3 +243,104 @@ def test_ledger_ingest_to_summary(client: TestClient) -> None:
     # Another account sees an empty ledger.
     other = client.get("/ledger/summary", headers=auth(mint_jwt("acct-other"))).json()
     assert other["rows_count"] == 0
+
+
+def test_jwks_verification(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The asymmetric path (SUPABASE_JWKS_URL): ES256 tokens verify against
+    the JWKS signing key; HS256 tokens (legacy/forged alg) are rejected. The
+    JWKS client is stubbed — no network in tests."""
+    ec = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ec")
+
+    from dasein_platform import auth as auth_mod
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    class StubSigningKey:
+        key = private_key.public_key()
+
+    class StubJWKSClient:
+        def get_signing_key_from_jwt(self, token: str) -> StubSigningKey:
+            return StubSigningKey()
+
+    url = "https://stub.supabase.test/auth/v1/.well-known/jwks.json"
+    monkeypatch.setenv("SUPABASE_JWKS_URL", url)
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", STRIPE_SECRET)
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    monkeypatch.setitem(auth_mod._jwks_clients, url, StubJWKSClient())
+    client = TestClient(create_app(store=SQLiteStore(":memory:")))
+
+    claims = {"sub": ACCOUNT, "aud": "authenticated", "exp": int(time.time()) + 3600}
+    good = jwt.encode(claims, private_key, algorithm="ES256")
+    assert client.post("/keys", headers=auth(good)).status_code == 201
+
+    hs256 = jwt.encode(claims, "some-shared-secret", algorithm="HS256")
+    assert client.post("/keys", headers=auth(hs256)).status_code == 401
+
+
+# ── PostgresStore (opt-in: needs a reachable Postgres) ──────────────────────
+# Run with e.g. a local container:
+#   docker run --rm -d -p 5433:5432 -e POSTGRES_PASSWORD=pg postgres:16
+#   TEST_POSTGRES_URL=postgresql://postgres:pg@127.0.0.1:5433/postgres \
+#     pytest packages/platform -k postgres
+
+
+@pytest.mark.skipif(
+    "TEST_POSTGRES_URL" not in os.environ,
+    reason="needs TEST_POSTGRES_URL (see comment above)",
+)
+def test_postgres_store_roundtrip() -> None:
+    from dasein_platform.pgstore import PostgresStore
+
+    store = PostgresStore(os.environ["TEST_POSTGRES_URL"])
+    migration = (
+        Path(__file__).resolve().parents[1] / "migrations" / "0001_init.sql"
+    ).read_text()
+    with store._pool.connection() as conn:
+        conn.execute(migration)
+
+    suffix = uuid.uuid4().hex[:8]
+    account = f"acct-pg-{suffix}"
+    try:
+        # entitlement upsert both ways
+        assert store.is_entitled(account) is False
+        store.set_entitlement(account, True)
+        assert store.is_entitled(account) is True
+        store.set_entitlement(account, False)
+        assert store.is_entitled(account) is False
+
+        # keys + customer mapping
+        store.add_key(f"hash-{suffix}", account)
+        assert store.account_for_key(f"hash-{suffix}") == account
+        assert store.account_for_key("hash-missing") is None
+        store.link_customer(f"cus_{suffix}", account)
+        assert store.account_for_customer(f"cus_{suffix}") == account
+
+        # ledger: idempotent insert, NULL-probe rows excluded from savings
+        example = json.loads(CONTRACTS_EXAMPLE.read_text())
+        rid = "req_" + uuid.uuid4().hex
+        row = dict(example, request_id=rid)
+        store.add_ledger_row(account, row)
+        store.add_ledger_row(account, row)  # duplicate — must not raise
+        hole = dict(
+            example,
+            request_id="req_" + uuid.uuid4().hex,
+            counterfactual_input_tokens=None,
+            fail_open=True,
+        )
+        store.add_ledger_row(account, hole)
+        s = store.ledger_summary(account)
+        assert s["rows_count"] == 2
+        assert s["measured_rows"] == 1
+        assert s["fail_open_count"] == 1
+        assert s["tokens_saved"] == (
+            example["counterfactual_input_tokens"] - example["billed_input_tokens"]
+        )
+    finally:
+        with store._pool.connection() as conn:
+            conn.execute("DELETE FROM ledger WHERE account_id = %s", (account,))
+            conn.execute("DELETE FROM api_keys WHERE account_id = %s", (account,))
+            conn.execute(
+                "DELETE FROM stripe_customers WHERE account_id = %s", (account,)
+            )
+            conn.execute("DELETE FROM entitlements WHERE account_id = %s", (account,))
+        store.close()
