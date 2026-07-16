@@ -1,0 +1,13 @@
+{
+  "name": "dasein-marketplace",
+  "owner": { "name": "Dasein Labs", "email": "support@dasein.rocks" },
+  "plugins": [
+    {
+      "name": "dasein",
+      "source": "./plugins/dasein",
+      "description": "Context savings for Claude Code: blocks wasteful re-reads and command loops, measures every token it saves — per-request count_tokens counterfactual, not a modeled baseline. Free tier of the Dasein A3S stack.",
+      "category": "productivity",
+      "keywords": ["tokens", "savings", "context", "compression", "proxy"]
+    }
+  ]
+}

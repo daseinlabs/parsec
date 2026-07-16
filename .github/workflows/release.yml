@@ -1,12 +1,16 @@
 name: release
 
-# Builds the per-platform `dasein` binaries that get committed into the plugin
-# repo (DIRECTION.md §7b: distribution is git-clone with no build step, so
-# binaries ship prebuilt). Windows is deliberately not built yet.
+# Builds the per-platform `dasein` binaries and publishes the assembled plugin
+# to the public marketplace repo daseinlabs/claude-plugins (DIRECTION.md §7b:
+# distribution is git-clone with no build step, so binaries ship prebuilt).
+# The marketplace repo's history is force-pushed as a single squashed commit
+# per release so user clones stay small. Requires the PLUGIN_PUBLISH_TOKEN
+# secret: a fine-grained PAT with contents:write on daseinlabs/claude-plugins.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:  # manual run to test the matrix without cutting a tag
 
 jobs:
   build:
@@ -19,6 +23,9 @@ jobs:
             platform: darwin-x64
           - os: ubuntu-latest   # x64
             platform: linux-x64
+          - os: windows-latest  # x64
+            platform: win-x64   # matches bin/dasein.cmd dispatch
+            ext: .exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,5 +34,71 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dasein-${{ matrix.platform }}
-          path: target/release/dasein
+          path: target/release/dasein${{ matrix.ext }}
           if-no-files-found: error
+
+  # Assemble the full plugin (markdown/JSON + all per-platform binaries) into
+  # a single downloadable zip. On tag pushes it is attached to a GitHub
+  # Release; workflow_dispatch runs still get it as a CI artifact.
+  pack:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Assemble plugin zip
+        run: |
+          set -euo pipefail
+          rm -rf dist && mkdir -p dist
+          cp -R packages/plugin dist/dasein
+          # Committed binaries (dev convenience) are replaced by fresh builds.
+          rm -rf dist/dasein/bin/darwin-arm64
+          for p in darwin-arm64 darwin-x64 linux-x64; do
+            install -D -m 755 "artifacts/dasein-$p/dasein" "dist/dasein/bin/$p/dasein"
+          done
+          install -D -m 644 "artifacts/dasein-win-x64/dasein.exe" "dist/dasein/bin/win-x64/dasein.exe"
+          chmod 755 dist/dasein/bin/dasein   # upload-artifact drops exec bits
+          (cd dist && zip -r dasein-plugin.zip dasein)
+          echo 'Unzip, then: `claude --plugin-dir ./dasein`' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dasein-plugin
+          path: dist/dasein-plugin.zip
+          if-no-files-found: error
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
+          gh release upload "$GITHUB_REF_NAME" dist/dasein-plugin.zip --clobber
+      # Publish the marketplace repo users actually install from:
+      #   claude plugin marketplace add https://github.com/daseinlabs/claude-plugins
+      #   claude plugin install dasein@dasein-marketplace
+      - name: Publish to daseinlabs/claude-plugins
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PLUGIN_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          rm -rf publish && mkdir -p publish/plugins
+          cp -R packages/marketplace/. publish/
+          cp -R dist/dasein publish/plugins/dasein
+          # plugin.json `version` is the update channel — stamp it from the tag.
+          jq --arg v "$VERSION" '.version = $v' \
+            publish/plugins/dasein/.claude-plugin/plugin.json > plugin.json.tmp
+          mv plugin.json.tmp publish/plugins/dasein/.claude-plugin/plugin.json
+          cd publish
+          git init -b main
+          git config user.name "dasein-release"
+          git config user.email "release@dasein.rocks"
+          git add -A
+          git commit -m "dasein v$VERSION"
+          git push --force \
+            "https://x-access-token:${PUBLISH_TOKEN}@github.com/daseinlabs/claude-plugins.git" \
+            main
