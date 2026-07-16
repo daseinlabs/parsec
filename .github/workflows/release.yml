@@ -19,8 +19,9 @@ jobs:
         include:
           - os: macos-14        # arm64
             platform: darwin-arm64
-          - os: macos-13        # x64
-            platform: darwin-x64
+          # darwin-x64 skipped: macos-13 (last Intel runner) is no longer
+          # available. Revisit via cross-compile (x86_64-apple-darwin target
+          # on macos-14) if Intel-Mac users show up.
           - os: ubuntu-latest   # x64
             platform: linux-x64
           - os: windows-latest  # x64
@@ -57,7 +58,7 @@ jobs:
           cp -R packages/plugin dist/dasein
           # Committed binaries (dev convenience) are replaced by fresh builds.
           rm -rf dist/dasein/bin/darwin-arm64
-          for p in darwin-arm64 darwin-x64 linux-x64; do
+          for p in darwin-arm64 linux-x64; do
             install -D -m 755 "artifacts/dasein-$p/dasein" "dist/dasein/bin/$p/dasein"
           done
           install -D -m 644 "artifacts/dasein-win-x64/dasein.exe" "dist/dasein/bin/win-x64/dasein.exe"
