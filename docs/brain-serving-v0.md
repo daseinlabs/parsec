@@ -77,7 +77,7 @@ of the birth gate forever) the decision is only deferred.
 The wire freeze (FoldMap) keeps already-served turns byte-identical
 regardless — resident bytes never depend on brain availability.
 
-## Tool prune (ported bug-for-bug, one guard added)
+## Tool prune (ported bug-for-bug, guards added)
 
 `prune(scores, tokens, names, target_cut=0.70)`: sort ascending by score, cut
 until ≥ target_cut of roster token mass (chars/4 of the sort_keys schema
@@ -86,6 +86,21 @@ retry-until-success on scoring failure, new tools mid-conversation are
 filtered out (reference behavior, known Glob-drop bug). Added guard: a request
 whose `tool_choice` forces a specific tool is served the full roster for that
 call (the reference could 400 upstream; only its force-spawn path guarded).
+
+Added vs the reference — **stubs, not silence** (`DASEIN_TOOL_STUB`, default
+on): a pruned custom tool is served as a minimal stub — name, description
+truncated to 200 chars, a note that the tool is still available and one call
+brings its full schema back, and an accept-anything object schema — instead
+of vanishing from the roster. The model therefore KNOWS the tool exists; if
+it reaches for one, the prefix `tool_use` triggers the reactive unfreeze and
+the full schema is served from the next request on (keep-set only grows —
+one cache bust per unfrozen tool). Stub bytes are a pure function of the
+original schema, so the frozen keep-set still serves a byte-stable roster.
+Provider-typed tools (e.g. `web_search_20250305`) are never stubbed —
+re-declaring one as a custom tool would change execution semantics — those
+keep the reference hard-drop. This also de-biases training capture: under a
+hard drop a pruned tool can never be used again (self-fulfilling `tool_y=0`);
+under stubs the model can still elect it, so mis-prunes show up in the data.
 
 ## Bundle self-validation (§8.2)
 
@@ -99,12 +114,17 @@ it into the ledger row (capture seam).
 
 ## Config surface
 
-Proxy: `DASEIN_BRAIN_URL`, `DASEIN_BRAIN_CONTRACT` (dev | v1; default dev),
+Proxy: `DASEIN_BRAIN_URL` (release builds bake a production default via
+`DASEIN_DEFAULT_BRAIN_URL` at compile time — runtime env overrides, empty
+disables, and the baked default implies contract v1 + stays inert on the
+hash embed backend), `DASEIN_BRAIN_CONTRACT` (dev | v1; default dev),
 `DASEIN_BRAIN_DEV_RAW=1` (explicit raw-text opt-in — dev contract only; v1
 sends no raw text and needs none), `DASEIN_BRAIN_KEY` (bearer, optional),
 `DASEIN_BRAIN_TIMEOUT_MS` (default 10000), `DASEIN_TARGET_COV` (default
 0.70), `DASEIN_TOOL_PRUNE` (default on when brain configured),
-`DASEIN_TOOL_CUT` (default 0.70), `DASEIN_FREEZE=off` escape hatch. v1
+`DASEIN_TOOL_CUT` (default 0.70), `DASEIN_TOOL_STUB` (default on; "off"
+restores the reference hard-drop of pruned tools), `DASEIN_FREEZE=off`
+escape hatch. v1
 client embedder: `DASEIN_EMBED_BACKEND=hash|remote|onnx` (default hash —
 test vectors, warns), `DASEIN_EMBED_URL` (remote), `DASEIN_ONNX_DIR` (onnx;
 needs the `onnx` cargo feature).
@@ -125,7 +145,8 @@ port-forward. No LB.
 ## Capture seams designed in (not built)
 
 Ledger row gains: `checkpoint_id`, `brain_ms`, `scorer_fail_opens`,
-`freeze_cut_tokens`, `tools_total/tools_kept/tools_pre_prune_sha8`. These are
+`freeze_cut_tokens`, `tools_total/tools_kept/tools_stubbed/
+tools_pre_prune_sha8`. These are
 the TRAINING_CAPTURE_GAPS #1/#2 seams (pre-prune roster + served-cut
 provenance) so the retrain contract can be honored later without a sidecar
 retrofit; the telemetry pipeline itself stays unbuilt (§6 consent UX first).

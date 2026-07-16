@@ -31,7 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # DASEIN_DEFAULT_BRAIN_URL is baked into the binary at compile time
+      # (brain.rs BAKED_BRAIN_URL): released plugins reach the production
+      # brain with zero user configuration. Runtime DASEIN_BRAIN_URL still
+      # overrides; dev/CI builds (no env here) bake nothing. The baked
+      # default implies the v1 (textless) contract and stays inert until a
+      # real embed backend is configured — see BrainConfig::from_env.
       - run: cargo build --release -p dasein-proxy
+        env:
+          DASEIN_DEFAULT_BRAIN_URL: https://dasein-brain-939340394421.us-central1.run.app
       - uses: actions/upload-artifact@v4
         with:
           name: dasein-${{ matrix.platform }}

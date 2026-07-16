@@ -453,6 +453,9 @@ struct PlanStats {
     /// Pruned tools re-added THIS request because the prefix called them
     /// (reactive unfreeze) — Some only on the request that unfroze them.
     tools_unfrozen: Option<usize>,
+    /// Pruned tools served as name+note stubs THIS request
+    /// (DASEIN_TOOL_STUB) — Some only when > 0.
+    tools_stubbed: Option<usize>,
     tools_pre_prune_sha8: Option<String>,
     // ── detailed-tracing seams (contract Track B item 6) ───────────────────
     /// Conversation turn = assistant messages in the internal view.
@@ -867,17 +870,41 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                         .and_then(Value::as_array)
                         .cloned()
                         .unwrap_or_default();
-                    let kept: Vec<Value> = src
+                    // Pruned tools are served as name+note stubs (default;
+                    // DASEIN_TOOL_STUB=off restores the hard-drop) so the
+                    // model knows they exist and can call one to get its
+                    // full schema back via the reactive unfreeze above.
+                    // Stub bytes are deterministic, so the frozen keep-set
+                    // still yields a byte-stable roster across turns.
+                    let mut kept_full = 0usize;
+                    let mut stubbed = 0usize;
+                    let served: Vec<Value> = src
                         .into_iter()
-                        .filter(|t| {
-                            t.get("name")
+                        .filter_map(|t| {
+                            let in_keep = t
+                                .get("name")
                                 .and_then(Value::as_str)
-                                .is_some_and(|n| keep.contains(n))
+                                .is_some_and(|n| keep.contains(n));
+                            if in_keep {
+                                kept_full += 1;
+                                Some(t)
+                            } else if bcfg.tool_stub {
+                                let s = brain::stub_tool(&t);
+                                if s.is_some() {
+                                    stubbed += 1;
+                                }
+                                s
+                            } else {
+                                None
+                            }
                         })
                         .collect();
-                    stats.tools_kept = Some(kept.len());
+                    stats.tools_kept = Some(kept_full);
+                    if stubbed > 0 {
+                        stats.tools_stubbed = Some(stubbed);
+                    }
                     if let Some(o) = curated.as_object_mut() {
-                        o.insert("tools".into(), Value::Array(kept));
+                        o.insert("tools".into(), Value::Array(served));
                     }
                 }
             }
@@ -1409,6 +1436,9 @@ fn write_ledger(
         }
         if let Some(u) = stats.tools_unfrozen {
             o.insert("tools_unfrozen".into(), json!(u));
+        }
+        if let Some(s) = stats.tools_stubbed {
+            o.insert("tools_stubbed".into(), json!(s));
         }
         if let Some(s8) = &stats.tools_pre_prune_sha8 {
             o.insert("tools_pre_prune_sha8".into(), json!(s8));

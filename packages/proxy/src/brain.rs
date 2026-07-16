@@ -70,6 +70,9 @@ pub struct BrainConfig {
     pub tool_cut: f64,
     /// DASEIN_TOOL_PRUNE — defaults on when the brain is configured.
     pub tool_prune: bool,
+    /// DASEIN_TOOL_STUB — serve pruned tools as name+note stubs instead of
+    /// dropping them (default on); "off" restores the reference hard-drop.
+    pub tool_stub: bool,
     /// DASEIN_BRAIN_CONTRACT: dev (default) | v1.
     pub contract: BrainContract,
     /// v1 client embedder: DASEIN_EMBED_BACKEND = hash | remote | onnx.
@@ -81,18 +84,49 @@ pub struct BrainConfig {
     pub onnx_dir: Option<String>,
 }
 
+/// Release-baked default brain URL: `DASEIN_DEFAULT_BRAIN_URL` at BUILD time
+/// (release.yml stamps the production Cloud Run URL so a published plugin
+/// reaches the brain with zero configuration). Dev/CI builds bake nothing.
+/// Runtime `DASEIN_BRAIN_URL` always wins, and setting it to an EMPTY string
+/// is the off switch even when a default is baked.
+const BAKED_BRAIN_URL: Option<&str> = option_env!("DASEIN_DEFAULT_BRAIN_URL");
+
+/// URL + contract resolution, pure for testability. Env URL beats baked.
+/// A BAKED url defaults the contract to v1 (a released binary must be
+/// data-plane-clean by default; dev's raw-text wire is opt-in only), while
+/// an env-supplied URL keeps the conservative dev default. An explicit
+/// `DASEIN_BRAIN_CONTRACT` always wins. Returns (url, contract, baked).
+fn resolve_url_contract(
+    env_url: Option<&str>,
+    baked_url: Option<&str>,
+    env_contract: Option<&str>,
+) -> Option<(String, BrainContract, bool)> {
+    let (url, baked) = match env_url {
+        Some(u) => (u.trim(), false),
+        None => (baked_url.unwrap_or("").trim(), true),
+    };
+    if url.is_empty() {
+        return None;
+    }
+    let contract = match env_contract {
+        Some(v) => BrainContract::from_env_value(Some(v)),
+        None if baked => BrainContract::V1,
+        None => BrainContract::Dev,
+    };
+    Some((url.trim_end_matches('/').to_string(), contract, baked))
+}
+
 impl BrainConfig {
-    /// None unless `DASEIN_BRAIN_URL` is set (and `DASEIN_FREEZE` isn't
-    /// "off"). The DEV contract additionally requires the explicit raw-text
+    /// None unless a brain URL is configured — `DASEIN_BRAIN_URL`, or the
+    /// release-baked [`BAKED_BRAIN_URL`] fallback — and `DASEIN_FREEZE` isn't
+    /// "off". The DEV contract additionally requires the explicit raw-text
     /// opt-in `DASEIN_BRAIN_DEV_RAW=1`; the v1 contract sends no raw text and
     /// needs no opt-in.
     pub fn from_env() -> Option<BrainConfig> {
-        let url = std::env::var("DASEIN_BRAIN_URL").ok()?;
-        if url.trim().is_empty() {
-            return None;
-        }
-        let contract =
-            BrainContract::from_env_value(std::env::var("DASEIN_BRAIN_CONTRACT").ok().as_deref());
+        let env_url = std::env::var("DASEIN_BRAIN_URL").ok();
+        let env_contract = std::env::var("DASEIN_BRAIN_CONTRACT").ok();
+        let (url, contract, baked) =
+            resolve_url_contract(env_url.as_deref(), BAKED_BRAIN_URL, env_contract.as_deref())?;
         if contract == BrainContract::Dev
             && std::env::var("DASEIN_BRAIN_DEV_RAW").ok().as_deref() != Some("1")
         {
@@ -113,6 +147,18 @@ impl BrainConfig {
             .unwrap_or(10_000);
         let embed_backend = std::env::var("DASEIN_EMBED_BACKEND").unwrap_or_else(|_| "hash".into());
         if contract == BrainContract::V1 && embed_backend == "hash" {
+            if baked {
+                // The baked release default must never DEGRADE anyone: hash
+                // vectors are not the trained bge embeddings, and unlike an
+                // HTTP failure, garbage scores don't fail open. Stay off
+                // until a real embedder is configured.
+                tracing::info!(
+                    "release brain URL is baked in, but DASEIN_EMBED_BACKEND is 'hash' \
+                     (test vectors) — brain stays OFF until a real embedder is \
+                     configured (DASEIN_EMBED_BACKEND=remote|onnx)"
+                );
+                return None;
+            }
             tracing::warn!(
                 "v1 contract with the HASH embed backend — deterministic test vectors, \
                  NOT the checkpoint's trained bge embeddings (set DASEIN_EMBED_BACKEND=\
@@ -120,7 +166,7 @@ impl BrainConfig {
             );
         }
         Some(BrainConfig {
-            url: url.trim_end_matches('/').to_string(),
+            url,
             key: std::env::var("DASEIN_BRAIN_KEY")
                 .ok()
                 .filter(|k| !k.is_empty()),
@@ -131,6 +177,7 @@ impl BrainConfig {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.70),
             tool_prune: std::env::var("DASEIN_TOOL_PRUNE").ok().as_deref() != Some("off"),
+            tool_stub: std::env::var("DASEIN_TOOL_STUB").ok().as_deref() != Some("off"),
             contract,
             embed_backend,
             embed_url: std::env::var("DASEIN_EMBED_URL")
@@ -915,6 +962,46 @@ pub fn prune(scores_q: &[i64], tokens: &[i64], names: &[String], target_cut: f64
     }
 }
 
+/// Model-facing note appended to every stub description: the tool still
+/// exists and one call by name brings its full schema back (the reactive
+/// unfreeze in server.rs promotes it from the next request on).
+pub const STUB_NOTE: &str = "[This tool is available but its full schema was elided to save \
+context. To use it, call it by name with your best-guess arguments; its complete schema will \
+be provided from the next turn onward.]";
+
+/// Chars of the original description carried into a stub (char-safe cap).
+pub const STUB_DESC_CHARS: usize = 200;
+
+/// Deviation from the reference (like the reactive unfreeze it feeds): a
+/// pruned tool is served as a minimal stub — name + truncated description +
+/// [`STUB_NOTE`] + an accept-anything object schema — instead of vanishing,
+/// so the model KNOWS the tool exists and can reach for it; the resulting
+/// prefix tool_use then triggers the unfreeze. Stub bytes are a pure
+/// function of the original schema (no clock/RNG), so a frozen keep-set
+/// still serves a byte-stable roster. Returns None for provider-typed tools
+/// (e.g. web_search_20250305): re-declaring one as a custom stub would
+/// change its execution semantics, so those keep the reference hard-drop.
+pub fn stub_tool(t: &Value) -> Option<Value> {
+    match t.get("type").and_then(Value::as_str) {
+        None | Some("custom") => {}
+        Some(_) => return None,
+    }
+    t.get("input_schema")?;
+    let name = t.get("name").and_then(Value::as_str)?;
+    let desc = t.get("description").and_then(Value::as_str).unwrap_or("");
+    let head = char_prefix(desc, STUB_DESC_CHARS);
+    let description = if head.is_empty() {
+        STUB_NOTE.to_string()
+    } else {
+        format!("{head}\n\n{STUB_NOTE}")
+    };
+    Some(json!({
+        "name": name,
+        "description": description,
+        "input_schema": {"type": "object", "additionalProperties": true}
+    }))
+}
+
 /// sha8 of the pre-prune roster identity (sorted names) — the ledger capture
 /// seam that joins served traffic back to the full roster without storing
 /// schemas (TRAINING_CAPTURE_GAPS #1).
@@ -983,6 +1070,83 @@ mod tests {
         let r = prune(&[], &[], &[], 0.70);
         assert!(r.keep.is_empty());
         assert_eq!(r.cut_frac, 0.0);
+    }
+
+    #[test]
+    fn stub_tool_keeps_name_and_notes_restorability() {
+        let t = json!({
+            "name": "Grep",
+            "description": "searches file contents with regex",
+            "input_schema": {"type": "object", "properties": {"pattern": {"type": "string"}}}
+        });
+        let s = stub_tool(&t).unwrap();
+        assert_eq!(s["name"], "Grep");
+        let d = s["description"].as_str().unwrap();
+        assert!(d.starts_with("searches file contents with regex"));
+        assert!(d.contains(STUB_NOTE));
+        // The detailed schema is gone; what remains accepts any arguments.
+        assert_eq!(
+            s["input_schema"],
+            json!({"type": "object", "additionalProperties": true})
+        );
+        // Deterministic bytes: the frozen keep-set must serve a stable roster.
+        assert_eq!(stub_tool(&t).unwrap(), s);
+    }
+
+    #[test]
+    fn stub_tool_truncates_description_char_safe() {
+        let long: String = "é".repeat(STUB_DESC_CHARS + 50);
+        let t = json!({"name": "X", "description": long, "input_schema": {"type": "object"}});
+        let d = stub_tool(&t).unwrap()["description"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(d.starts_with(&"é".repeat(STUB_DESC_CHARS)));
+        assert!(!d.starts_with(&"é".repeat(STUB_DESC_CHARS + 1)));
+        assert!(d.ends_with(STUB_NOTE));
+    }
+
+    #[test]
+    fn stub_tool_refuses_provider_typed_tools() {
+        // A provider-executed tool re-declared as a custom stub would change
+        // execution semantics — those keep the reference hard-drop.
+        let t = json!({"type": "web_search_20250305", "name": "web_search", "max_uses": 5});
+        assert_eq!(stub_tool(&t), None);
+        // Explicit type "custom" is still a plain client tool.
+        let c = json!({"type": "custom", "name": "T", "input_schema": {"type": "object"}});
+        assert!(stub_tool(&c).is_some());
+        // No input_schema at all → not a stubbable client tool.
+        let odd = json!({"name": "odd"});
+        assert_eq!(stub_tool(&odd), None);
+    }
+
+    #[test]
+    fn baked_brain_url_resolution() {
+        // Env URL beats the baked default and keeps the conservative dev
+        // contract default (existing behavior, byte-identical).
+        assert_eq!(
+            resolve_url_contract(Some("http://x:1/"), Some("https://baked.example"), None),
+            Some(("http://x:1".into(), BrainContract::Dev, false))
+        );
+        // Unset env falls back to the baked release URL, which defaults the
+        // contract to v1 — a released binary is data-plane-clean by default.
+        assert_eq!(
+            resolve_url_contract(None, Some("https://baked.example/"), None),
+            Some(("https://baked.example".into(), BrainContract::V1, true))
+        );
+        // An explicit contract always wins over the baked v1 default.
+        assert_eq!(
+            resolve_url_contract(None, Some("https://baked.example"), Some("dev")),
+            Some(("https://baked.example".into(), BrainContract::Dev, true))
+        );
+        // Explicitly EMPTY DASEIN_BRAIN_URL is the off switch even when a
+        // default is baked in.
+        assert_eq!(
+            resolve_url_contract(Some(""), Some("https://baked.example"), None),
+            None
+        );
+        // Dev/CI builds bake nothing: unset env means no brain, as before.
+        assert_eq!(resolve_url_contract(None, None, None), None);
     }
 
     #[test]

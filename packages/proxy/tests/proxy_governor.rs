@@ -424,6 +424,7 @@ async fn setup_with(gov: GovernorConfig, serve_rules_route: bool, contract: Brai
         target_cov: "0.70".into(),
         tool_cut: 0.70,
         tool_prune: true,
+        tool_stub: true,
         contract,
         embed_backend: "hash".into(),
         embed_url: None,

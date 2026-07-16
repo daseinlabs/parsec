@@ -173,6 +173,7 @@ async fn setup() -> Ctx {
         target_cov: "0.70".into(),
         tool_cut: 0.70,
         tool_prune: true,
+        tool_stub: true,
         contract: dasein_proxy::brain::BrainContract::Dev,
         embed_backend: "hash".into(),
         embed_url: None,

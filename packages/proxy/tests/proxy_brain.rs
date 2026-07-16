@@ -17,7 +17,7 @@ use axum::routing::post;
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_proxy::brain::{BrainConfig, BrainContract};
+use dasein_proxy::brain::{self, BrainConfig, BrainContract};
 use dasein_proxy::server::{router, AppState};
 use dasein_proxy::splice::strip_cache_control;
 
@@ -184,6 +184,7 @@ async fn setup() -> Ctx {
         target_cov: "0.70".into(),
         tool_cut: 0.70,
         tool_prune: true,
+        tool_stub: true,
         contract: BrainContract::Dev,
         embed_backend: "hash".into(),
         embed_url: None,
@@ -371,13 +372,25 @@ async fn tool_keepset_frozen_once_per_conversation() {
     b["tools"] = tools.clone();
     post_messages(&ctx, &b).await;
 
-    // Equal mass, first name scored high, cut 0.70 of 4 ⇒ keep exactly Read.
+    // Equal mass, first name scored high, cut 0.70 of 4 ⇒ keep exactly Read
+    // full; the pruned three ride as name+note stubs (DASEIN_TOOL_STUB
+    // default) so the model knows they can be called back.
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     let fwd_tools = sent[0]["tools"].as_array().unwrap();
-    assert_eq!(fwd_tools.len(), 1);
+    assert_eq!(fwd_tools.len(), 4);
     assert_eq!(fwd_tools[0]["name"], "Read");
+    assert_eq!(fwd_tools[0]["description"], "read"); // kept = untouched bytes
+    for t in &fwd_tools[1..] {
+        let d = t["description"].as_str().unwrap();
+        assert!(d.contains(brain::STUB_NOTE), "stub missing the note: {t}");
+        assert_eq!(
+            t["input_schema"],
+            json!({"type": "object", "additionalProperties": true})
+        );
+    }
 
-    // Second request: keep-set FROZEN — no second scoring round trip.
+    // Second request: keep-set FROZEN — no second scoring round trip, and
+    // the stub roster is byte-stable.
     let mut msgs = convo_turn1();
     msgs.push(json!({"role": "assistant", "content": "ok"}));
     msgs.push(json!({"role": "user", "content": "go on"}));
@@ -386,11 +399,12 @@ async fn tool_keepset_frozen_once_per_conversation() {
     post_messages(&ctx, &b2).await;
     assert_eq!(ctx.brain.tools_reqs.lock().unwrap().len(), 1);
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
-    assert_eq!(sent[1]["tools"].as_array().unwrap().len(), 1);
+    assert_eq!(sent[1]["tools"], sent[0]["tools"]);
 
     let rows = ledger_rows(&ctx);
     assert_eq!(rows[0]["tools_total"], 4);
     assert_eq!(rows[0]["tools_kept"], 1);
+    assert_eq!(rows[0]["tools_stubbed"], 3);
     assert_eq!(rows[0]["tools_pre_prune_sha8"].as_str().unwrap().len(), 8);
 }
 

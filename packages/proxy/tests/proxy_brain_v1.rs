@@ -25,7 +25,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_proxy::brain::{BrainConfig, BrainContract};
+use dasein_proxy::brain::{self, BrainConfig, BrainContract};
 use dasein_proxy::server::{router, AppState};
 
 /// Grid tau the mock brain hands out (the real ckpt's 0.70-cov tau).
@@ -206,6 +206,7 @@ async fn setup() -> Ctx {
         target_cov: "0.70".into(),
         tool_cut: 0.70,
         tool_prune: true,
+        tool_stub: true,
         contract: BrainContract::V1,
         embed_backend: "hash".into(),
         embed_url: None,
@@ -475,15 +476,27 @@ async fn v1_tools_payload_names_ride_schemas_do_not() {
         );
     }
 
-    // equal mass, first name scored high, cut 0.70 of 4 ⇒ keep exactly Read.
+    // equal mass, first name scored high, cut 0.70 of 4 ⇒ keep exactly Read
+    // full; the pruned three ride as name+note stubs.
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     let fwd_tools = sent[0]["tools"].as_array().unwrap();
-    assert_eq!(fwd_tools.len(), 1);
+    assert_eq!(fwd_tools.len(), 4);
     assert_eq!(fwd_tools[0]["name"], "Read");
+    assert_eq!(
+        fwd_tools[0]["input_schema"]["properties"]["file_path"]["type"], "string",
+        "kept tool must serve its ORIGINAL schema"
+    );
+    for t in &fwd_tools[1..] {
+        assert!(t["description"]
+            .as_str()
+            .unwrap()
+            .contains(brain::STUB_NOTE));
+    }
 
     let rows = ledger_rows(&ctx);
     assert_eq!(rows[0]["tools_total"], 4);
     assert_eq!(rows[0]["tools_kept"], 1);
+    assert_eq!(rows[0]["tools_stubbed"], 3);
 }
 
 /// Reactive unfreeze: a tool_use in the prefix naming a pruned tool re-adds
@@ -506,9 +519,15 @@ async fn v1_tool_prune_reactive_unfreeze_on_prefix_call() {
     b["tools"] = tools.clone();
     post_messages(&ctx, &b).await;
 
-    // turn 1 froze the keep-set to exactly Read (mock scores first name high).
+    // turn 1 froze the keep-set to exactly Read (mock scores first name
+    // high); the pruned three still ride as stubs, which is exactly what
+    // lets the model reach for Grep below.
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
-    assert_eq!(sent[0]["tools"].as_array().unwrap().len(), 1);
+    assert_eq!(sent[0]["tools"].as_array().unwrap().len(), 4);
+    assert!(sent[0]["tools"][2]["description"]
+        .as_str()
+        .unwrap()
+        .contains(brain::STUB_NOTE));
 
     // turn 2: the model reached for pruned Grep anyway — the harness still
     // owns the real tool, so the call executed; its schema must come back.
@@ -526,13 +545,16 @@ async fn v1_tool_prune_reactive_unfreeze_on_prefix_call() {
     post_messages(&ctx, &b2).await;
 
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
-    let names: Vec<&str> = sent[1]["tools"]
-        .as_array()
+    let fwd = sent[1]["tools"].as_array().unwrap();
+    let names: Vec<&str> = fwd.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Read", "Bash", "Grep", "Glob"]);
+    // Grep was promoted stub → FULL schema (description back to the
+    // original, no stub note); Bash/Glob stay stubs.
+    assert_eq!(fwd[2]["description"], "searches file contents with regex");
+    assert!(fwd[1]["description"]
+        .as_str()
         .unwrap()
-        .iter()
-        .map(|t| t["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, ["Read", "Grep"], "pruned Grep not unfrozen");
+        .contains(brain::STUB_NOTE));
     assert_eq!(
         ctx.brain.tools_reqs.lock().unwrap().len(),
         1,
@@ -542,6 +564,7 @@ async fn v1_tool_prune_reactive_unfreeze_on_prefix_call() {
     let rows = ledger_rows(&ctx);
     assert_eq!(rows[1]["tools_kept"], 2);
     assert_eq!(rows[1]["tools_unfrozen"], 1);
+    assert_eq!(rows[1]["tools_stubbed"], 2);
     assert!(
         rows[0].get("tools_unfrozen").is_none(),
         "turn 1 unfroze nothing — field must be absent"
@@ -576,6 +599,7 @@ fn live_brain_dev_v1_score_parity() {
         target_cov: "0.70".into(),
         tool_cut: 0.70,
         tool_prune: false,
+        tool_stub: true,
         contract,
         embed_backend: "hash".into(),
         embed_url: None,
