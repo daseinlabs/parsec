@@ -29,7 +29,11 @@ reqwest.workspace = true
 # embed::OnnxEmbedder — compile-gated so default builds stay light; a local
 # bge-large export may only ship once it passes scripts/embed/parity_gate.py
 ort = { version = "2.0.0-rc.12", optional = true }
-tokenizers = { version = "0.23", optional = true }
+# default-features off drops esaxx_fast (esaxx-rs/cpp): its build.rs hardcodes
+# the static CRT (/MT), which conflicts with ort's /MD onnxruntime prebuilts on
+# windows-msvc (LNK2038). esaxx is only used by the Unigram *trainer*; we only
+# encode with a pretrained tokenizer.json, so the pure-Rust fallback is free.
+tokenizers = { version = "0.23", optional = true, default-features = false, features = ["onig", "progressbar"] }
 
 [features]
 onnx = ["dep:ort", "dep:tokenizers"]
