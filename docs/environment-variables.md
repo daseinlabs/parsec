@@ -29,6 +29,24 @@ Read in `packages/proxy/src/server.rs`, `main.rs`, `hook.rs`.
 | `DASEIN_FREEZE` | on | `off` is the master escape hatch: no brain config, passthrough curation. |
 | `AC_CHUNK_MODE` | `fixed` | Engine chunking mode (`cst` opts into tree-sitter atoms). Client-side twin of the brain's pinned flag — leave alone in production; the ckpt was trained on `fixed`/10. Read in `packages/engine/src/chunking.rs`. |
 
+## 1b. Client — first-run setup (`dasein setup`)
+
+Read in `packages/proxy/src/setup.rs` and `hook.rs` (SessionStart). Setup is
+spawned automatically on the first session after install; it downloads the
+bge-large ONNX export, merges routing env into the user's Claude Code
+settings (additive only — existing keys are never overwritten, a foreign
+`ANTHROPIC_BASE_URL` is reported, not replaced), and pre-warms the proxy.
+State lives in `~/.dasein/setup_state.json`; logs in `~/.dasein/setup.log`.
+Undo with `dasein disable`.
+
+| Var | Default | Effect |
+|---|---|---|
+| `DASEIN_AUTOSETUP` | on | `0` disables first-run auto-setup entirely (spawn and messaging). |
+| `DASEIN_MODEL_BASE_URL` | unset (dev); baked release value | Directory URL serving `model.onnx` + `tokenizer.json`. Release builds bake `DASEIN_DEFAULT_MODEL_BASE_URL` at compile time (release.yml, from repo vars — must be the parity-gated export); the runtime var always wins and does NOT inherit the baked sha pins. |
+| `DASEIN_MODEL_SHA256` | unset (dev); baked release value | sha256 pin for `model.onnx`; verified before the file is finalized, one clean re-download on mismatch. Unset ⇒ download unverified (dev only). |
+| `DASEIN_TOKENIZER_SHA256` | unset (dev); baked release value | Same for `tokenizer.json`. |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's own config-relocation knob; setup honors it when writing `settings.json`. |
+
 ## 2. Client proxy — brain connection
 
 Read in `packages/proxy/src/brain.rs` (`BrainConfig::from_env`).

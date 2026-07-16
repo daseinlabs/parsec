@@ -27,6 +27,17 @@ enum Command {
     Statusline,
     /// Human-readable savings report across recent sessions (/dasein-savings).
     Savings,
+    /// One-time activation: download the local embedder, write Claude Code
+    /// routing env, start the proxy. Runs automatically on first session.
+    Setup {
+        /// Hook-spawned first-run mode: respects terminal states (disable,
+        /// unsupported) and never races a live download. Manual runs retry.
+        #[arg(long)]
+        auto: bool,
+    },
+    /// Undo setup: remove the dasein-managed env keys from Claude Code
+    /// settings and stop auto-setup from re-running.
+    Disable,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -58,5 +69,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Statusline => dasein_proxy::statusline::run(),
         Command::Savings => dasein_proxy::statusline::savings_report(),
+        Command::Setup { auto } => dasein_proxy::setup::run(auto),
+        Command::Disable => dasein_proxy::setup::disable(),
     }
 }

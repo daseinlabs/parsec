@@ -77,10 +77,17 @@ pub fn run(event: &str) -> anyhow::Result<()> {
         }
         "SessionStart" => {
             prune_sessions(7);
-            if let Some(msg) = maybe_autostart_proxy() {
+            let mut msgs = Vec::new();
+            if let Some(m) = maybe_autosetup() {
+                msgs.push(m);
+            }
+            if let Some(m) = maybe_autostart_proxy() {
+                msgs.push(m);
+            }
+            if !msgs.is_empty() {
                 println!(
                     "{}",
-                    json!({ "systemMessage": msg, "suppressOutput": true })
+                    json!({ "systemMessage": msgs.join("\n"), "suppressOutput": true })
                 );
             }
         }
@@ -161,6 +168,97 @@ fn run_stop(payload: &Value, session_id: &str, cwd: &str) {
     let _ = adjudicator::append_row(&adjudicator::row(&adj, session_id, mode, probe, blocked));
 }
 
+/// First-run auto-setup (the "whole experience in one go" install flow): no
+/// setup state on disk means this plugin has never activated on this machine
+/// — spawn `dasein setup --auto` detached (download embedder → write routing
+/// env → warm proxy) and tell the user plainly what is happening, including
+/// how to undo it. Later sessions surface progress / the restart nudge /
+/// failures from the state file. Deliberately LOUD: setup rewrites the
+/// user's API routing, and that must never happen silently.
+///
+/// `DASEIN_AUTOSETUP=0` opts out of both the spawn and the messaging.
+/// Terminal states (`disabled`, `unsupported`) are permanently silent.
+fn maybe_autosetup() -> Option<String> {
+    if std::env::var("DASEIN_AUTOSETUP").ok().as_deref() == Some("0") {
+        return None;
+    }
+    let spawn_first_run = |verb: &str| -> String {
+        // Claim the slot BEFORE spawning so two sessions starting together
+        // don't both spawn a downloader; the spawned setup consumes exactly
+        // this `spawned` phase and flips it to `downloading`.
+        let mut st = crate::setup::SetupState {
+            contract_version: crate::setup::STATE_CONTRACT.into(),
+            phase: "spawned".into(),
+            port: crate::setup::default_port(),
+            updated_unix: unix_now(),
+            ..Default::default()
+        };
+        if let Err(e) = crate::setup::save_state(&st) {
+            return format!("⌁ dasein: first-run setup could not record state ({e}) — skipped");
+        }
+        match crate::setup::spawn_setup_detached() {
+            Ok(()) => format!(
+                "⌁ dasein: {verb} — downloading the local embedder (~1.3 GB) to \
+                 ~/.dasein/models in the background. When it finishes, Claude Code's \
+                 settings gain an env block routing API traffic through the local dasein \
+                 proxy (127.0.0.1 only); curation activates on your next session. \
+                 Undo: `dasein disable` · opt out: DASEIN_AUTOSETUP=0 · log: ~/.dasein/setup.log"
+            ),
+            Err(e) => {
+                st.phase = "failed".into();
+                st.error = Some(format!("spawn: {e}"));
+                let _ = crate::setup::save_state(&st);
+                format!("⌁ dasein: first-run setup failed to start ({e}) — run `dasein setup`")
+            }
+        }
+    };
+    match crate::setup::load_state() {
+        None => Some(spawn_first_run("first-run setup started")),
+        Some(st) => match st.phase.as_str() {
+            "spawned" | "downloading" if st.stale() => Some(spawn_first_run("setup resumed")),
+            "spawned" | "downloading" => {
+                let pct = match (100 * st.bytes_done).checked_div(st.bytes_total) {
+                    Some(p) => format!("{}%", p.min(99)),
+                    None => "starting".into(),
+                };
+                Some(format!(
+                    "⌁ dasein: embedder download in progress ({pct}) — curation activates \
+                     the session after it completes"
+                ))
+            }
+            // Routed sessions get env at launch; this message can only appear
+            // in the pre-restart window (or if the user removed the env).
+            "ready" if st.env_written && std::env::var("ANTHROPIC_BASE_URL").is_err() => Some(
+                "⌁ dasein: setup complete — restart Claude Code to activate curation \
+                 (undo: `dasein disable`)"
+                    .into(),
+            ),
+            "ready" => match (&st.base_url_conflict, std::env::var("ANTHROPIC_BASE_URL")) {
+                (Some(url), Err(_)) => Some(format!(
+                    "⌁ dasein: setup complete, but ANTHROPIC_BASE_URL was already {url} — \
+                     not overwritten. Point it at http://127.0.0.1:{} to enable curation \
+                     (silence this: DASEIN_AUTOSETUP=0)",
+                    st.port
+                )),
+                _ => None,
+            },
+            "failed" => Some(format!(
+                "⌁ dasein: setup failed ({}) — retry with `dasein setup` \
+                 (log: ~/.dasein/setup.log)",
+                st.error.as_deref().unwrap_or("unknown error")
+            )),
+            _ => None, // unsupported | disabled: terminal, silent
+        },
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// The Pro flip-on (DIRECTION.md §7: "plugin → proxy (manages)"): when this
 /// session is ROUTED through a local dasein proxy (ANTHROPIC_BASE_URL points
 /// at a loopback port) and nothing is listening there yet, spawn
@@ -181,35 +279,13 @@ fn maybe_autostart_proxy() -> Option<String> {
     if port_listening(port) {
         return None; // already up (ours or the user's own) — never double-spawn
     }
-    let exe = std::env::current_exe().ok()?;
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let log_dir = std::path::PathBuf::from(&home).join(".dasein");
-    let _ = std::fs::create_dir_all(&log_dir);
-    let log_path = log_dir.join("proxy.log");
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .ok()?;
-    let mut cmd = std::process::Command::new(exe);
-    cmd.arg("proxy")
-        .env("DASEIN_PROXY_PORT", port.to_string())
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::from(log.try_clone().ok()?))
-        .stderr(std::process::Stdio::from(log));
+    let log_path = crate::setup::dasein_home().join("proxy.log");
     // A MANAGED proxy also turns itself off: 30 min without traffic and it
-    // exits (this hook revives it next session). A user-set value wins;
-    // manual `dasein proxy` runs keep the run-forever default.
-    if std::env::var("DASEIN_PROXY_IDLE_EXIT_S").is_err() {
-        cmd.env("DASEIN_PROXY_IDLE_EXIT_S", "1800");
-    }
-    #[cfg(unix)]
-    {
-        // Own process group: the proxy outlives this hook AND the session —
-        // it is a local service, idle-cheap (~10MB), reused by the next one.
-        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    }
-    if let Err(e) = cmd.spawn() {
+    // exits (this hook revives it next session); spawn_proxy_detached sets
+    // that default. Own process group: the proxy outlives this hook AND the
+    // session — it is a local service, idle-cheap (~10MB), reused by the
+    // next one.
+    if let Err(e) = crate::setup::spawn_proxy_detached(port, &[]) {
         return Some(format!(
             "⌁ dasein: ANTHROPIC_BASE_URL routes through 127.0.0.1:{port} but the proxy \
              FAILED to start ({e}) — API requests will fail until you run `dasein proxy` \
@@ -246,7 +322,7 @@ fn maybe_autostart_proxy() -> Option<String> {
 /// IPv4 loopback with an explicit port. Anything else (real API, remote
 /// gateways, https, IPv6 — the proxy binds 127.0.0.1 only) is not ours to
 /// manage.
-fn local_proxy_port(base: &str) -> Option<u16> {
+pub(crate) fn local_proxy_port(base: &str) -> Option<u16> {
     let rest = base.trim().trim_end_matches('/').strip_prefix("http://")?;
     let (host, port) = rest.split_once(':')?;
     if !matches!(host, "127.0.0.1" | "localhost") {

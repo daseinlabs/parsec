@@ -48,6 +48,18 @@ pub trait Embedder {
     fn dim(&self) -> usize;
 }
 
+/// Shared backends: an expensive embedder (the ~1.3GB ONNX session) is
+/// loaded once per process and handed out as `Arc` clones.
+impl<T: Embedder + ?Sized> Embedder for std::sync::Arc<T> {
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+        (**self).embed(texts)
+    }
+
+    fn dim(&self) -> usize {
+        (**self).dim()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Hash backend (deterministic pseudo-embeddings for tests/offline dev)
 // ---------------------------------------------------------------------------

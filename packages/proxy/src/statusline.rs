@@ -34,7 +34,7 @@ pub fn run() -> anyhow::Result<()> {
         .unwrap_or("unknown");
     let st = load_session(session_id);
 
-    let dasein = if st.blocked_rereads == 0 && st.loops_broken == 0 {
+    let mut dasein = if st.blocked_rereads == 0 && st.loops_broken == 0 {
         "⌁ dasein watching".to_string()
     } else {
         let mut parts = Vec::new();
@@ -55,8 +55,51 @@ pub fn run() -> anyhow::Result<()> {
         }
         format!("⌁ dasein {}", parts.join(" · "))
     };
+    if let Some(note) = setup_note() {
+        dasein.push_str(" · ");
+        dasein.push_str(&note);
+    }
     println!("{model} · {dir} · {dasein}");
     Ok(())
+}
+
+/// First-run setup / proxy-health note for the status line. States, in the
+/// order a fresh install moves through them: downloading (with measured
+/// progress), ready-pending-restart, then — once routed — a proxy-down
+/// warning if the autostarted proxy ever dies mid-session. A routed session
+/// with a live proxy shows nothing extra: healthy is the quiet state.
+fn setup_note() -> Option<String> {
+    // Routed = this session's env points at a local dasein proxy. The
+    // statusline inherits the session env, so this is authoritative.
+    let routed_port = std::env::var("ANTHROPIC_BASE_URL")
+        .ok()
+        .and_then(|u| crate::hook::local_proxy_port(&u));
+    if let Some(port) = routed_port {
+        // Loopback connect resolves in microseconds either way; the
+        // statusline render budget is safe.
+        let up = std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+            std::time::Duration::from_millis(100),
+        )
+        .is_ok();
+        return (!up).then(|| format!("proxy DOWN (127.0.0.1:{port} — restarts next session)"));
+    }
+    let st = crate::setup::load_state()?;
+    match st.phase.as_str() {
+        "spawned" | "downloading" => {
+            Some(match (100 * st.bytes_done).checked_div(st.bytes_total) {
+                Some(pct) => format!(
+                    "setting up · {}% of {:.1} GB",
+                    pct.min(99),
+                    st.bytes_total as f64 / 1e9
+                ),
+                None => "setting up".to_string(),
+            })
+        }
+        "ready" if st.env_written => Some("restart to activate curation".to_string()),
+        "failed" => Some("setup failed — run `dasein setup`".to_string()),
+        _ => None,
+    }
 }
 
 /// §8.4 aggregation over savings-ledger rows: tokens saved = counterfactual

@@ -208,14 +208,37 @@ pub fn build_embedder(cfg: &BrainConfig) -> Result<Box<dyn Embedder + Send>, Sco
         "onnx" => {
             #[cfg(feature = "onnx")]
             {
+                use std::sync::{Arc, OnceLock};
+                // The bge-large session is ~1.3GB: load ONCE per process and
+                // share across every conversation's BrainScorer. First caller
+                // pays the load (server::run warms it at startup, off the
+                // request path); concurrent callers block on the OnceLock
+                // until it resolves rather than failing open. The dir is
+                // fixed by env for the life of the process, so caching the
+                // first result (success OR failure) is sound.
+                static SHARED: OnceLock<Result<Arc<dasein_engine::embed::OnnxEmbedder>, String>> =
+                    OnceLock::new();
                 let dir = cfg.onnx_dir.clone().unwrap_or_else(|| {
                     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
                     format!("{home}/.dasein/models/bge-large-onnx")
                 });
-                Ok(Box::new(
+                let shared = SHARED.get_or_init(|| {
+                    let started = std::time::Instant::now();
                     dasein_engine::embed::OnnxEmbedder::load(std::path::Path::new(&dir))
-                        .map_err(|e| ScoreError(format!("onnx embedder: {e}")))?,
-                ))
+                        .map(|e| {
+                            tracing::info!(
+                                dir = %dir,
+                                elapsed_ms = started.elapsed().as_millis() as u64,
+                                "onnx embedder loaded (shared for the process)"
+                            );
+                            Arc::new(e)
+                        })
+                        .map_err(|e| format!("onnx embedder ({dir}): {e}"))
+                });
+                match shared {
+                    Ok(e) => Ok(Box::new(e.clone())),
+                    Err(msg) => Err(ScoreError(msg.clone())),
+                }
             }
             #[cfg(not(feature = "onnx"))]
             {

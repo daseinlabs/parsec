@@ -22,5 +22,6 @@ pub mod measure;
 pub mod noreread;
 pub mod providers;
 pub mod server;
+pub mod setup;
 pub mod splice;
 pub mod statusline;
