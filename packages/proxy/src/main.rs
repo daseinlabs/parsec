@@ -38,6 +38,9 @@ enum Command {
     /// Undo setup: remove the dasein-managed env keys from Claude Code
     /// settings and stop auto-setup from re-running.
     Disable,
+    /// Bring the proxy back on the routed port if it died mid-session
+    /// (detached; no-op when it is already listening).
+    Up,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -71,5 +74,6 @@ fn main() -> anyhow::Result<()> {
         Command::Savings => dasein_proxy::statusline::savings_report(),
         Command::Setup { auto } => dasein_proxy::setup::run(auto),
         Command::Disable => dasein_proxy::setup::disable(),
+        Command::Up => dasein_proxy::setup::up(),
     }
 }

@@ -337,6 +337,18 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/messages", post(messages))
         .route("/v1/messages/count_tokens", post(count_tokens_passthrough))
+        // Liveness only: answered locally, never contacts upstream, so a
+        // 200 here means "proxy is up", not "upstream is reachable".
+        .route(
+            "/health",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({
+                    "ok": true,
+                    "service": "dasein-proxy",
+                    "version": env!("CARGO_PKG_VERSION"),
+                }))
+            }),
+        )
         .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
 }

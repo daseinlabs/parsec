@@ -226,22 +226,49 @@ fn maybe_autosetup() -> Option<String> {
                      the session after it completes"
                 ))
             }
-            // Routed sessions get env at launch; this message can only appear
-            // in the pre-restart window (or if the user removed the env).
-            "ready" if st.env_written && std::env::var("ANTHROPIC_BASE_URL").is_err() => Some(
-                "⌁ dasein: setup complete — restart Claude Code to activate curation \
-                 (undo: `dasein disable`)"
-                    .into(),
-            ),
-            "ready" => match (&st.base_url_conflict, std::env::var("ANTHROPIC_BASE_URL")) {
-                (Some(url), Err(_)) => Some(format!(
-                    "⌁ dasein: setup complete, but ANTHROPIC_BASE_URL was already {url} — \
-                     not overwritten. Point it at http://127.0.0.1:{} to enable curation \
-                     (silence this: DASEIN_AUTOSETUP=0)",
-                    st.port
-                )),
-                _ => None,
-            },
+            // Routed sessions get env at launch; reaching here with the env
+            // unset means the pre-restart window — or the managed env was
+            // removed from settings.json (a plugin update/reinstall makes
+            // Claude Code rewrite it from memory). `env_written` only records
+            // history, so verify against the file and re-assert the routing
+            // (additive merge — a key the user set is never overwritten).
+            // `dasein disable` remains the supported off-switch.
+            "ready" if std::env::var("ANTHROPIC_BASE_URL").is_err() => {
+                match crate::setup::ensure_routing(st.port) {
+                    Ok(out) => {
+                        let mut st2 = st.clone();
+                        st2.env_written = out.routed;
+                        st2.base_url_conflict = out.conflict.clone();
+                        if st2 != st {
+                            st2.updated_unix = unix_now();
+                            let _ = crate::setup::save_state(&st2);
+                        }
+                        match (out.conflict, out.changed) {
+                            (Some(url), _) => Some(format!(
+                                "⌁ dasein: setup complete, but ANTHROPIC_BASE_URL was already \
+                                 {url} — curation is NOT active. Remove it, then run \
+                                 `dasein setup` (undo: `dasein disable`)"
+                            )),
+                            (None, true) => Some(
+                                "⌁ dasein: routing was missing from Claude Code settings (a \
+                                 plugin update can rewrite them) — restored. Restart Claude \
+                                 Code to activate curation (undo: `dasein disable`)"
+                                    .into(),
+                            ),
+                            (None, false) => Some(
+                                "⌁ dasein: setup complete — restart Claude Code to activate \
+                                 curation (undo: `dasein disable`)"
+                                    .into(),
+                            ),
+                        }
+                    }
+                    Err(e) => Some(format!(
+                        "⌁ dasein: curation routing is missing from Claude Code settings \
+                         and could not be restored ({e}) — run `dasein setup`"
+                    )),
+                }
+            }
+            "ready" => None,
             "failed" => Some(format!(
                 "⌁ dasein: setup failed ({}) — retry with `dasein setup` \
                  (log: ~/.dasein/setup.log)",
@@ -331,7 +358,7 @@ pub(crate) fn local_proxy_port(base: &str) -> Option<u16> {
     port.parse().ok()
 }
 
-fn port_listening(port: u16) -> bool {
+pub(crate) fn port_listening(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
         std::time::Duration::from_millis(300),

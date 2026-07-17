@@ -290,6 +290,76 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `dasein up` — bring the proxy back on the routed port. The manual twin of
+/// the SessionStart hook's autostart, for when the proxy dies (or idle-exits)
+/// MID-session: routing env is read at Claude Code launch and cannot change,
+/// so revival means putting a listener back on the same port. Idempotent —
+/// a live proxy (ours or the user's own) is never double-spawned.
+pub fn up() -> anyhow::Result<()> {
+    let port = routed_port();
+    let log = dasein_home().join("proxy.log");
+    if crate::hook::port_listening(port) {
+        println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
+        return Ok(());
+    }
+    // From a plain shell the session env (settings.json `env`) is absent, so
+    // re-derive the embedder config setup would have used; keys already in
+    // the environment stay the user's.
+    let mut extra = Vec::new();
+    let dir = model_dir();
+    if dir.join(MODEL_FILE).exists() && dir.join(TOKENIZER_FILE).exists() {
+        for (k, v) in [
+            ("DASEIN_EMBED_BACKEND", "onnx".to_string()),
+            ("DASEIN_ONNX_DIR", dir.to_string_lossy().into_owned()),
+        ] {
+            if std::env::var(k).is_err() {
+                extra.push((k.to_string(), v));
+            }
+        }
+    }
+    spawn_proxy_detached(port, &extra)?;
+    for _ in 0..40 {
+        if crate::hook::port_listening(port) {
+            println!(
+                "proxy up on 127.0.0.1:{port} — a stuck session recovers on its next \
+                 request (log: {})",
+                log.display()
+            );
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    anyhow::bail!(
+        "proxy spawned for 127.0.0.1:{port} but never started listening — check {}",
+        log.display()
+    )
+}
+
+/// The port a routed Claude Code session is actually pointed at: this shell's
+/// ANTHROPIC_BASE_URL if it names a local proxy, else the one written into
+/// settings.json (what sessions launch with), else the default.
+fn routed_port() -> u16 {
+    if let Some(p) = std::env::var("ANTHROPIC_BASE_URL")
+        .ok()
+        .and_then(|b| crate::hook::local_proxy_port(&b))
+    {
+        return p;
+    }
+    if let Some(p) = std::fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|d| serde_json::from_str::<Value>(&d).ok())
+        .and_then(|root| {
+            root.get("env")?
+                .get("ANTHROPIC_BASE_URL")?
+                .as_str()
+                .and_then(crate::hook::local_proxy_port)
+        })
+    {
+        return p;
+    }
+    default_port()
+}
+
 /// `dasein disable` — remove exactly (and only) what setup wrote.
 pub fn disable() -> anyhow::Result<()> {
     let path = settings_path();
@@ -587,6 +657,15 @@ fn write_settings_file(path: &Path, root: &Value) -> anyhow::Result<()> {
     std::fs::write(&tmp, format!("{}\n", serde_json::to_string_pretty(root)?))?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+/// Re-assert the managed routing env from the SessionStart hook: the same
+/// additive merge as setup (a key the user set is never overwritten), for
+/// the case where a plugin update/reinstall made Claude Code rewrite
+/// settings.json and drop the managed keys while state still says
+/// `env_written`.
+pub fn ensure_routing(port: u16) -> anyhow::Result<MergeOutcome> {
+    write_settings_env(port, &model_dir().to_string_lossy())
 }
 
 // ── detached spawns (shared with the SessionStart hook) ─────────────────────
