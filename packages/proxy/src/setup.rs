@@ -361,7 +361,7 @@ fn routed_port() -> u16 {
 }
 
 /// `dasein disable` — remove exactly (and only) what setup wrote.
-pub fn disable() -> anyhow::Result<()> {
+fn strip_managed_settings() -> anyhow::Result<()> {
     let path = settings_path();
     match std::fs::read_to_string(&path) {
         Ok(data) => {
@@ -387,6 +387,11 @@ pub fn disable() -> anyhow::Result<()> {
         }
         Err(e) => return Err(e.into()),
     }
+    Ok(())
+}
+
+pub fn disable() -> anyhow::Result<()> {
+    strip_managed_settings()?;
     let mut st = SetupState::new("disabled");
     st.port = default_port();
     save_state(&st)?;
@@ -394,6 +399,115 @@ pub fn disable() -> anyhow::Result<()> {
         "auto-setup is now off. Model files kept ({}); delete by hand if unwanted. \
          Re-enable with: dasein setup",
         model_dir().display()
+    );
+    Ok(())
+}
+
+/// Minimal one-shot HTTP exchange with the local proxy. Raw TcpStream on
+/// purpose: no client dep, works the same on every platform, and short
+/// timeouts keep uninstall snappy when nothing is listening.
+fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
+    use std::io::{Read, Write};
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let mut s =
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500)).ok()?;
+    s.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .ok()?;
+    s.set_write_timeout(Some(std::time::Duration::from_secs(2)))
+        .ok()?;
+    write!(
+        s,
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+         Content-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+    .ok()?;
+    let mut buf = String::new();
+    s.read_to_string(&mut buf).ok()?;
+    Some(buf)
+}
+
+/// Stop a proxy on `port`, but only after /health proves the listener is OURS
+/// — a foreign server that happens to sit on the port is left alone.
+fn stop_proxy(port: u16) -> String {
+    if !crate::hook::port_listening(port) {
+        return format!("no proxy listening on 127.0.0.1:{port}");
+    }
+    match proxy_request(port, "GET", "/health") {
+        Some(h) if h.contains("dasein-proxy") => {
+            let _ = proxy_request(port, "POST", "/shutdown");
+            for _ in 0..20 {
+                if !crate::hook::port_listening(port) {
+                    return format!("proxy on 127.0.0.1:{port} stopped");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            // Pre-/shutdown binaries ignore the route; they still exit on
+            // their own via DASEIN_PROXY_IDLE_EXIT_S once routing is gone.
+            format!(
+                "proxy on 127.0.0.1:{port} did not stop when asked — it will \
+                 exit by itself once idle (routing is already removed)"
+            )
+        }
+        Some(_) => {
+            format!("port {port} is serving something that is not the dasein proxy — left alone")
+        }
+        None => format!("listener on port {port} did not answer a health probe — left alone"),
+    }
+}
+
+/// Delete every dasein-owned data file under `home` EXCEPT the state file
+/// (setup_state.json): the "disabled" marker there must survive until the
+/// plugin itself is uninstalled, or a
+/// still-open session's auto-setup hook would immediately redownload models.
+fn purge_data_files(home: &Path) -> (Vec<String>, Vec<String>) {
+    let (mut removed, mut failed) = (Vec::new(), Vec::new());
+    let Ok(entries) = std::fs::read_dir(home) else {
+        return (removed, failed);
+    };
+    let marker = state_path();
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if Some(e.file_name().as_os_str()) == marker.file_name() {
+            continue;
+        }
+        let p = e.path();
+        let res = if p.is_dir() {
+            std::fs::remove_dir_all(&p)
+        } else {
+            std::fs::remove_file(&p)
+        };
+        match res {
+            Ok(()) => removed.push(name),
+            Err(err) => failed.push(format!("{name}: {err}")),
+        }
+    }
+    (removed, failed)
+}
+
+/// `dasein uninstall` — full local cleanup, run BEFORE `claude plugin
+/// uninstall` (afterwards this binary is gone). Order matters: mark disabled
+/// first so still-open sessions' auto-setup hooks won't restart anything,
+/// resolve the routed port BEFORE stripping settings (routed_port reads
+/// them), then stop the proxy and purge data.
+pub fn uninstall() -> anyhow::Result<()> {
+    let mut st = SetupState::new("disabled");
+    st.port = default_port();
+    save_state(&st)?;
+    let port = routed_port();
+    strip_managed_settings()?;
+    println!("{}", stop_proxy(port));
+    let home = dasein_home();
+    let (removed, failed) = purge_data_files(&home);
+    if !removed.is_empty() {
+        println!("removed from {}: {}", home.display(), removed.join(", "));
+    }
+    for f in &failed {
+        eprintln!("could not remove {f} — delete by hand");
+    }
+    println!(
+        "local cleanup done. To finish:\n  1. claude plugin uninstall dasein\n  \
+         2. (optional) rm -rf {} — removes the last marker file",
+        home.display()
     );
     Ok(())
 }
@@ -840,6 +954,32 @@ mod tests {
         let (root, removed) = remove_managed_env(root);
         assert!(removed.is_empty());
         assert_eq!(root["env"]["ANTHROPIC_BASE_URL"], "https://my-gateway.corp");
+    }
+
+    #[test]
+    fn purge_keeps_only_the_disabled_marker() {
+        let dir = std::env::temp_dir().join(format!("dasein-purge-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("models")).unwrap();
+        std::fs::write(dir.join("models/embedder.onnx"), b"x").unwrap();
+        std::fs::write(dir.join("proxy.log"), b"x").unwrap();
+        std::fs::write(dir.join("ledger.jsonl"), b"x").unwrap();
+        std::fs::write(dir.join("setup_state.json"), b"{}").unwrap();
+
+        let (mut removed, failed) = purge_data_files(&dir);
+        removed.sort();
+        assert_eq!(removed, vec!["ledger.jsonl", "models", "proxy.log"]);
+        assert!(failed.is_empty());
+        assert!(dir.join("setup_state.json").exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn stop_proxy_leaves_missing_listener_alone() {
+        // Port 1 is never listening; the probe must come back without touching
+        // anything and say so.
+        assert!(stop_proxy(1).contains("no proxy listening"));
     }
 
     #[test]

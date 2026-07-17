@@ -349,6 +349,24 @@ pub fn router(state: Arc<AppState>) -> Router {
                 }))
             }),
         )
+        // Localhost kill-switch for `dasein uninstall`: the bind is
+        // 127.0.0.1-only, so only same-machine processes can reach it. Reply
+        // first, exit off the response path so the 200 flushes.
+        .route(
+            "/shutdown",
+            post(|| async {
+                tokio::spawn(async {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    tracing::info!("shutdown requested via /shutdown — exiting");
+                    std::process::exit(0);
+                });
+                axum::Json(serde_json::json!({
+                    "ok": true,
+                    "service": "dasein-proxy",
+                    "shutting_down": true,
+                }))
+            }),
+        )
         .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
 }
