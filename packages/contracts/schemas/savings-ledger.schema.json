@@ -74,6 +74,11 @@
    "maxLength": 128,
    "description": "The request's model id (a harness identifier, not content) — enables per-model reporting and honest dollarization via a price table (packages/bench pricing owns prices; the ledger stays token-denominated per §8.4)."
   },
+  "session_id": {
+   "type": "string",
+   "pattern": "^[0-9a-fA-F-]{1,64}$",
+   "description": "Client harness session identity (Claude Code metadata.user_id session_id — an id, never content; the pattern is the contract-level guarantee). Groups requests across the conv_ids one session mints via compaction and subagents. Absent when the client sends no parseable session metadata."
+  },
   "checkpoint_id": {
    "type": "string",
    "pattern": "^[0-9a-f]{64}$",

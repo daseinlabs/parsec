@@ -99,7 +99,8 @@ jobs:
           set -euo pipefail
           rm -rf dist && mkdir -p dist
           cp -R packages/plugin dist/dasein
-          # Committed binaries (dev convenience) are replaced by fresh builds.
+          # Platform dirs are gitignored (absent in CI checkouts); clear any
+          # stragglers before installing fresh builds.
           rm -rf dist/dasein/bin/darwin-arm64
           for p in darwin-arm64 linux-x64; do
             install -D -m 755 "artifacts/dasein-$p/dasein" "dist/dasein/bin/$p/dasein"

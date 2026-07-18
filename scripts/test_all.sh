@@ -17,9 +17,9 @@ step() { # $1 name, rest = command
 py() { local pkg="$1"; shift; (cd "packages/$pkg" && .venv/bin/python -m pytest -q -p no:warnings "$@"); }
 
 # ── static + unit/integration suites ────────────────────────────────────────
-step "rust: fmt"        cargo fmt --all --check
-step "rust: clippy"     cargo clippy --workspace --all-targets -- -D warnings
-step "rust: tests"      cargo test --workspace --quiet
+step "rust: fmt"        make fmt
+step "rust: clippy"     make clippy
+step "rust: tests"      make rust-test
 step "brain: pytest"    py brain
 step "bench: pytest"    py bench
 step "platform: pytest" py platform

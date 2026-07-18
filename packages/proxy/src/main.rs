@@ -1,7 +1,9 @@
 //! `dasein` — one binary, subcommands for every plugin role (DIRECTION.md §7b).
 //!
-//! Committed per-platform into packages/plugin/bin/; plugin distribution has
-//! no build step, so this binary must be self-contained.
+//! Shipped per-platform in packages/plugin/bin/ (CI-built at release;
+//! gitignored in this repo — scripts/refresh_plugin_bin.sh populates a local
+//! copy); plugin distribution has no build step, so this binary must be
+//! self-contained.
 
 use clap::{Parser, Subcommand};
 

@@ -131,6 +131,8 @@ pub struct AppState {
     /// request and the number currently in flight.
     pub last_request_epoch_s: AtomicU64,
     pub in_flight: AtomicU64,
+    /// Construction instant, for the uptime figure in the shutdown summary.
+    pub started: std::time::Instant,
 }
 
 fn epoch_s() -> u64 {
@@ -176,6 +178,7 @@ impl AppState {
             gov_fail_open_count: AtomicU64::new(0),
             last_request_epoch_s: AtomicU64::new(epoch_s()),
             in_flight: AtomicU64::new(0),
+            started: std::time::Instant::now(),
         }
     }
 
@@ -204,6 +207,52 @@ impl Drop for InFlight {
     fn drop(&mut self) {
         self.0.in_flight.fetch_sub(1, Ordering::SeqCst);
         self.0.touch();
+    }
+}
+
+/// One last line before the process ends, on EVERY exit path (idle timer,
+/// /shutdown route, Ctrl-C/SIGTERM): the fail-open tallies must be visible
+/// at least once per lifetime even if nobody scraped them mid-flight (§8.3).
+fn log_shutdown(state: &AppState, reason: &str) {
+    tracing::info!(
+        reason,
+        uptime_s = state.started.elapsed().as_secs(),
+        in_flight = state.in_flight.load(Ordering::SeqCst),
+        fail_open = state.fail_open_count.load(Ordering::SeqCst),
+        gov_fail_open = state.gov_fail_open_count.load(Ordering::SeqCst),
+        "dasein proxy shutting down"
+    );
+}
+
+/// Resolves on Ctrl-C or (unix) SIGTERM, logging which one arrived; axum
+/// then stops accepting and drains in-flight connections before `serve`
+/// returns — a plain signal death would drop mid-stream SSE relays.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(error = %e, "SIGTERM handler unavailable — Ctrl-C only");
+                    let _ = tokio::signal::ctrl_c().await;
+                    tracing::info!("SIGINT received — draining in-flight requests");
+                    return;
+                }
+            };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("SIGINT received — draining in-flight requests");
+            }
+            _ = term.recv() => {
+                tracing::info!("SIGTERM received — draining in-flight requests");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("Ctrl-C received — draining in-flight requests");
     }
 }
 
@@ -320,13 +369,18 @@ pub fn run() -> anyhow::Result<()> {
                         "no traffic for {idle_exit_s}s and nothing in flight — exiting \
                          (the plugin SessionStart hook restarts the proxy on demand)"
                     );
+                    log_shutdown(&maint, "idle");
                     std::process::exit(0);
                 }
             }
         });
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
         tracing::info!("dasein proxy listening on 127.0.0.1:{port}");
-        axum::serve(listener, router(state)).await?;
+        let on_exit = state.clone();
+        axum::serve(listener, router(state))
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
+        log_shutdown(&on_exit, "signal");
         Ok(())
     })
 }
@@ -354,10 +408,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         // first, exit off the response path so the 200 flushes.
         .route(
             "/shutdown",
-            post(|| async {
-                tokio::spawn(async {
+            post(|State(st): State<Arc<AppState>>| async move {
+                tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     tracing::info!("shutdown requested via /shutdown — exiting");
+                    log_shutdown(&st, "/shutdown");
                     std::process::exit(0);
                 });
                 axum::Json(serde_json::json!({
@@ -426,6 +481,30 @@ fn conversation_id(headers: &HeaderMap, internal: &[Value]) -> String {
         Some(rid) if !rid.trim().is_empty() => format!("{}:{}", rid.trim(), hash),
         _ => hash.to_string(),
     }
+}
+
+/// Client harness session identity from `metadata.user_id` — an id, never
+/// content. Claude Code 2.1.x sends user_id as a JSON-encoded object
+/// (`{"device_id":...,"session_id":"<uuid>",...}`, verified live against
+/// 2.1.214); older builds used `user_<hash>_account_<uuid>_session_<uuid>`.
+/// Both parse; anything else — or a value outside the hex/dash id charset —
+/// yields None and the ledger row omits the field. The charset gate is what
+/// keeps the ledger contract unable to carry raw text through this path.
+fn session_id_from_metadata(body: &Value) -> Option<String> {
+    let uid = body.pointer("/metadata/user_id").and_then(Value::as_str)?;
+    let sid = match serde_json::from_str::<Value>(uid) {
+        Ok(v) => v
+            .get("session_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        Err(_) => uid.rsplit_once("_session_").map(|(_, s)| s.to_owned()),
+    }?;
+    let id_shaped = !sid.is_empty()
+        && sid.len() <= 64
+        && sid
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F' | b'-'));
+    id_shaped.then_some(sid)
 }
 
 fn sha8_of_fps<'a>(fps: impl Iterator<Item = &'a str>) -> String {
@@ -1375,6 +1454,10 @@ fn rfc3339_now() -> String {
 #[derive(Clone)]
 struct RowCtx {
     conv_id: String,
+    /// Claude Code session the request belongs to (metadata.user_id) — the
+    /// cross-conversation grouping conv_id can't provide: compaction and
+    /// subagents mint new conv_ids inside one session.
+    session_id: Option<String>,
     model: Option<String>,
     cache_prefix_sha8: String,
     fail_open: bool,
@@ -1456,6 +1539,9 @@ fn write_ledger(
     if let Some(o) = row.as_object_mut() {
         if let Some(m) = model {
             o.insert("model".into(), json!(m));
+        }
+        if let Some(sid) = &ctx.session_id {
+            o.insert("session_id".into(), json!(sid));
         }
         if let Some(ck) = &stats.checkpoint_id {
             o.insert("checkpoint_id".into(), json!(ck));
@@ -1849,6 +1935,7 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
                 .map(|b| conversation_id(&headers, &to_internal(b)))
                 .unwrap_or_default()
         }),
+        session_id: body.as_ref().and_then(session_id_from_metadata),
         model: body
             .as_ref()
             .and_then(|b| b.get("model"))
@@ -2007,6 +2094,34 @@ mod tests {
         assert_eq!(evicted, 2);
         assert!(convs.contains_key("hot"));
         assert_eq!(convs.len(), 1);
+    }
+
+    #[test]
+    fn session_id_extraction_accepts_ids_never_text() {
+        // CC 2.1.x shape: user_id is a JSON-encoded object (verified live
+        // against 2.1.214).
+        let cc = serde_json::json!({"metadata": {"user_id":
+            r#"{"device_id":"d1fe","account_uuid":"","session_id":"8068d98c-4176-4b0e-8e2b-a543aa24f204"}"#}});
+        assert_eq!(
+            session_id_from_metadata(&cc).as_deref(),
+            Some("8068d98c-4176-4b0e-8e2b-a543aa24f204")
+        );
+        // Legacy underscore shape.
+        let legacy = serde_json::json!({"metadata": {"user_id":
+            "user_ab12_account_cd34_session_deadbeef-0000-4000-8000-000000000000"}});
+        assert_eq!(
+            session_id_from_metadata(&legacy).as_deref(),
+            Some("deadbeef-0000-4000-8000-000000000000")
+        );
+        // No session id, no metadata, or non-id content → absent, never junk.
+        for body in [
+            serde_json::json!({"metadata": {"user_id": "u_123"}}),
+            serde_json::json!({"metadata": {"user_id": r#"{"device_id":"d"}"#}}),
+            serde_json::json!({"metadata": {"user_id": r#"{"session_id":"rm -rf / #text"}"#}}),
+            serde_json::json!({"messages": []}),
+        ] {
+            assert_eq!(session_id_from_metadata(&body), None);
+        }
     }
 
     #[test]

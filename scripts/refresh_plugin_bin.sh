@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refresh the committed plugin binary the SAFE way. On Apple Silicon,
+# Refresh the local (gitignored) plugin binary the SAFE way. On Apple Silicon,
 # `cp` over the existing file reuses the inode and the kernel's code-sign
 # cache SIGKILLs the new binary (exit 137, "hook error, no stderr") — so:
 # build → copy to temp → ad-hoc sign → atomic rename (fresh inode).

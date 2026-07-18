@@ -42,6 +42,9 @@ class LedgerRow(BaseModel):
     # extra="forbid" + a mirror missing these meant every capture-seam row
     # 422'd at ingest — caught by the governor-example drift guard.
     model: str | None = None
+    # Client harness session identity (an id, never content) — groups the
+    # conv_ids one session mints via compaction/subagents.
+    session_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{1,64}$")
     checkpoint_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     brain_ms: float | None = Field(default=None, ge=0)
     scorer_fail_opens: int | None = Field(default=None, ge=0)

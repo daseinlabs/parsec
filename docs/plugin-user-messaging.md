@@ -21,8 +21,12 @@ assistant message (plus optional polling via `refreshInterval`).
   `context_window.used_percentage`, `session_id`, rate limits, ~30 fields) and
   renders whatever the script prints. ANSI colors and OSC 8 hyperlinks work.
 - Claude Code does **not** pass plugin data in — the script must read savings
-  from local state. Natural bridge: the Rust proxy writes a pre-aggregated
-  state file keyed by `session_id`; the statusline script just reads it.
+  from local state. Implemented bridge: the proxy stamps each savings-ledger
+  row with the optional `session_id` it extracts from the request's
+  `metadata.user_id` (a JSON-encoded object carrying the Claude Code session
+  uuid — verified live against CC 2.1.214); the statusline filters
+  `~/.dasein/ledger.jsonl` to the current session. If the ledger outgrows the
+  render budget, switch to a pre-aggregated per-session state file.
 - Example: `dasein ▸ saved 12.5k tokens ($0.06) this session`
 - Caveat: runs on every refresh — keep the read path cheap (pre-aggregated
   file, never a live computation).

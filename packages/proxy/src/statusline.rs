@@ -34,25 +34,40 @@ pub fn run() -> anyhow::Result<()> {
         .unwrap_or("unknown");
     let st = load_session(session_id);
 
-    let mut dasein = if st.blocked_rereads == 0 && st.loops_broken == 0 {
+    let mut parts = Vec::new();
+    if st.blocked_rereads > 0 {
+        parts.push(format!(
+            "{} re-read{} blocked · ~{} tok saved",
+            st.blocked_rereads,
+            if st.blocked_rereads == 1 { "" } else { "s" },
+            fmt_tokens(st.tokens_saved)
+        ));
+    }
+    if st.loops_broken > 0 {
+        parts.push(format!(
+            "{} loop{} broken",
+            st.loops_broken,
+            if st.loops_broken == 1 { "" } else { "s" }
+        ));
+    }
+    // This session's proxy savings (§8.4 counterfactual math, signed — a
+    // negative session shows as overhead, never clamped). Whole-ledger read:
+    // a few hundred bytes per request keeps this inside the statusline
+    // render budget; switch to a pre-aggregated per-session state file if
+    // the ledger ever outgrows that.
+    if let Some(saved) = std::fs::read_to_string(ledger_file())
+        .ok()
+        .and_then(|d| session_saved_from_lines(&d, session_id))
+    {
+        parts.push(if saved >= 0 {
+            format!("proxy ~{} tok saved", fmt_tokens(saved as u64))
+        } else {
+            format!("proxy {saved} tok (overhead)")
+        });
+    }
+    let mut dasein = if parts.is_empty() {
         "⌁ dasein watching".to_string()
     } else {
-        let mut parts = Vec::new();
-        if st.blocked_rereads > 0 {
-            parts.push(format!(
-                "{} re-read{} blocked · ~{} tok saved",
-                st.blocked_rereads,
-                if st.blocked_rereads == 1 { "" } else { "s" },
-                fmt_tokens(st.tokens_saved)
-            ));
-        }
-        if st.loops_broken > 0 {
-            parts.push(format!(
-                "{} loop{} broken",
-                st.loops_broken,
-                if st.loops_broken == 1 { "" } else { "s" }
-            ));
-        }
         format!("⌁ dasein {}", parts.join(" · "))
     };
     if let Some(note) = setup_note() {
@@ -120,6 +135,9 @@ struct LedgerAgg {
     saved: i64,
     freeze_cut: i64,
     convs: std::collections::HashSet<String>,
+    /// Distinct client sessions (rows carrying the optional session_id) —
+    /// one session spans the several conv_ids compaction/subagents mint.
+    sessions: std::collections::HashSet<String>,
     /// model id -> (probed requests, counterfactual, saved) — token-
     /// denominated per model; dollarize with packages/bench pricing.
     by_model: std::collections::BTreeMap<String, (u64, i64, i64)>,
@@ -138,6 +156,9 @@ fn aggregate_ledger(lines: &str) -> LedgerAgg {
         let g = |k: &str| row.get(k).and_then(Value::as_i64).unwrap_or(0);
         if let Some(c) = row.get("conv_id").and_then(Value::as_str) {
             a.convs.insert(c.to_string());
+        }
+        if let Some(s) = row.get("session_id").and_then(Value::as_str) {
+            a.sessions.insert(s.to_string());
         }
         if row
             .get("fail_open")
@@ -178,6 +199,38 @@ fn aggregate_ledger(lines: &str) -> LedgerAgg {
     a
 }
 
+/// Signed proxy savings for ONE client session: Σ (counterfactual − billed
+/// input-side) over that session's probed rows — the same §8.4 math as
+/// aggregate_ledger, filtered by the row's optional session_id. Null probes
+/// are excluded, never estimated. None when the session has no probed rows
+/// (pre-session_id ledgers land here and the statusline simply omits it).
+fn session_saved_from_lines(lines: &str, session_id: &str) -> Option<i64> {
+    let mut probed = 0u64;
+    let mut saved = 0i64;
+    for line in lines.lines() {
+        let Ok(row) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        if row.get("contract_version").and_then(Value::as_str) != Some("savings-ledger/v0")
+            || row.get("session_id").and_then(Value::as_str) != Some(session_id)
+        {
+            continue;
+        }
+        if let Some(cf) = row
+            .get("counterfactual_input_tokens")
+            .and_then(Value::as_i64)
+        {
+            let g = |k: &str| row.get(k).and_then(Value::as_i64).unwrap_or(0);
+            probed += 1;
+            saved += cf
+                - (g("billed_input_tokens")
+                    + g("billed_cache_read_tokens")
+                    + g("billed_cache_write_tokens"));
+        }
+    }
+    (probed > 0).then_some(saved)
+}
+
 fn ledger_file() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     std::path::PathBuf::from(home)
@@ -200,11 +253,20 @@ pub fn savings_report() -> anyhow::Result<()> {
             } else {
                 0.0
             };
-            println!(
-                "proxy ledger — {} request(s) / {} conversation(s):",
-                a.rows,
-                a.convs.len()
-            );
+            if a.sessions.is_empty() {
+                println!(
+                    "proxy ledger — {} request(s) / {} conversation(s):",
+                    a.rows,
+                    a.convs.len()
+                );
+            } else {
+                println!(
+                    "proxy ledger — {} request(s) / {} conversation(s) / {} session(s):",
+                    a.rows,
+                    a.convs.len(),
+                    a.sessions.len()
+                );
+            }
             println!(
                 "  input: {} counterfactual vs {} billed(+cache) → {}{} tok saved ({:.1}%)",
                 a.counterfactual,
@@ -303,13 +365,16 @@ mod tests {
     #[test]
     fn ledger_aggregation_is_honest() {
         let lines = concat!(
-            r#"{"contract_version":"savings-ledger/v0","conv_id":"a","model":"claude-sonnet-5","counterfactual_input_tokens":467,"billed_input_tokens":163,"billed_cache_read_tokens":50,"billed_cache_write_tokens":7,"fail_open":false,"freeze_cut_tokens":318}"#,
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"a","session_id":"s-1","model":"claude-sonnet-5","counterfactual_input_tokens":467,"billed_input_tokens":163,"billed_cache_read_tokens":50,"billed_cache_write_tokens":7,"fail_open":false,"freeze_cut_tokens":318}"#,
             "\n",
-            // null probe: EXCLUDED from savings, counted (§8.4)
+            // null probe: EXCLUDED from savings, counted (§8.4); also a
+            // pre-upgrade row — no session_id
             r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":null,"billed_input_tokens":10,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#,
             "\n",
-            // fail-open row with a probe: counted in savings AND flagged
-            r#"{"contract_version":"savings-ledger/v0","conv_id":"b","counterfactual_input_tokens":100,"billed_input_tokens":120,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":true,"scorer_fail_opens":2}"#,
+            // fail-open row with a probe: counted in savings AND flagged.
+            // Same session as conv "a" — compaction/subagent conv_id churn
+            // must still roll up to ONE session.
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"b","session_id":"s-1","counterfactual_input_tokens":100,"billed_input_tokens":120,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":true,"scorer_fail_opens":2}"#,
             "\n",
             "not json\n",
         );
@@ -321,8 +386,14 @@ mod tests {
         assert_eq!(a.scorer_fail_opens, 2);
         assert_eq!(a.saved, (467 - 220) + (100 - 120)); // signed, never clamped
         assert_eq!(a.convs.len(), 2);
+        assert_eq!(a.sessions.len(), 1); // two conv_ids, one session
         assert_eq!(a.freeze_cut, 318);
         assert_eq!(a.by_model["claude-sonnet-5"], (1, 467, 247));
         assert_eq!(a.by_model["(unrecorded)"], (1, 100, -20));
+
+        // Per-session slice: same math, filtered. Rows without a session_id
+        // (pre-upgrade ledgers) and other sessions stay out of the sum.
+        assert_eq!(session_saved_from_lines(lines, "s-1"), Some(247 - 20));
+        assert_eq!(session_saved_from_lines(lines, "s-2"), None);
     }
 }

@@ -350,13 +350,18 @@ async fn fps_not_committed_on_upstream_500() {
 #[tokio::test]
 async fn ledger_row_written_with_counterfactual_and_billed() {
     let ctx = setup().await;
-    let b = body(vec![user("hello")]);
+    let mut b = body(vec![user("hello")]);
+    // The CC 2.1.x metadata shape: user_id is a JSON-encoded string.
+    b["metadata"] = serde_json::json!({
+        "user_id": r#"{"device_id":"d1fe","account_uuid":"","session_id":"8068d98c-4176-4b0e-8e2b-a543aa24f204"}"#
+    });
     assert_eq!(post_messages(&ctx, &b, &[]).await.status(), 200);
 
     let rows = ledger_rows(&ctx);
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
     assert_eq!(row["contract_version"], "savings-ledger/v0");
+    assert_eq!(row["session_id"], "8068d98c-4176-4b0e-8e2b-a543aa24f204");
     assert!(row["request_id"].as_str().unwrap().starts_with("req_"));
     assert_eq!(row["request_id"].as_str().unwrap().len(), 4 + 32);
     assert_eq!(row["counterfactual_input_tokens"], 1234);

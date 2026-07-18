@@ -1,7 +1,10 @@
-# Committed `dasein` binaries
+# Per-platform `dasein` binaries
 
 Plugin distribution is git-clone → local cache copy with **no build or
-postinstall step**, so per-platform release binaries are committed here:
+postinstall step**, so per-platform release binaries ship in this directory
+of the published marketplace repo (placed by CI at release). In the source
+repo the platform dirs are gitignored — `scripts/refresh_plugin_bin.sh`
+populates a local copy for `--plugin-dir` testing.
 
 ```
 bin/

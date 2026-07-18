@@ -11,6 +11,10 @@ __pycache__/
 dist/
 build/
 
+# per-platform plugin binaries: scripts/refresh_plugin_bin.sh locally,
+# CI-built at release (the shims directly in bin/ stay tracked)
+packages/plugin/bin/*/
+
 # local state
 .dasein/
 *.onnx

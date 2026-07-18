@@ -13,9 +13,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # Flags live in the Makefile — shared with scripts/test_all.sh.
+      - run: make fmt
+      - run: make clippy
+      - run: make rust-test
       - name: fixtures committed
         # Parity fixtures are the port's definition of done (DIRECTION.md §7b);
         # an accidentally emptied fixtures dir must fail loudly, not pass vacuously.

@@ -12,7 +12,7 @@ in this repo.
 
 | Package | Language | License | What |
 |---|---|---|---|
-| `packages/plugin` | markdown + JSON + committed binaries | OSS | Claude Code plugin: `dasein:explore` agent, no-reread hook, savings skills, status line |
+| `packages/plugin` | markdown + JSON + CI-built binaries | OSS | Claude Code plugin: `dasein:explore` agent, no-reread hook, savings skills, status line |
 | `packages/proxy` | Rust (`dasein` binary) | OSS | Local data-plane proxy; same binary deploys as the Team BYOK gateway |
 | `packages/engine` | Rust | OSS | Deterministic core: chunking, ONNX embedder, quantized freezing, featurization |
 | `packages/mapgen` | Rust | OSS | codescout exploration maps |
@@ -29,8 +29,7 @@ import nothing client-side.
 ## Try the plugin (free tier v0)
 
 ```sh
-cargo build --release -p dasein-proxy
-cp target/release/dasein packages/plugin/bin/darwin-arm64/dasein   # your platform
+make plugin   # build + place the gitignored local binary
 claude --plugin-dir packages/plugin
 ```
 
