@@ -21,7 +21,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 const BIG: i64 = 1_000_000_000;
@@ -147,11 +147,20 @@ pub fn abs_path(path: &str, cwd: &str) -> String {
 }
 
 fn norm_path(path: &str, cwd: &str) -> String {
-    let p = path.trim().trim_matches(|c| c == '\'' || c == '"');
-    let joined = if p.starts_with('/') {
-        p.to_string()
+    // Windows inputs (backslashes, drive-letter absolutes) fold into the same
+    // forward-slash key space, so Read-tool and shell paths unify there too.
+    let p = path
+        .trim()
+        .trim_matches(|c| c == '\'' || c == '"')
+        .replace('\\', "/");
+    let drive_abs = {
+        let b = p.as_bytes();
+        b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
+    };
+    let joined = if p.starts_with('/') || drive_abs {
+        p
     } else {
-        format!("{}/{}", cwd.trim_end_matches('/'), p)
+        format!("{}/{}", cwd.replace('\\', "/").trim_end_matches('/'), p)
     };
     let mut parts: Vec<&str> = Vec::new();
     for seg in joined.split('/') {
@@ -172,6 +181,8 @@ fn skip_path(low: &str) -> bool {
         || low.contains("/__pycache__/")
         || low.starts_with("/tmp/")
         || low.starts_with("/private/tmp/")
+        || low.contains("/appdata/local/temp/")
+        || low.contains("/windows/temp/")
         || low.ends_with(".diff")
         || low.ends_with(".patch")
 }
@@ -285,13 +296,18 @@ pub fn shell_edited_basenames(cmd: &str) -> Vec<String> {
     paths.extend(REDIR.captures_iter(cmd).map(|m| m[1].to_string()));
     let mut out = Vec::new();
     for p in paths {
-        let low = p.trim_matches(|c| c == '\'' || c == '"').to_lowercase();
+        let low = p
+            .trim_matches(|c| c == '\'' || c == '"')
+            .to_lowercase()
+            .replace('\\', "/");
         if !SRC_EXT.iter().any(|e| low.ends_with(e)) {
             continue;
         }
         if is_test_path(&low)
             || low.contains("/tmp/")
             || low.starts_with("tmp/")
+            || low.contains("/appdata/local/temp/")
+            || low.contains("/windows/temp/")
             || low == "/dev/null"
         {
             continue;
@@ -309,11 +325,12 @@ pub fn is_global_mutate(cmd: &str) -> bool {
 }
 
 fn is_test_path(p: &str) -> bool {
+    let p = p.replace('\\', "/");
     let parts: Vec<&str> = p
         .trim_matches(|c| c == '\'' || c == '"')
         .split('/')
         .collect();
-    let base = parts.last().copied().unwrap_or(p);
+    let base = parts.last().copied().unwrap_or(&p);
     if parts[..parts.len().saturating_sub(1)]
         .iter()
         .any(|s| matches!(*s, "test" | "tests" | "testing"))
@@ -574,8 +591,7 @@ impl SessionState {
 // ---- persistence ----
 
 pub fn sessions_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    Path::new(&home).join(".dasein").join("sessions")
+    crate::setup::home_dir().join(".dasein").join("sessions")
 }
 
 pub fn session_path(session_id: &str) -> PathBuf {
@@ -669,6 +685,32 @@ mod tests {
         assert!(st.reads.is_empty());
         assert!(is_global_mutate("git checkout -- ."));
         assert_eq!(norm_cmd("ls   -la\n"), "ls -la");
+    }
+
+    #[test]
+    fn windows_paths_normalize_and_skip() {
+        // Drive-letter absolutes are absolute — never joined onto cwd — and
+        // backslash forms unify with forward-slash forms of the same file.
+        assert_eq!(
+            norm_path(r"C:\repo\src\app.py", r"C:\other"),
+            "/C:/repo/src/app.py"
+        );
+        assert_eq!(
+            norm_path(r"C:\repo\src\app.py", r"C:\repo"),
+            norm_path("C:/repo/src/app.py", "C:/repo")
+        );
+        // Relative + windows cwd, with `..` collapsed across the join.
+        assert_eq!(
+            norm_path(r"..\lib\util.py", r"C:\repo\src"),
+            "/C:/repo/lib/util.py"
+        );
+        // Windows scratch dirs are exempt like /tmp.
+        assert!(skip_path(
+            &norm_path(r"C:\Users\s\AppData\Local\Temp\x.py", r"C:\repo").to_lowercase()
+        ));
+        assert!(skip_path("/c:/windows/temp/x.py"));
+        // Backslash test paths are still recognized as tests.
+        assert!(is_test_path(r"c:\repo\tests\test_app.py"));
     }
 
     #[test]

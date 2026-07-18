@@ -94,9 +94,19 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// User home for all on-disk state. HOME is a Unix variable: native Windows
+/// (cmd/PowerShell — how Claude Code launches hooks) only sets USERPROFILE,
+/// and Git Bash setting HOME masks that in manual testing. Without the
+/// fallback every path here silently lands in /tmp (C:\tmp) on Windows.
+pub fn home_dir() -> PathBuf {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+}
+
 pub fn dasein_home() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".dasein")
+    home_dir().join(".dasein")
 }
 
 pub fn state_path() -> PathBuf {
@@ -651,10 +661,7 @@ pub fn settings_path() -> PathBuf {
         .ok()
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-            PathBuf::from(home).join(".claude")
-        });
+        .unwrap_or_else(|| home_dir().join(".claude"));
     dir.join("settings.json")
 }
 
@@ -884,6 +891,19 @@ fn spawn_detached(mut cmd: std::process::Command, log_name: &str) -> anyhow::Res
     {
         // Own process group: outlives the hook AND the session that spawned it.
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    }
+    #[cfg(windows)]
+    {
+        // The detach equivalent: DETACHED_PROCESS drops the hook's console,
+        // whose CTRL_CLOSE_EVENT would otherwise kill the proxy when the
+        // session window goes away (stdio is already null/log-file);
+        // CREATE_NEW_PROCESS_GROUP exempts it from the parent's Ctrl-C.
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        std::os::windows::process::CommandExt::creation_flags(
+            &mut cmd,
+            DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+        );
     }
     cmd.spawn()?;
     Ok(())

@@ -219,8 +219,12 @@ pub fn build_embedder(cfg: &BrainConfig) -> Result<Box<dyn Embedder + Send>, Sco
                 static SHARED: OnceLock<Result<Arc<dasein_engine::embed::OnnxEmbedder>, String>> =
                     OnceLock::new();
                 let dir = cfg.onnx_dir.clone().unwrap_or_else(|| {
-                    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-                    format!("{home}/.dasein/models/bge-large-onnx")
+                    crate::setup::home_dir()
+                        .join(".dasein")
+                        .join("models")
+                        .join("bge-large-onnx")
+                        .to_string_lossy()
+                        .into_owned()
                 });
                 let shared = SHARED.get_or_init(|| {
                     let started = std::time::Instant::now();

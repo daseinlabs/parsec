@@ -503,10 +503,13 @@ pub const EDIT_TOOLS: &[&str] = &[
 ];
 
 fn src_path_ok(low: &str) -> bool {
+    let low = low.replace('\\', "/");
     SRC_EXT.iter().any(|e| low.ends_with(e))
-        && !is_test_path(low)
+        && !is_test_path(&low)
         && !low.contains("/tmp/")
         && !low.starts_with("tmp/")
+        && !low.contains("/appdata/local/temp/")
+        && !low.contains("/windows/temp/")
 }
 
 /// governor.py `_edited_src_files`: non-test source files an edit ACTION

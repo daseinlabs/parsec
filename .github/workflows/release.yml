@@ -75,10 +75,32 @@ jobs:
       # resolve the runtime library at launch must fail HERE, not on a user's
       # machine after install.
       - run: ./target/release/dasein${{ matrix.ext }} --version
+      # ort's /MD prebuilts force the dynamic CRT (see engine/Cargo.toml), so
+      # dasein.exe imports msvcp140/vcruntime140 — VC++ redistributable DLLs
+      # that are present on this runner (VS is installed) but absent on clean
+      # user machines, where the loader kills the process before main()
+      # (0xC0000135, no stderr, undiagnosable from a hook error). App-local
+      # deployment: ship the four imported DLLs (~750 KB) next to the exe.
+      # The smoke test above can't catch a miss — the runner always resolves
+      # them from its own redist install.
+      - name: Bundle VC++ runtime DLLs
+        if: matrix.platform == 'win-x64'
+        shell: pwsh
+        run: |
+          $crt = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Redist\MSVC\*\x64\Microsoft.VC14?.CRT" -Directory |
+            Sort-Object FullName | Select-Object -Last 1
+          if (-not $crt) { Write-Error "VC redist CRT dir not found on runner"; exit 1 }
+          foreach ($dll in "msvcp140.dll","msvcp140_1.dll","vcruntime140.dll","vcruntime140_1.dll") {
+            Copy-Item (Join-Path $crt.FullName $dll) target/release/
+          }
+          Get-ChildItem target/release/*.dll
       - uses: actions/upload-artifact@v4
         with:
           name: dasein-${{ matrix.platform }}
-          path: target/release/dasein${{ matrix.ext }}
+          path: |
+            target/release/dasein${{ matrix.ext }}
+            target/release/msvcp140*.dll
+            target/release/vcruntime140*.dll
           if-no-files-found: error
 
   # Assemble the full plugin (markdown/JSON + all per-platform binaries) into
@@ -106,6 +128,9 @@ jobs:
             install -D -m 755 "artifacts/dasein-$p/dasein" "dist/dasein/bin/$p/dasein"
           done
           install -D -m 644 "artifacts/dasein-win-x64/dasein.exe" "dist/dasein/bin/win-x64/dasein.exe"
+          # App-local VC++ CRT (see the build job's bundle step): the loader
+          # only searches next to the exe, so these must sit in win-x64/.
+          install -m 644 artifacts/dasein-win-x64/*.dll "dist/dasein/bin/win-x64/"
           chmod 755 dist/dasein/bin/dasein   # upload-artifact drops exec bits
           (cd dist && zip -r dasein-plugin.zip dasein)
           echo 'Unzip, then: `claude --plugin-dir ./dasein`' >> "$GITHUB_STEP_SUMMARY"

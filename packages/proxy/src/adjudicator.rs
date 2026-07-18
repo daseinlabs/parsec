@@ -529,8 +529,7 @@ pub fn disk_probe(cwd: &str) -> Option<bool> {
 
 /// `~/.dasein/adjudicator.jsonl` — one row per stop attempt, local-only.
 pub fn log_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    std::path::Path::new(&home)
+    crate::setup::home_dir()
         .join(".dasein")
         .join("adjudicator.jsonl")
 }

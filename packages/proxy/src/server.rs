@@ -265,8 +265,9 @@ pub fn run() -> anyhow::Result<()> {
         .unwrap_or(8082);
     let upstream = std::env::var("DASEIN_UPSTREAM")
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let ledger = PathBuf::from(home).join(".dasein").join("ledger.jsonl");
+    let ledger = crate::setup::home_dir()
+        .join(".dasein")
+        .join("ledger.jsonl");
     let brain = BrainConfig::from_env();
     if let Some(b) = &brain {
         match b.contract {

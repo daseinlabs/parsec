@@ -234,8 +234,7 @@ fn session_saved_from_lines(lines: &str, session_id: &str) -> Option<i64> {
 }
 
 fn ledger_file() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    std::path::PathBuf::from(home)
+    crate::setup::home_dir()
         .join(".dasein")
         .join("ledger.jsonl")
 }
