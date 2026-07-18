@@ -6,8 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
-            "args": ["hook", "PreToolUse"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dasein\" hook PreToolUse"
           }
         ]
       }
@@ -18,8 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
-            "args": ["hook", "PostToolUse"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dasein\" hook PostToolUse"
           }
         ]
       }
@@ -29,8 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
-            "args": ["hook", "SessionStart"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dasein\" hook SessionStart"
           }
         ]
       }
@@ -40,8 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
-            "args": ["hook", "Stop"],
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dasein\" hook Stop",
             "timeout": 10
           }
         ]
