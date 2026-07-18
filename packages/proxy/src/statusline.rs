@@ -8,7 +8,9 @@ use serde_json::Value;
 use crate::noreread::{load_session, sessions_dir, SessionState};
 
 fn fmt_tokens(n: u64) -> String {
-    if n >= 10_000 {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1e6)
+    } else if n >= 10_000 {
         format!("{:.1}k", n as f64 / 1000.0)
     } else {
         n.to_string()
@@ -238,6 +240,61 @@ fn ledger_file() -> std::path::PathBuf {
         .join("ledger.jsonl")
 }
 
+/// One-line lifetime roll-up for the SessionStart notice (the doc's one-time
+/// awareness message: docs/plugin-user-messaging.md Part 1 §3). None when
+/// nothing has been measured yet — a fresh install stays quiet. The numbers
+/// are the same aggregates `dasein savings` prints: the proxy figure is the
+/// §8.4 counterfactual sum (signed, never clamped), the hook figure keeps
+/// its "~" because it is the on-disk-bytes approximation.
+pub fn lifetime_note() -> Option<String> {
+    let ledger = std::fs::read_to_string(ledger_file()).ok();
+    let (mut blocked, mut tokens, mut loops) = (0u64, 0u64, 0u64);
+    if let Ok(entries) = std::fs::read_dir(sessions_dir()) {
+        for e in entries.flatten() {
+            if let Ok(data) = std::fs::read_to_string(e.path()) {
+                if let Ok(st) = serde_json::from_str::<SessionState>(&data) {
+                    blocked += st.blocked_rereads;
+                    tokens += st.tokens_saved;
+                    loops += st.loops_broken;
+                }
+            }
+        }
+    }
+    lifetime_note_from(ledger.as_deref(), blocked, tokens, loops)
+}
+
+fn lifetime_note_from(
+    ledger_lines: Option<&str>,
+    blocked: u64,
+    tokens: u64,
+    loops: u64,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(lines) = ledger_lines {
+        let a = aggregate_ledger(lines);
+        if a.probed > 0 {
+            parts.push(if a.saved >= 0 {
+                format!("proxy ~{} tok saved", fmt_tokens(a.saved as u64))
+            } else {
+                format!("proxy {} tok (overhead)", a.saved)
+            });
+        }
+    }
+    if blocked > 0 || loops > 0 {
+        let mut hook = format!("{blocked} re-read(s) blocked (~{} tok)", fmt_tokens(tokens));
+        if loops > 0 {
+            hook.push_str(&format!(" · {loops} loop(s) broken"));
+        }
+        parts.push(hook);
+    }
+    (!parts.is_empty()).then(|| {
+        format!(
+            "⌁ dasein active — lifetime: {}. /dasein:savings for details.",
+            parts.join(" · ")
+        )
+    })
+}
+
 /// `dasein savings` — the measured roll-up for the /dasein-savings skill:
 /// the proxy's savings ledger (§8.4 counterfactual vs billed) plus the
 /// free-tier hook counters. Nothing here is ever estimated.
@@ -395,5 +452,40 @@ mod tests {
         // (pre-upgrade ledgers) and other sessions stay out of the sum.
         assert_eq!(session_saved_from_lines(lines, "s-1"), Some(247 - 20));
         assert_eq!(session_saved_from_lines(lines, "s-2"), None);
+    }
+
+    #[test]
+    fn lifetime_note_quiet_until_measured_then_honest() {
+        // Fresh install: no ledger, no hook counters — stay silent.
+        assert_eq!(lifetime_note_from(None, 0, 0, 0), None);
+        // Ledger present but nothing probed yet — still silent.
+        assert_eq!(
+            lifetime_note_from(
+                Some(
+                    r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":null,"billed_input_tokens":10,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#
+                ),
+                0,
+                0,
+                0
+            ),
+            None
+        );
+        // Both sources measured: proxy sum + hook counters, one line.
+        let note = lifetime_note_from(
+            Some(r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":1500,"billed_input_tokens":200,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#),
+            3, 12000, 1,
+        )
+        .unwrap();
+        assert!(note.contains("proxy ~1300 tok saved"), "{note}");
+        assert!(note.contains("3 re-read(s) blocked (~12.0k tok)"), "{note}");
+        assert!(note.contains("1 loop(s) broken"), "{note}");
+        assert!(note.contains("/dasein:savings"), "{note}");
+        // A net-negative proxy shows signed overhead, never clamped (§8.4).
+        let neg = lifetime_note_from(
+            Some(r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":100,"billed_input_tokens":150,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#),
+            0, 0, 0,
+        )
+        .unwrap();
+        assert!(neg.contains("proxy -50 tok (overhead)"), "{neg}");
     }
 }

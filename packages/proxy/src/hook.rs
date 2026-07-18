@@ -84,6 +84,14 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             if let Some(m) = maybe_autostart_proxy() {
                 msgs.push(m);
             }
+            // One-time awareness line (docs/plugin-user-messaging.md Part 1
+            // §3): fresh startups only — resume/clear/compact re-fire
+            // SessionStart and must not re-nag.
+            if payload.get("source").and_then(Value::as_str) == Some("startup") {
+                if let Some(m) = crate::statusline::lifetime_note() {
+                    msgs.push(m);
+                }
+            }
             if !msgs.is_empty() {
                 println!(
                     "{}",

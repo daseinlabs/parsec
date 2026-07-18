@@ -717,10 +717,64 @@ fn merge_settings(
     Ok((root, out))
 }
 
+/// The managed statusLine command for `exe`. Quoted — the plugin cache path
+/// the binary lives under moves on every version bump and may contain spaces.
+fn statusline_cmd(exe: &str) -> String {
+    format!("\"{exe}\" statusline")
+}
+
+/// A statusLine value setup wrote (under any past binary path) — a
+/// user-authored command never matches and is never touched.
+fn is_managed_statusline(v: &Value) -> bool {
+    v.pointer("/command")
+        .and_then(Value::as_str)
+        .map(|c| c.contains("dasein") && c.trim_end().ends_with("statusline"))
+        .unwrap_or(false)
+}
+
+/// Merge the managed statusLine into a settings root. Plugins cannot ship a
+/// `statusLine` key (plugin settings.json supports only agent /
+/// subagentStatusLine), so setup writes it into the user's settings with the
+/// same ownership discipline as the env merge: absent → written; ours under
+/// an older binary path → repointed (version bumps move the plugin cache
+/// dir, and SessionStart's ensure_routing re-asserts); user-authored →
+/// NEVER touched. Pure for tests.
+fn merge_statusline(mut root: Value, exe: &str) -> anyhow::Result<(Value, bool)> {
+    if root.is_null() {
+        root = serde_json::json!({});
+    }
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings root is not a JSON object"))?;
+    let want = serde_json::json!({"type": "command", "command": statusline_cmd(exe)});
+    let changed = match obj.get("statusLine") {
+        None => {
+            obj.insert("statusLine".into(), want);
+            true
+        }
+        Some(v) if is_managed_statusline(v) && *v != want => {
+            obj.insert("statusLine".into(), want);
+            true
+        }
+        Some(_) => false,
+    };
+    Ok((root, changed))
+}
+
 /// Strip managed keys, but only when they still hold values setup would have
 /// written — a user-customized value is theirs, not ours to delete.
 fn remove_managed_env(mut root: Value) -> (Value, Vec<String>) {
     let mut removed = Vec::new();
+    if root
+        .get("statusLine")
+        .map(is_managed_statusline)
+        .unwrap_or(false)
+    {
+        if let Some(obj) = root.as_object_mut() {
+            obj.remove("statusLine");
+            removed.push("statusLine".to_string());
+        }
+    }
     if let Some(env) = root.get_mut("env").and_then(Value::as_object_mut) {
         let ours = |k: &str, v: &Value| match (k, v.as_str()) {
             ("ANTHROPIC_BASE_URL", Some(s)) => crate::hook::local_proxy_port(s).is_some(),
@@ -756,7 +810,18 @@ fn write_settings_env(port: u16, onnx_dir: &str) -> anyhow::Result<MergeOutcome>
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
         Err(e) => return Err(e.into()),
     };
-    let (root, outcome) = merge_settings(root, port, onnx_dir)?;
+    let (root, mut outcome) = merge_settings(root, port, onnx_dir)?;
+    // The statusline rides the same managed-settings write (delivery
+    // mechanism of docs/plugin-user-messaging.md Part 1 §1 — plugins cannot
+    // ship the key themselves).
+    let root = match std::env::current_exe() {
+        Ok(exe) => {
+            let (root, changed) = merge_statusline(root, &exe.to_string_lossy())?;
+            outcome.changed |= changed;
+            root
+        }
+        Err(_) => root,
+    };
     if outcome.changed {
         write_settings_file(&path, &root)?;
     }
@@ -920,6 +985,52 @@ mod tests {
     fn merge_rejects_non_object_roots() {
         assert!(merge_settings(json!([1, 2]), 8082, "/m").is_err());
         assert!(merge_settings(json!({"env": "oops"}), 8082, "/m").is_err());
+    }
+
+    #[test]
+    fn statusline_merge_writes_repoints_ours_never_users() {
+        // Absent → written.
+        let (root, changed) = merge_statusline(Value::Null, "/cache/v1/bin/dasein").unwrap();
+        assert!(changed);
+        assert_eq!(root["statusLine"]["type"], "command");
+        assert_eq!(
+            root["statusLine"]["command"],
+            "\"/cache/v1/bin/dasein\" statusline"
+        );
+
+        // Ours under an old binary path → repointed (plugin version bump).
+        let (root, changed) = merge_statusline(root, "/cache/v2/bin/dasein").unwrap();
+        assert!(changed);
+        assert_eq!(
+            root["statusLine"]["command"],
+            "\"/cache/v2/bin/dasein\" statusline"
+        );
+
+        // Idempotent at the same path.
+        let (root, changed) = merge_statusline(root, "/cache/v2/bin/dasein").unwrap();
+        assert!(!changed);
+
+        // User-authored statusLine: never touched, and never removed.
+        let mut user = root;
+        user["statusLine"] = json!({"type": "command", "command": "~/bin/my-status.sh"});
+        let (user, changed) = merge_statusline(user, "/cache/v3/bin/dasein").unwrap();
+        assert!(!changed);
+        assert_eq!(user["statusLine"]["command"], "~/bin/my-status.sh");
+        let (user, removed) = remove_managed_env(user);
+        assert!(removed.is_empty());
+        assert_eq!(user["statusLine"]["command"], "~/bin/my-status.sh");
+    }
+
+    #[test]
+    fn disable_removes_managed_statusline() {
+        let root = json!({
+            "statusLine": {"type": "command", "command": "\"/cache/v1/bin/dasein\" statusline"},
+            "env": {"FOO": "bar"}
+        });
+        let (root, removed) = remove_managed_env(root);
+        assert_eq!(removed, vec!["statusLine"]);
+        assert!(root.get("statusLine").is_none());
+        assert_eq!(root["env"]["FOO"], "bar");
     }
 
     #[test]

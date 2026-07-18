@@ -16,10 +16,16 @@ surveyed 2026-07-15.
 The persistent footer row of the Claude Code TUI, refreshed after every
 assistant message (plus optional polling via `refreshInterval`).
 
-- Plugin ships a `statusLine` script in its `settings.json`; Claude Code pipes
-  session JSON to it on stdin (`model.display_name`, `cost.total_cost_usd`,
-  `context_window.used_percentage`, `session_id`, rate limits, ~30 fields) and
-  renders whatever the script prints. ANSI colors and OSC 8 hyperlinks work.
+- Plugins canNOT ship a `statusLine` key (verified 2026-07-18: plugin
+  `settings.json` supports only `agent` and `subagentStatusLine`). Implemented
+  delivery: `dasein setup` merges a managed `statusLine` entry into the
+  user's `~/.claude/settings.json` — additive with the same ownership rules
+  as the env merge (a user-authored statusLine is never overwritten; ours is
+  repointed on version bumps by the SessionStart re-assert). Claude Code
+  pipes session JSON to the command on stdin (`model.display_name`,
+  `cost.total_cost_usd`, `context_window.used_percentage`, `session_id`,
+  rate limits, ~30 fields) and renders whatever it prints. ANSI colors and
+  OSC 8 hyperlinks work.
 - Claude Code does **not** pass plugin data in — the script must read savings
   from local state. Implemented bridge: the proxy stamps each savings-ledger
   row with the optional `session_id` it extracts from the request's
