@@ -103,16 +103,9 @@ fn setup_note() -> Option<String> {
     }
     let st = crate::setup::load_state()?;
     match st.phase.as_str() {
-        "spawned" | "downloading" => {
-            Some(match (100 * st.bytes_done).checked_div(st.bytes_total) {
-                Some(pct) => format!(
-                    "setting up · {}% of {:.1} GB",
-                    pct.min(99),
-                    st.bytes_total as f64 / 1e9
-                ),
-                None => "setting up".to_string(),
-            })
-        }
+        // No byte progress since the model download went away — setup is
+        // now just settings routing, which is effectively instant.
+        "spawned" | "routing" => Some("setting up".to_string()),
         "ready" if st.env_written => Some("restart to activate curation".to_string()),
         "failed" => Some("setup failed — run `dasein setup`".to_string()),
         _ => None,

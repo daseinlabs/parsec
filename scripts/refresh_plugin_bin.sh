@@ -5,9 +5,9 @@
 # build → copy to temp → ad-hoc sign → atomic rename (fresh inode).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# DASEIN_BUILD_FEATURES=onnx builds the local-embedder binary (adds ort +
-# tokenizers; the default stays light — docs/brain-serving-v0.md appendix).
-cargo build --release --bin dasein ${DASEIN_BUILD_FEATURES:+--features "$DASEIN_BUILD_FEATURES"}
+# No cargo features remain: the ONNX embedder moved server-side on
+# 2026-07-20 (docs/server-side-embedding.md), taking ort/tokenizers with it.
+cargo build --release --bin dasein
 DEST=packages/plugin/bin/darwin-arm64/dasein
 cp target/release/dasein "$DEST.tmp"
 codesign --force --sign - "$DEST.tmp" 2>/dev/null || true   # no-op on linux

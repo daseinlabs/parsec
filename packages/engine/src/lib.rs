@@ -12,7 +12,6 @@
 
 pub mod chunking;
 pub mod cst;
-pub mod embed;
 pub mod features;
 pub mod freeze;
 pub mod messages;

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud run services describe *)",
+      "Bash(gcloud run services list *)"
+    ]
+  }
+}

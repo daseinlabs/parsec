@@ -1,6 +1,6 @@
 [package]
 name = "dasein-engine"
-description = "Client-side deterministic core: chunking, local embedding, freezing, feature extraction. No torch; the only network code is embed::RemoteEmbedder (dev fallback)."
+description = "Client-side deterministic core: chunking, freezing, feature extraction. No torch, no embedder, no network code — embedding moved server-side (docs/server-side-embedding.md)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -24,20 +24,3 @@ tree-sitter-rust = "0.23"
 tree-sitter-java = "0.23"
 tree-sitter-c = "0.23"
 tree-sitter-cpp = "0.23"
-# embed::RemoteEmbedder (dasein-embed /embed JSON path — dev fallback)
-reqwest.workspace = true
-# embed::OnnxEmbedder — compile-gated so default builds stay light; a local
-# bge-large export may only ship once it passes scripts/embed/parity_gate.py
-ort = { version = "2.0.0-rc.12", optional = true }
-# default-features off drops esaxx_fast (esaxx-rs/cpp): its build.rs hardcodes
-# the static CRT (/MT), which conflicts with ort's /MD onnxruntime prebuilts on
-# windows-msvc (LNK2038). esaxx is only used by the Unigram *trainer*; we only
-# encode with a pretrained tokenizer.json, so the pure-Rust fallback is free.
-tokenizers = { version = "0.23", optional = true, default-features = false, features = ["onig", "progressbar"] }
-
-[features]
-onnx = ["dep:ort", "dep:tokenizers"]
-
-[[example]]
-name = "onnx_battery"
-required-features = ["onnx"]

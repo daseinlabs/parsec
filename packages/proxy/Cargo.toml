@@ -27,8 +27,3 @@ axum.workspace = true
 reqwest.workspace = true
 futures-util.workspace = true
 # planned: rmcp (MCP) — added with the port
-
-[features]
-# v1-contract local ONNX embedder (forwards the engine gate); default builds
-# stay light — see docs/brain-serving-v0.md "v1 migration status" appendix.
-onnx = ["dasein-engine/onnx"]

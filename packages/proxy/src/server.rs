@@ -276,29 +276,11 @@ pub fn run() -> anyhow::Result<()> {
                 "brain scorer active — DEV RAW-TEXT contract (brain-api-dev/v0), \
                  our-machines-only posture"
             ),
-            crate::brain::BrainContract::V1 => tracing::info!(
+            crate::brain::BrainContract::V2 => tracing::info!(
                 url = %b.url, target_cov = %b.target_cov, tool_prune = b.tool_prune,
-                embed = %b.embed_backend,
-                "brain scorer active — brain-api/v1 (client featurization, \
-                 no raw text on the wire)"
+                "brain scorer active — brain-api/v2 (structural featurization \
+                 local, chunk text sent to the brain, which embeds)"
             ),
-        }
-    }
-    // Eager embedder warm: the shared ONNX session takes seconds to load, so
-    // start it now — concurrent with bind — instead of on the first scored
-    // request. Failure is logged, not fatal: scoring fails open per step and
-    // every open is counted (§8.3).
-    if let Some(b) = &brain {
-        if b.embed_backend == "onnx" {
-            let bcfg = b.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = crate::brain::build_embedder(&bcfg) {
-                    tracing::warn!(
-                        error = %e.0,
-                        "embedder warm-up failed — v1 scoring will fail open until resolved"
-                    );
-                }
-            });
         }
     }
     let state = Arc::new(AppState::with_brain(upstream, ledger, brain));

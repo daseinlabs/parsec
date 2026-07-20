@@ -223,12 +223,9 @@ fn maybe_autosetup() -> Option<String> {
     match crate::setup::load_state() {
         None => Some(spawn_first_run("first-run setup started")),
         Some(st) => match st.phase.as_str() {
-            "spawned" | "downloading" if st.stale() => Some(spawn_first_run("setup resumed")),
-            "spawned" | "downloading" => {
-                let pct = match (100 * st.bytes_done).checked_div(st.bytes_total) {
-                    Some(p) => format!("{}%", p.min(99)),
-                    None => "starting".into(),
-                };
+            "spawned" | "routing" if st.stale() => Some(spawn_first_run("setup resumed")),
+            "spawned" | "routing" => {
+                let pct = "starting".to_string();
                 Some(format!(
                     "⌁ dasein: embedder download in progress ({pct}) — curation activates \
                      the session after it completes"

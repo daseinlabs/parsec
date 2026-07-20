@@ -426,9 +426,6 @@ async fn setup_with(gov: GovernorConfig, serve_rules_route: bool, contract: Brai
         tool_prune: true,
         tool_stub: true,
         contract,
-        embed_backend: "hash".into(),
-        embed_url: None,
-        onnx_dir: None,
     };
     let state = Arc::new(AppState::with_brain_governor(
         format!("http://{up_addr}"),
@@ -779,10 +776,10 @@ async fn rules_endpoint_failure_fails_open_and_is_counted() {
 /// property and every required property is present, for the three governed
 /// v1 requests: score/rules, /v1/neighbors, score/trace (+gf).
 #[tokio::test]
-async fn v1_governor_bodies_match_brain_schema() {
+async fn v2_governor_bodies_match_brain_schema() {
     let schema: Value = serde_json::from_str(
         &std::fs::read_to_string(format!(
-            "{}/../contracts/schemas/brain-api.schema.json",
+            "{}/../contracts/schemas/brain-api-v2.schema.json",
             env!("CARGO_MANIFEST_DIR")
         ))
         .expect("brain-api schema present"),
@@ -807,7 +804,7 @@ async fn v1_governor_bodies_match_brain_schema() {
         }
     };
 
-    let ctx = setup_with(gov(GovMode::On), true, BrainContract::V1).await;
+    let ctx = setup_with(gov(GovMode::On), true, BrainContract::V2).await;
     ctx.brain.rules_fire.store(true, Ordering::SeqCst);
     *ctx.brain.doom_q.lock().unwrap() = Some(120_000);
     *ctx.brain.nbr_median.lock().unwrap() = Some(50_000.0);
@@ -817,7 +814,7 @@ async fn v1_governor_bodies_match_brain_schema() {
 
     let rules = ctx.brain.rules_reqs.lock().unwrap().clone();
     assert_eq!(rules.len(), 1, "one rules call per governed turn");
-    assert_eq!(rules[0]["contract"], "brain-api/v1");
+    assert_eq!(rules[0]["contract"], "brain-api/v2");
     check(&rules[0], "score_rules_request");
     for gone in ["mask", "decided_struct", "target_cov"] {
         assert!(
@@ -829,20 +826,20 @@ async fn v1_governor_bodies_match_brain_schema() {
 
     let nbrs = ctx.brain.neighbors_reqs.lock().unwrap().clone();
     assert_eq!(nbrs.len(), 1, "neighbors fetched once per conversation");
-    assert_eq!(nbrs[0]["contract"], "brain-api/v1");
+    assert_eq!(nbrs[0]["contract"], "brain-api/v2");
     check(&nbrs[0], "neighbors_request");
-    assert_eq!(nbrs[0]["task_vec"].as_array().unwrap().len(), 1024);
+    assert!(nbrs[0]["task_text"].is_string()); // v2: the server embeds
 
     let traces = ctx.brain.trace_reqs.lock().unwrap().clone();
     assert!(!traces.is_empty(), "trace scored");
     for t in &traces {
-        assert_eq!(t["contract"], "brain-api/v1");
+        assert_eq!(t["contract"], "brain-api/v2");
         check(t, "score_trace_request");
-        let gf = t["gf"].as_array().expect("governed v1 trace carries gf");
+        let gf = t["gf"].as_array().expect("governed v2 trace carries gf");
         assert_eq!(gf.len(), 4);
     }
 
-    // The full v1 loop fires on the wire: exactly one appended [SUPERVISOR]
+    // The full v2 loop fires on the wire: exactly one appended [SUPERVISOR]
     // turn rode upstream.
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     let msgs = sent[0]["messages"].as_array().unwrap();
@@ -951,7 +948,7 @@ async fn utf8_brain_error_body_fails_open_without_panic() {
 #[tokio::test]
 async fn v1_gf_gated_on_bundle_doom_capability() {
     // Doom-less bundle: no gf on any trace body.
-    let ctx = setup_with(gov(GovMode::On), true, BrainContract::V1).await;
+    let ctx = setup_with(gov(GovMode::On), true, BrainContract::V2).await;
     ctx.brain.bundle_doom.store(false, Ordering::SeqCst);
     let resp = post_messages(&ctx, &body(convo_turn2())).await;
     assert_eq!(resp.status(), 200);
@@ -965,7 +962,7 @@ async fn v1_gf_gated_on_bundle_doom_capability() {
     }
 
     // Doom-capable bundle (the setup default): gf rides every trace.
-    let ctx = setup_with(gov(GovMode::On), true, BrainContract::V1).await;
+    let ctx = setup_with(gov(GovMode::On), true, BrainContract::V2).await;
     let resp = post_messages(&ctx, &body(convo_turn2())).await;
     assert_eq!(resp.status(), 200);
     let traces = ctx.brain.trace_reqs.lock().unwrap().clone();

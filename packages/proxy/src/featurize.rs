@@ -38,9 +38,8 @@ use sha2::{Digest, Sha256};
 use dasein_engine::chunking::{
     accumulated_chunks, chunk_observation, Chunk, ChunkMode, DEFAULT_WIN,
 };
-use dasein_engine::embed::Embedder;
 use dasein_engine::features::{node_struct_with_type, supersession_edges};
-use dasein_engine::freeze::{BirthQuery, ScoreError};
+use dasein_engine::freeze::BirthQuery;
 use dasein_engine::messages::{actions, assistant_chunks_of, reasoning_chunks_of, steps_of};
 use dasein_engine::pystr::{char_len, char_prefix, py_json_dumps_opts, py_strip};
 use dasein_engine::readout::{decided_struct, Changeprone, ReadoutCtx};
@@ -132,160 +131,6 @@ fn het_steps(messages: &[Value], cur_step: i64) -> Vec<(String, String)> {
     out
 }
 
-/// Populate `cache` for every non-empty text not yet present (dedup,
-/// first-occurrence order), through ONE embedder batch. The clip must have
-/// happened BEFORE this call — cache keys are the exact embedded strings,
-/// like the reference's exact-text cache (curator L281-286).
-fn embed_into_cache(
-    embedder: &dyn Embedder,
-    cache: &mut HashMap<String, Vec<f32>>,
-    texts: &[&str],
-) -> Result<(), ScoreError> {
-    let mut miss: Vec<&str> = Vec::new();
-    for &t in texts {
-        if !t.is_empty() && !cache.contains_key(t) && !miss.contains(&t) {
-            miss.push(t);
-        }
-    }
-    if miss.is_empty() {
-        return Ok(());
-    }
-    let vecs = embedder
-        .embed(&miss)
-        .map_err(|e| ScoreError(format!("client embed: {e}")))?;
-    if vecs.len() != miss.len() {
-        return Err(ScoreError(format!(
-            "client embed returned {} vectors for {} texts",
-            vecs.len(),
-            miss.len()
-        )));
-    }
-    for (t, v) in miss.into_iter().zip(vecs) {
-        cache.insert(t.to_string(), v);
-    }
-    Ok(())
-}
-
-/// cache[text], or the zero vector for "" (dev: `ace/hde = cache[t] if t else
-/// zed`; the embedder is never called on the empty string).
-fn vec_or_zeros(cache: &HashMap<String, Vec<f32>>, text: &str, dim: usize) -> Vec<f32> {
-    if text.is_empty() {
-        vec![0.0; dim]
-    } else {
-        cache.get(text).cloned().unwrap_or_else(|| vec![0.0; dim])
-    }
-}
-
-/// One V1Node per chunk + the aligned content-embedding matrix (the dupcos
-/// input). `struct` rides as the engine's f64 rows — the server's single
-/// np.float32 cast is the same one rounding the dev path applies.
-fn v1_nodes(
-    chunks: &[Chunk],
-    embedder: &dyn Embedder,
-    cache: &mut HashMap<String, Vec<f32>>,
-    salt: &str,
-) -> Result<(Vec<Value>, Vec<Vec<f32>>), ScoreError> {
-    let dim = embedder.dim();
-    let texts: Vec<String> = chunks
-        .iter()
-        .map(|c| char_prefix(&c.text, 2000).to_string())
-        .collect();
-    let heads: Vec<&str> = chunks.iter().map(|c| char_prefix(&c.head, 240)).collect();
-    let mut to_embed: Vec<&str> = texts.iter().map(String::as_str).collect();
-    to_embed.extend(chunks.iter().map(|c| c.cmd.as_str())); // cmd UNTRUNCATED
-    to_embed.extend(heads.iter().copied());
-    embed_into_cache(embedder, cache, &to_embed)?;
-    let ns = node_struct_with_type(chunks);
-    let mut nodes = Vec::with_capacity(chunks.len());
-    let mut content = Vec::with_capacity(chunks.len());
-    for (i, c) in chunks.iter().enumerate() {
-        let emb_text = vec_or_zeros(cache, &texts[i], dim);
-        // Python truthiness: empty-string basename is falsy -> null file_id.
-        let file = c.file.as_deref().filter(|f| !f.is_empty());
-        nodes.push(json!({
-            "emb_text": emb_text,
-            "emb_cmd": vec_or_zeros(cache, &c.cmd, dim),
-            "emb_head": vec_or_zeros(cache, heads[i], dim),
-            "struct": ns[i].to_vec(),
-            "step": c.step,
-            "kind": c.kind,
-            "tokens": c.tokens,
-            "file_id": file.map(|f| hid(salt, f)),
-            "lo": c.lo,
-            "hi": c.hi,
-            "cmd_id": (!c.cmd.is_empty()).then(|| hid(salt, &c.cmd)),
-            "head_id": (!heads[i].is_empty()).then(|| hid(salt, heads[i])),
-        }));
-        content.push(emb_text);
-    }
-    Ok((nodes, content))
-}
-
-fn embed_one(
-    embedder: &dyn Embedder,
-    cache: &mut HashMap<String, Vec<f32>>,
-    text: &str,
-) -> Result<Vec<f32>, ScoreError> {
-    embed_into_cache(embedder, cache, &[text])?;
-    Ok(vec_or_zeros(cache, text, embedder.dim()))
-}
-
-/// POST /v1/score/trace body for one BirthQuery — the v1 twin of the dev
-/// contract's (messages, live_gi, mask) triple. `conv_salt` scopes the opaque
-/// ids; `checkpoint_id` is the /v1/bundle handshake result (the §8.2
-/// matched-pair guard rides in the payload).
-#[allow(clippy::too_many_arguments)]
-pub fn build_v1_trace_payload(
-    q: &BirthQuery,
-    embedder: &dyn Embedder,
-    embed_cache: &mut HashMap<String, Vec<f32>>,
-    changeprone: Option<&Changeprone>,
-    conv_salt: &str,
-    conv_id: &str,
-    checkpoint_id: &str,
-    target_cov: &str,
-) -> Result<Value, ScoreError> {
-    let (nodes, content_embs) = v1_nodes(q.live, embedder, embed_cache, conv_salt)?;
-    // task_text is already [:2000] (freeze parse); sys from the internal view.
-    let task_emb = embed_one(embedder, embed_cache, &q.task_text)?;
-    let sys_text = sys_text_of(q.messages);
-    let steps = het_steps(q.messages, q.cur_step);
-    let alive: Vec<usize> = (0..q.live.len()).collect();
-    let ds = decided_struct(&ReadoutCtx {
-        chunks: q.live,
-        alive: &alive,
-        decided: &q.mask,
-        task_text: &q.task_text,
-        recent: &q.recent_cmds,
-        steps: &steps,
-        cur_step: q.cur_step,
-        t_total: q.cur_step + 1,
-        age: 0.0, // admission-at-birth — the only serve value
-        changeprone,
-        content_embs: Some(&content_embs),
-    });
-    let sup: Vec<[usize; 2]> = supersession_edges(q.live)
-        .into_iter()
-        .map(|(a, b)| [a, b])
-        .collect();
-    let mut payload = json!({
-        "contract": "brain-api/v1",
-        "conv_id": conv_id,
-        "checkpoint_id": checkpoint_id,
-        "cur_step": q.cur_step,
-        "nodes": nodes,
-        "task_emb": task_emb,
-        "mask": q.mask,
-        "decided_struct": ds.iter().map(|row| row.to_vec()).collect::<Vec<_>>(),
-        "edges_supersession": sup,
-        "target_cov": target_cov,
-    });
-    if !sys_text.is_empty() {
-        payload["sys_emb"] = json!(embed_one(embedder, embed_cache, &sys_text)?);
-    }
-    Ok(payload)
-}
-
 // ── tool-schema featurization (trace_contract.tool_schema_chunks port) ──────
 
 struct ToolNode {
@@ -373,19 +218,11 @@ fn tool_task_text(messages: &[Value]) -> String {
 /// task-chunk fallback) + the deduped roster embedded client-side.
 /// Ok(None) = ineligible (no schemas / no chunkable view) — the caller
 /// serves the FULL roster, the dev fail-open.
-pub fn build_v1_tools_payload(
-    internal: &[Value],
-    tools: &Value,
-    embedder: &dyn Embedder,
-    embed_cache: &mut HashMap<String, Vec<f32>>,
-    conv_salt: &str,
-    conv_id: &str,
-    checkpoint_id: &str,
-) -> Result<Option<Value>, ScoreError> {
-    let tool_nodes = tool_schema_chunks(tools);
-    if tool_nodes.is_empty() {
-        return Ok(None); // build_tool_spec returns None -> full roster
-    }
+/// The tool-spec chunk pipeline view (build_tool_spec, trace_graph.py
+/// L117-152) + its task text. `None` = nothing chunkable, the caller fails
+/// open to the full roster. Shared by the v1 and v2 tool payload builders so
+/// the two contracts can never drift on the pipeline itself.
+fn tool_spec_view(internal: &[Value]) -> Option<(Vec<Chunk>, String)> {
     // The SAME chunk pipeline build_trace_graph uses; sort key is step ONLY
     // (stable: obs, then assistant, then reasoning within a step — the
     // vendored build_tool_spec's exact order, NOT parse_internal's
@@ -412,41 +249,178 @@ pub fn build_v1_tools_payload(
         chunks = chunk_observation("", &task_text, 0, DEFAULT_WIN, Some(10), ChunkMode::Fixed);
     }
     if chunks.is_empty() {
-        return Ok(None); // nothing chunkable (empty task): dev assemble would fail -> fail-open
+        return None; // nothing chunkable (empty task): dev assemble would fail -> fail-open
     }
-    let (nodes, _content) = v1_nodes(&chunks, embedder, embed_cache, conv_salt)?;
-    let task_emb = embed_one(embedder, embed_cache, &task_text)?;
+    Some((chunks, task_text))
+}
+
+// ── brain-api/v2: text out, the server embeds ──────────────────────────────
+// v2 is v1 with the three embedding slots carrying text (contracts/schemas/
+// brain-api-v2.schema.json). NO embedder runs here — that is the entire point
+// of the contract (docs/server-side-embedding.md). Structural featurization
+// stays: the freezer already owns the chunk set, so node_struct_with_type,
+// the readout, and the supersession pairs cost nothing extra.
+
+/// One v2 node per chunk. Field-for-field `v1_nodes` with text where the
+/// vectors were — same clips (text 2000, head 240, cmd UNTRUNCATED, exactly
+/// what v1 fed its embedder) and the same salted ids, so the graph the brain
+/// rebuilds is bit-identical to the v1 one.
+fn v2_nodes(chunks: &[Chunk], salt: &str) -> Vec<Value> {
+    let ns = node_struct_with_type(chunks);
+    chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let head = char_prefix(&c.head, 240);
+            // Python truthiness: empty-string basename is falsy -> null file_id.
+            let file = c.file.as_deref().filter(|f| !f.is_empty());
+            json!({
+                "text": char_prefix(&c.text, 2000),
+                "cmd": c.cmd,                       // UNTRUNCATED, as v1 embedded it
+                "head": head,
+                "struct": ns[i].to_vec(),
+                "step": c.step,
+                "kind": c.kind,
+                "tokens": c.tokens,
+                "file_id": file.map(|f| hid(salt, f)),
+                "lo": c.lo,
+                "hi": c.hi,
+                "cmd_id": (!c.cmd.is_empty()).then(|| hid(salt, &c.cmd)),
+                "head_id": (!head.is_empty()).then(|| hid(salt, head)),
+            })
+        })
+        .collect()
+}
+
+/// POST /v1/score/trace body on v2. Infallible: nothing here can fail the way
+/// an embedder call can, so the birth step can no longer fail open on a local
+/// embed error — one whole class of fail-open disappears with the embedder.
+///
+/// `content_embs: None` is deliberate and load-bearing: it zeroes the readout's
+/// trailing AC_DUPCOS pair (cols 47-48), which is the ONE block a client
+/// without an embedder cannot compute. The brain refills it from its own
+/// content embeddings (`_v2_fill_dupcos`), and the cross-contract parity gate
+/// in packages/brain/tests/test_v2.py proves the handoff.
+pub fn build_v2_trace_payload(
+    q: &BirthQuery,
+    changeprone: Option<&Changeprone>,
+    conv_salt: &str,
+    conv_id: &str,
+    checkpoint_id: &str,
+    target_cov: &str,
+) -> Value {
+    let nodes = v2_nodes(q.live, conv_salt);
+    let sys_text = sys_text_of(q.messages);
+    let steps = het_steps(q.messages, q.cur_step);
+    let alive: Vec<usize> = (0..q.live.len()).collect();
+    let ds = decided_struct(&ReadoutCtx {
+        chunks: q.live,
+        alive: &alive,
+        decided: &q.mask,
+        task_text: &q.task_text,
+        recent: &q.recent_cmds,
+        steps: &steps,
+        cur_step: q.cur_step,
+        t_total: q.cur_step + 1,
+        age: 0.0, // admission-at-birth — the only serve value
+        changeprone,
+        content_embs: None, // -> dupcos zeros; the SERVER fills them (see doc above)
+    });
+    let sup: Vec<[usize; 2]> = supersession_edges(q.live)
+        .into_iter()
+        .map(|(a, b)| [a, b])
+        .collect();
+    let mut payload = json!({
+        "contract": "brain-api/v2",
+        "conv_id": conv_id,
+        "checkpoint_id": checkpoint_id,
+        "cur_step": q.cur_step,
+        "nodes": nodes,
+        "task_text": q.task_text,
+        "mask": q.mask,
+        "decided_struct": ds.iter().map(|row| row.to_vec()).collect::<Vec<_>>(),
+        "edges_supersession": sup,
+        "target_cov": target_cov,
+    });
+    if !sys_text.is_empty() {
+        payload["sys_text"] = json!(sys_text);
+    }
+    payload
+}
+
+/// POST /v1/score/tools body on v2. `None` = ineligible -> serve the FULL
+/// roster (the dev fail-open), same as v1.
+pub fn build_v2_tools_payload(
+    internal: &[Value],
+    tools: &Value,
+    conv_salt: &str,
+    conv_id: &str,
+    checkpoint_id: &str,
+) -> Option<Value> {
+    let tool_nodes = tool_schema_chunks(tools);
+    if tool_nodes.is_empty() {
+        return None; // build_tool_spec returns None -> full roster
+    }
+    let (chunks, task_text) = tool_spec_view(internal)?;
     let sys_text = sys_text_of(internal);
-    let tool_texts: Vec<&str> = tool_nodes.iter().map(|tn| tn.text.as_str()).collect();
-    embed_into_cache(embedder, embed_cache, &tool_texts)?; // UNTRUNCATED schema text
     let tools_json: Vec<Value> = tool_nodes
         .iter()
         .map(|tn| {
             json!({
-                "name": tn.name,               // harness identifier — rides deliberately
-                "emb": vec_or_zeros(embed_cache, &tn.text, embedder.dim()),
+                "name": tn.name,          // harness identifier — rides deliberately
+                "schema_text": tn.text,   // UNTRUNCATED serialized schema, as v1 embedded it
                 "tokens": tn.tokens,
             })
         })
         .collect();
     let mut payload = json!({
-        "contract": "brain-api/v1",
+        "contract": "brain-api/v2",
         "conv_id": conv_id,
         "checkpoint_id": checkpoint_id,
-        "nodes": nodes,
-        "task_emb": task_emb,
+        "nodes": v2_nodes(&chunks, conv_salt),
+        "task_text": task_text,
         "tools": tools_json,
     });
     if !sys_text.is_empty() {
-        payload["sys_emb"] = json!(embed_one(embedder, embed_cache, &sys_text)?);
+        payload["sys_text"] = json!(sys_text);
     }
-    Ok(Some(payload))
+    Some(payload)
+}
+
+/// The v2 rules body: the trace payload MINUS mask/decided_struct/target_cov
+/// (the rule head never reads them and the served model is extra="forbid", so
+/// sending them is a 422) and over the TOOL-SPEC chunk view, not the live set.
+pub fn build_v2_rules_payload(
+    internal: &[Value],
+    conv_salt: &str,
+    conv_id: &str,
+    checkpoint_id: &str,
+    cur_step: i64,
+) -> Option<Value> {
+    let (chunks, task_text) = tool_spec_view(internal)?;
+    let sys_text = sys_text_of(internal);
+    let sup: Vec<[usize; 2]> = supersession_edges(&chunks)
+        .into_iter()
+        .map(|(a, b)| [a, b])
+        .collect();
+    let mut payload = json!({
+        "contract": "brain-api/v2",
+        "conv_id": conv_id,
+        "checkpoint_id": checkpoint_id,
+        "cur_step": cur_step,
+        "nodes": v2_nodes(&chunks, conv_salt),
+        "task_text": task_text,
+        "edges_supersession": sup,
+    });
+    if !sys_text.is_empty() {
+        payload["sys_text"] = json!(sys_text);
+    }
+    Some(payload)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dasein_engine::embed::HashEmbedder;
 
     #[test]
     fn tool_schema_chunks_matches_reference_semantics() {
@@ -499,36 +473,5 @@ mod tests {
                 ("cat a.py".into(), "obs two".into()),
             ]
         );
-    }
-
-    #[test]
-    fn v1_nodes_ids_and_zero_vectors() {
-        let mut chunks = vec![
-            Chunk::new("text a", Some("a.py".into()), Some(1), Some(3), 1, "read"),
-            Chunk::new("no file", Some("".into()), None, None, 1, "grep"),
-        ];
-        chunks[0].cmd = "cat a.py".into();
-        chunks[0].head = "returncode: 0".into();
-        let e = HashEmbedder::new(16);
-        let mut cache = HashMap::new();
-        let (nodes, content) = v1_nodes(&chunks, &e, &mut cache, "salt").unwrap();
-        assert_eq!(nodes.len(), 2);
-        assert_eq!(content.len(), 2);
-        assert_eq!(nodes[0]["file_id"].as_str().unwrap().len(), 16);
-        assert!(nodes[0]["cmd_id"].is_string() && nodes[0]["head_id"].is_string());
-        // empty-string basename is Python-falsy -> null id; no cmd/head -> null
-        assert!(nodes[1]["file_id"].is_null());
-        assert!(nodes[1]["cmd_id"].is_null() && nodes[1]["head_id"].is_null());
-        // chunk 1 has no cmd: its emb_cmd is the zero vector, NOT hash("")
-        let z: Vec<f64> = nodes[1]["emb_cmd"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect();
-        assert!(z.iter().all(|&x| x == 0.0));
-        // struct rows are 21 wide, markers are NOT sent
-        assert_eq!(nodes[0]["struct"].as_array().unwrap().len(), 21);
-        assert!(nodes[0].get("markers").is_none());
     }
 }

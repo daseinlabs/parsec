@@ -186,9 +186,6 @@ async fn setup() -> Ctx {
         tool_prune: true,
         tool_stub: true,
         contract: BrainContract::Dev,
-        embed_backend: "hash".into(),
-        embed_url: None,
-        onnx_dir: None,
     };
     let state = Arc::new(AppState::with_brain(
         format!("http://{up_addr}"),

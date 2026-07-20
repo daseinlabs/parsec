@@ -17,23 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
-
-/// Files the export script produces and `OnnxEmbedder::load` expects.
-const MODEL_FILE: &str = "model.onnx";
-const TOKENIZER_FILE: &str = "tokenizer.json";
-
-/// Release-baked model source (release.yml stamps these from repo vars the
-/// same way it stamps `DASEIN_DEFAULT_BRAIN_URL`). Runtime
-/// `DASEIN_MODEL_BASE_URL` / `DASEIN_MODEL_SHA256` /
-/// `DASEIN_TOKENIZER_SHA256` always win; empty strings mean unset.
-const BAKED_MODEL_BASE_URL: Option<&str> = option_env!("DASEIN_DEFAULT_MODEL_BASE_URL");
-const BAKED_MODEL_SHA256: Option<&str> = option_env!("DASEIN_DEFAULT_MODEL_SHA256");
-const BAKED_TOKENIZER_SHA256: Option<&str> = option_env!("DASEIN_DEFAULT_TOKENIZER_SHA256");
-
-// ── state file (read by hook + statusline) ──────────────────────────────────
 
 pub const STATE_CONTRACT: &str = "setup-state/v0";
 
@@ -52,10 +36,6 @@ pub const STATE_CONTRACT: &str = "setup-state/v0";
 pub struct SetupState {
     pub contract_version: String,
     pub phase: String,
-    #[serde(default)]
-    pub bytes_done: u64,
-    #[serde(default)]
-    pub bytes_total: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(default)]
@@ -78,12 +58,9 @@ impl SetupState {
         }
     }
 
-    /// A `spawned`/`downloading` claim whose owner stopped writing progress.
-    /// The downloader touches the file at least every few MB, so 5 minutes
-    /// of silence means the process is gone and a new one may take over.
+    /// A `spawned` claim whose owner stopped writing progress.
     pub fn stale(&self) -> bool {
-        matches!(self.phase.as_str(), "spawned" | "downloading")
-            && now_unix().saturating_sub(self.updated_unix) > 300
+        self.phase == "spawned" && now_unix().saturating_sub(self.updated_unix) > 300
     }
 }
 
@@ -130,18 +107,6 @@ pub fn save_state(st: &SetupState) -> std::io::Result<()> {
     std::fs::rename(&tmp, &path)
 }
 
-/// Model export directory: user's DASEIN_ONNX_DIR wins, matching
-/// `build_embedder`'s default otherwise.
-pub fn model_dir() -> PathBuf {
-    match std::env::var("DASEIN_ONNX_DIR")
-        .ok()
-        .filter(|d| !d.is_empty())
-    {
-        Some(d) => PathBuf::from(d),
-        None => dasein_home().join("models").join("bge-large-onnx"),
-    }
-}
-
 pub fn default_port() -> u16 {
     std::env::var("DASEIN_PROXY_PORT")
         .ok()
@@ -151,107 +116,22 @@ pub fn default_port() -> u16 {
 
 // ── model source resolution ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ModelSource {
-    pub base_url: String,
-    pub model_sha256: Option<String>,
-    pub tokenizer_sha256: Option<String>,
-}
-
-/// Runtime env over baked constants; empty strings are unset. Pure for tests.
-fn resolve_model_source(
-    env_url: Option<&str>,
-    env_model_sha: Option<&str>,
-    env_tok_sha: Option<&str>,
-    baked_url: Option<&str>,
-    baked_model_sha: Option<&str>,
-    baked_tok_sha: Option<&str>,
-) -> Option<ModelSource> {
-    fn nonempty(v: Option<&str>) -> Option<&str> {
-        v.map(str::trim).filter(|s| !s.is_empty())
-    }
-    // Shas travel with the URL they hash: a runtime URL must not inherit the
-    // baked artifact's pins (they'd hard-fail every download).
-    if let Some(url) = nonempty(env_url) {
-        return Some(ModelSource {
-            base_url: url.trim_end_matches('/').to_string(),
-            model_sha256: nonempty(env_model_sha).map(str::to_lowercase),
-            tokenizer_sha256: nonempty(env_tok_sha).map(str::to_lowercase),
-        });
-    }
-    let url = nonempty(baked_url)?;
-    Some(ModelSource {
-        base_url: url.trim_end_matches('/').to_string(),
-        model_sha256: nonempty(baked_model_sha).map(str::to_lowercase),
-        tokenizer_sha256: nonempty(baked_tok_sha).map(str::to_lowercase),
-    })
-}
-
-pub fn model_source() -> Option<ModelSource> {
-    resolve_model_source(
-        std::env::var("DASEIN_MODEL_BASE_URL").ok().as_deref(),
-        std::env::var("DASEIN_MODEL_SHA256").ok().as_deref(),
-        std::env::var("DASEIN_TOKENIZER_SHA256").ok().as_deref(),
-        BAKED_MODEL_BASE_URL,
-        BAKED_MODEL_SHA256,
-        BAKED_TOKENIZER_SHA256,
-    )
-}
-
-// ── entry points ────────────────────────────────────────────────────────────
-
-/// `dasein setup [--auto]`. Manual runs retry from any state; `--auto` (the
-/// hook's spawn) respects terminal phases and live downloads.
 pub fn run(auto: bool) -> anyhow::Result<()> {
     if auto {
         if let Some(st) = load_state() {
-            match st.phase.as_str() {
-                "disabled" | "unsupported" | "ready" => return Ok(()),
-                // `spawned` is OUR ticket (the hook claims it, we consume
-                // it); a fresh `downloading` belongs to a live sibling.
-                "downloading" if !st.stale() => {
-                    println!("setup already running (state fresh) — exiting");
-                    return Ok(());
-                }
-                _ => {}
+            if matches!(st.phase.as_str(), "disabled" | "unsupported" | "ready") {
+                return Ok(());
             }
         }
     }
-    if !cfg!(feature = "onnx") {
-        let st = SetupState::new("unsupported");
-        let _ = save_state(&st);
-        println!(
-            "this dasein binary was built without the `onnx` cargo feature — \
-             local embedder setup is not available (curation needs a release build)"
-        );
-        return Ok(());
-    }
-    let Some(source) = model_source() else {
-        let mut st = SetupState::new("failed");
-        st.error = Some("no model source configured (DASEIN_MODEL_BASE_URL)".into());
-        let _ = save_state(&st);
-        anyhow::bail!(
-            "no model source configured — set DASEIN_MODEL_BASE_URL to the directory \
-             URL hosting {MODEL_FILE} + {TOKENIZER_FILE} (release builds bake one in)"
-        );
-    };
-
-    let dir = model_dir();
-    std::fs::create_dir_all(&dir)?;
-    let mut st = SetupState::new("downloading");
+    // No model download since 2026-07-20: the embedder lives in the brain
+    // (docs/server-side-embedding.md), so setup is settings routing + a warm
+    // proxy. The `downloading` phase and its resumable state machine are gone.
+    let mut st = SetupState::new("routing");
     st.port = default_port();
     save_state(&st)?;
 
-    if let Err(e) = download_model(&source, &dir, &mut st) {
-        st.phase = "failed".into();
-        st.error = Some(e.to_string());
-        st.updated_unix = now_unix();
-        let _ = save_state(&st);
-        return Err(e);
-    }
-
-    // Model verified on disk — only now is it safe to route the machine.
-    match write_settings_env(st.port, &dir.to_string_lossy()) {
+    match write_settings_env(st.port) {
         Ok(outcome) => {
             st.env_written = outcome.routed;
             st.base_url_conflict = outcome.conflict;
@@ -266,21 +146,13 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     }
 
     // Warm proxy so the next session's first request finds a live port.
-    let spawn_err = spawn_proxy_detached(
-        st.port,
-        &[
-            ("DASEIN_EMBED_BACKEND".into(), "onnx".into()),
-            ("DASEIN_ONNX_DIR".into(), dir.to_string_lossy().into_owned()),
-        ],
-    )
-    .err();
+    let spawn_err = spawn_proxy_detached(st.port, &[]).err();
 
     st.phase = "ready".into();
     st.error = None;
     st.updated_unix = now_unix();
     save_state(&st)?;
 
-    println!("model: {} (verified)", dir.display());
     match (&st.base_url_conflict, st.env_written) {
         (Some(url), _) => println!(
             "routing NOT written: ANTHROPIC_BASE_URL is already {url} — dasein will not \
@@ -312,21 +184,9 @@ pub fn up() -> anyhow::Result<()> {
         println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
         return Ok(());
     }
-    // From a plain shell the session env (settings.json `env`) is absent, so
-    // re-derive the embedder config setup would have used; keys already in
-    // the environment stay the user's.
-    let mut extra = Vec::new();
-    let dir = model_dir();
-    if dir.join(MODEL_FILE).exists() && dir.join(TOKENIZER_FILE).exists() {
-        for (k, v) in [
-            ("DASEIN_EMBED_BACKEND", "onnx".to_string()),
-            ("DASEIN_ONNX_DIR", dir.to_string_lossy().into_owned()),
-        ] {
-            if std::env::var(k).is_err() {
-                extra.push((k.to_string(), v));
-            }
-        }
-    }
+    // Nothing to re-derive: the proxy needs no embedder env since the
+    // embedder moved server-side (docs/server-side-embedding.md).
+    let extra: Vec<(String, String)> = Vec::new();
     spawn_proxy_detached(port, &extra)?;
     for _ in 0..40 {
         if crate::hook::port_listening(port) {
@@ -405,11 +265,7 @@ pub fn disable() -> anyhow::Result<()> {
     let mut st = SetupState::new("disabled");
     st.port = default_port();
     save_state(&st)?;
-    println!(
-        "auto-setup is now off. Model files kept ({}); delete by hand if unwanted. \
-         Re-enable with: dasein setup",
-        model_dir().display()
-    );
+    println!("auto-setup is now off. Re-enable with: dasein setup");
     Ok(())
 }
 
@@ -524,137 +380,6 @@ pub fn uninstall() -> anyhow::Result<()> {
 
 // ── download (resumable, sha-pinned, atomic finalize) ───────────────────────
 
-fn download_model(source: &ModelSource, dir: &Path, st: &mut SetupState) -> anyhow::Result<()> {
-    // Blocking client with NO total timeout: this moves ~1.3GB (the default
-    // would abort the whole transfer at 30s). A silently-stalled transfer is
-    // handled one level up: progress heartbeats stop, the SessionStart
-    // hook's staleness check sees a dead download, and a fresh setup resumes
-    // from the .part file.
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .timeout(None)
-        .build()?;
-    // Tokenizer first (tiny): fails fast on a bad URL before the big pull.
-    for (file, sha) in [
-        (TOKENIZER_FILE, source.tokenizer_sha256.as_deref()),
-        (MODEL_FILE, source.model_sha256.as_deref()),
-    ] {
-        let dest = dir.join(file);
-        if dest.exists() && file_sha_ok(&dest, sha)? {
-            continue; // idempotent re-run / retry after partial failure
-        }
-        let url = format!("{}/{}", source.base_url, file);
-        download_file(&client, &url, &dest, sha, st, true)?;
-    }
-    Ok(())
-}
-
-/// An existing final file counts only if it matches its pin (no pin = trust).
-fn file_sha_ok(path: &Path, want: Option<&str>) -> anyhow::Result<bool> {
-    let Some(want) = want else { return Ok(true) };
-    Ok(hash_file(path)? == want)
-}
-
-fn hash_file(path: &Path) -> anyhow::Result<String> {
-    let mut f = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut f, &mut hasher)?;
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn download_file(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    dest: &Path,
-    want_sha: Option<&str>,
-    st: &mut SetupState,
-    may_retry: bool,
-) -> anyhow::Result<()> {
-    let part = dest.with_extension(format!(
-        "{}.part",
-        dest.extension().and_then(|e| e.to_str()).unwrap_or("dl")
-    ));
-    // Resume: hash what's already on disk, then ask for the rest.
-    let mut hasher = Sha256::new();
-    let mut have: u64 = 0;
-    if let Ok(meta) = std::fs::metadata(&part) {
-        let mut f = std::fs::File::open(&part)?;
-        let mut buf = vec![0u8; 1 << 20];
-        loop {
-            let n = f.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
-            have += n as u64;
-        }
-        debug_assert_eq!(have, meta.len());
-    }
-    let mut req = client.get(url);
-    if have > 0 {
-        req = req.header(reqwest::header::RANGE, format!("bytes={have}-"));
-    }
-    let mut resp = req.send()?.error_for_status()?;
-    if have > 0 && resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-        // Server ignored the Range: it's sending the whole file — start over.
-        // (`have` must reset BEFORE the file opens: appending a full body
-        // onto a partial file would corrupt it.)
-        hasher = Sha256::new();
-        have = 0;
-    }
-    let remaining = resp.content_length().unwrap_or(0);
-    st.bytes_done += have;
-    st.bytes_total += have + remaining;
-    let _ = save_state(st);
-
-    let mut out = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(have == 0)
-        .append(have > 0)
-        .open(&part)?;
-    let mut buf = vec![0u8; 1 << 18];
-    let mut since_save: u64 = 0;
-    loop {
-        let n = resp.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        std::io::Write::write_all(&mut out, &buf[..n])?;
-        hasher.update(&buf[..n]);
-        st.bytes_done += n as u64;
-        since_save += n as u64;
-        if since_save >= 8 * (1 << 20) {
-            // Progress heartbeat: statusline renders it, and the hook's
-            // staleness check relies on it to detect a dead downloader.
-            since_save = 0;
-            st.updated_unix = now_unix();
-            let _ = save_state(st);
-        }
-    }
-    out.sync_all()?;
-    drop(out);
-
-    let got = format!("{:x}", hasher.finalize());
-    if let Some(want) = want_sha {
-        if got != want {
-            std::fs::remove_file(&part).ok();
-            if may_retry {
-                // One clean retry covers a corrupted resume of an older
-                // artifact; a second mismatch is a real problem.
-                return download_file(client, url, dest, want_sha, st, false);
-            }
-            anyhow::bail!("sha256 mismatch for {url}: got {got}, want {want}");
-        }
-    }
-    std::fs::rename(&part, dest)?; // atomic: no half-file is ever loadable
-    st.updated_unix = now_unix();
-    let _ = save_state(st);
-    Ok(())
-}
-
-// ── Claude Code settings.json merge ─────────────────────────────────────────
-
 pub fn settings_path() -> PathBuf {
     // CLAUDE_CONFIG_DIR is Claude Code's own relocation knob for ~/.claude.
     let dir = std::env::var("CLAUDE_CONFIG_DIR")
@@ -677,11 +402,7 @@ pub struct MergeOutcome {
 /// Merge the managed env keys into a settings root. Additive only: a key the
 /// user already set is NEVER overwritten, and a foreign ANTHROPIC_BASE_URL
 /// is reported as a conflict instead of being touched. Pure for tests.
-fn merge_settings(
-    mut root: Value,
-    port: u16,
-    onnx_dir: &str,
-) -> anyhow::Result<(Value, MergeOutcome)> {
+fn merge_settings(mut root: Value, port: u16) -> anyhow::Result<(Value, MergeOutcome)> {
     if root.is_null() {
         root = serde_json::json!({});
     }
@@ -712,15 +433,9 @@ fn merge_settings(
             None => out.conflict = Some(existing.to_string()),
         },
     }
-    for (k, v) in [
-        ("DASEIN_EMBED_BACKEND", "onnx".to_string()),
-        ("DASEIN_ONNX_DIR", onnx_dir.to_string()),
-    ] {
-        if !env.contains_key(k) {
-            env.insert(k.into(), Value::String(v));
-            out.changed = true;
-        }
-    }
+    // No embedder env is written any more: the brain embeds
+    // (docs/server-side-embedding.md). Previously this planted
+    // DASEIN_EMBED_BACKEND=onnx + DASEIN_ONNX_DIR.
     Ok((root, out))
 }
 
@@ -803,7 +518,7 @@ fn remove_managed_env(mut root: Value) -> (Value, Vec<String>) {
     (root, removed)
 }
 
-fn write_settings_env(port: u16, onnx_dir: &str) -> anyhow::Result<MergeOutcome> {
+fn write_settings_env(port: u16) -> anyhow::Result<MergeOutcome> {
     let path = settings_path();
     let root: Value = match std::fs::read_to_string(&path) {
         Ok(data) => serde_json::from_str(&data).map_err(|e| {
@@ -817,7 +532,7 @@ fn write_settings_env(port: u16, onnx_dir: &str) -> anyhow::Result<MergeOutcome>
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
         Err(e) => return Err(e.into()),
     };
-    let (root, mut outcome) = merge_settings(root, port, onnx_dir)?;
+    let (root, mut outcome) = merge_settings(root, port)?;
     // The statusline rides the same managed-settings write (delivery
     // mechanism of docs/plugin-user-messaging.md Part 1 §1 — plugins cannot
     // ship the key themselves).
@@ -851,7 +566,7 @@ fn write_settings_file(path: &Path, root: &Value) -> anyhow::Result<()> {
 /// settings.json and drop the managed keys while state still says
 /// `env_written`.
 pub fn ensure_routing(port: u16) -> anyhow::Result<MergeOutcome> {
-    write_settings_env(port, &model_dir().to_string_lossy())
+    write_settings_env(port)
 }
 
 // ── detached spawns (shared with the SessionStart hook) ─────────────────────
@@ -915,50 +630,13 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn model_source_env_beats_baked_and_empty_is_unset() {
-        let src = resolve_model_source(
-            Some("https://models.example/bge/"),
-            Some("ABC"),
-            None,
-            Some("https://baked.example"),
-            Some("baked-sha"),
-            Some("baked-tok-sha"),
-        )
-        .unwrap();
-        assert_eq!(src.base_url, "https://models.example/bge"); // trailing / trimmed
-        assert_eq!(src.model_sha256.as_deref(), Some("abc")); // lowercased
-                                                              // env URL must NOT inherit baked pins — they hash a different artifact
-        assert_eq!(src.tokenizer_sha256, None);
-
-        let baked = resolve_model_source(
-            None,
-            None,
-            None,
-            Some("https://baked.example"),
-            Some("S"),
-            None,
-        )
-        .unwrap();
-        assert_eq!(baked.base_url, "https://baked.example");
-        assert_eq!(baked.model_sha256.as_deref(), Some("s"));
-
-        assert_eq!(
-            resolve_model_source(Some(""), None, None, Some(""), None, None),
-            None
-        );
-        assert_eq!(
-            resolve_model_source(None, None, None, None, None, None),
-            None
-        );
-    }
-
-    #[test]
     fn merge_writes_routing_into_empty_settings() {
-        let (root, out) = merge_settings(Value::Null, 8082, "/m/dir").unwrap();
+        let (root, out) = merge_settings(Value::Null, 8082).unwrap();
         assert!(out.routed && out.changed && out.conflict.is_none());
         assert_eq!(root["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8082");
-        assert_eq!(root["env"]["DASEIN_EMBED_BACKEND"], "onnx");
-        assert_eq!(root["env"]["DASEIN_ONNX_DIR"], "/m/dir");
+        // routing is the ONLY managed env key now — no embedder to configure
+        assert!(root["env"]["DASEIN_EMBED_BACKEND"].is_null());
+        assert!(root["env"]["DASEIN_ONNX_DIR"].is_null());
     }
 
     #[test]
@@ -971,40 +649,37 @@ mod tests {
                 "FOO": "bar"
             }
         });
-        let (root, out) = merge_settings(existing, 8082, "/m/dir").unwrap();
+        let (root, out) = merge_settings(existing, 8082).unwrap();
         assert!(out.routed); // 9999 is still a local dasein-shaped proxy
         assert_eq!(out.conflict, None);
         assert_eq!(root["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:9999");
-        assert_eq!(root["env"]["DASEIN_EMBED_BACKEND"], "remote"); // user's choice kept
-        assert_eq!(root["env"]["DASEIN_ONNX_DIR"], "/m/dir"); // absent → added
+        assert_eq!(root["env"]["DASEIN_EMBED_BACKEND"], "remote"); // user's key untouched
         assert_eq!(root["env"]["FOO"], "bar");
         assert_eq!(root["model"], "opus");
-        assert!(out.changed); // DASEIN_ONNX_DIR was added
+        assert!(!out.changed); // nothing to add: routing was already ours
     }
 
     #[test]
     fn merge_reports_foreign_base_url_as_conflict() {
         let existing = json!({ "env": { "ANTHROPIC_BASE_URL": "https://my-gateway.corp" } });
-        let (root, out) = merge_settings(existing, 8082, "/m/dir").unwrap();
+        let (root, out) = merge_settings(existing, 8082).unwrap();
         assert!(!out.routed);
         assert_eq!(out.conflict.as_deref(), Some("https://my-gateway.corp"));
         assert_eq!(root["env"]["ANTHROPIC_BASE_URL"], "https://my-gateway.corp");
-        // embed keys still staged so a manual flip is one line
-        assert_eq!(root["env"]["DASEIN_EMBED_BACKEND"], "onnx");
     }
 
     #[test]
     fn merge_is_idempotent() {
-        let (once, _) = merge_settings(Value::Null, 8082, "/m/dir").unwrap();
-        let (twice, out) = merge_settings(once.clone(), 8082, "/m/dir").unwrap();
+        let (once, _) = merge_settings(Value::Null, 8082).unwrap();
+        let (twice, out) = merge_settings(once.clone(), 8082).unwrap();
         assert_eq!(once, twice);
         assert!(!out.changed);
     }
 
     #[test]
     fn merge_rejects_non_object_roots() {
-        assert!(merge_settings(json!([1, 2]), 8082, "/m").is_err());
-        assert!(merge_settings(json!({"env": "oops"}), 8082, "/m").is_err());
+        assert!(merge_settings(json!([1, 2]), 8082).is_err());
+        assert!(merge_settings(json!({"env": "oops"}), 8082).is_err());
     }
 
     #[test]
@@ -1115,7 +790,7 @@ mod tests {
 
     #[test]
     fn state_roundtrips_and_staleness() {
-        let mut st = SetupState::new("downloading");
+        let mut st = SetupState::new("spawned");
         let json = serde_json::to_string(&st).unwrap();
         let back: SetupState = serde_json::from_str(&json).unwrap();
         assert_eq!(st, back);
@@ -1123,6 +798,6 @@ mod tests {
         st.updated_unix = 1; // 1970 — long dead
         assert!(st.stale());
         st.phase = "ready".into();
-        assert!(!st.stale()); // staleness only applies to downloading
+        assert!(!st.stale()); // staleness only applies to an unfinished claim
     }
 }

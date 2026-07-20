@@ -44,47 +44,26 @@ jobs:
       # (brain.rs BAKED_BRAIN_URL): released plugins reach the production
       # brain with zero user configuration. Runtime DASEIN_BRAIN_URL still
       # overrides; dev/CI builds (no env here) bake nothing. The baked
-      # default implies the v1 (textless) contract and stays inert until a
-      # real embed backend is configured — see BrainConfig::from_env.
+      # default implies the v2 contract (chunk text to the brain, which
+      # embeds) — see BrainConfig::from_env.
       #
-      # --features onnx ships the local embedder (setup.rs downloads the
-      # model on first run), closing that loop: install → first session →
-      # curation on. The DASEIN_DEFAULT_MODEL_* repo variables must point at
-      # the parity-gated bge-large export (scripts/embed/export_bge_onnx.py,
-      # gated by parity_gate.py) — base URL of a directory serving
-      # model.onnx + tokenizer.json, plus their sha256 pins. Unset variables
-      # bake nothing: the binary still works, and first-run setup records
-      # "no model source configured" instead of downloading.
-      # A release binary with no baked model source fails setup on every
-      # user machine ("no model source configured", 0.0.4-alpha) — refuse to
-      # build one. All three repo vars must be present together: a URL
-      # without sha pins would ship unverified downloads.
-      - name: require model source repo vars
-        shell: bash
-        env:
-          URL: ${{ vars.DASEIN_MODEL_BASE_URL }}
-          MODEL_SHA: ${{ vars.DASEIN_MODEL_SHA256 }}
-          TOK_SHA: ${{ vars.DASEIN_TOKENIZER_SHA256 }}
-        run: |
-          missing=""
-          [ -n "$URL" ] || missing="$missing DASEIN_MODEL_BASE_URL"
-          [ -n "$MODEL_SHA" ] || missing="$missing DASEIN_MODEL_SHA256"
-          [ -n "$TOK_SHA" ] || missing="$missing DASEIN_TOKENIZER_SHA256"
-          if [ -n "$missing" ]; then
-            echo "::error::repo variables unset:$missing — the binary would bake no model source. Set them under Settings → Secrets and variables → Actions → Variables."
-            exit 1
-          fi
-      - run: cargo build --release -p dasein-proxy --features onnx
+      # No model ships with the client since 2026-07-20: the embedder moved
+      # server-side (docs/server-side-embedding.md), so the `onnx` feature,
+      # the DASEIN_DEFAULT_MODEL_* repo variables, and first-run model
+      # download are all gone. Install → first session → curation on, with
+      # no 1.3GB download in the middle.
+      - run: cargo build --release -p dasein-proxy
         env:
           DASEIN_DEFAULT_BRAIN_URL: https://dasein-brain-939340394421.us-central1.run.app
-          DASEIN_DEFAULT_MODEL_BASE_URL: ${{ vars.DASEIN_MODEL_BASE_URL }}
-          DASEIN_DEFAULT_MODEL_SHA256: ${{ vars.DASEIN_MODEL_SHA256 }}
-          DASEIN_DEFAULT_TOKENIZER_SHA256: ${{ vars.DASEIN_TOKENIZER_SHA256 }}
-      # Link smoke: ort pulls in onnxruntime — a binary that builds but can't
-      # resolve the runtime library at launch must fail HERE, not on a user's
-      # machine after install.
+      # Launch smoke: a binary that builds but can't start must fail HERE,
+      # not on a user's machine after install.
       - run: ./target/release/dasein${{ matrix.ext }} --version
-      # ort's /MD prebuilts force the dynamic CRT (see engine/Cargo.toml), so
+      # NOTE (2026-07-20): this bundling existed because ort's /MD prebuilts
+      # forced the dynamic CRT. ort is gone, so the C++ runtime (msvcp140) is
+      # very likely no longer imported — but that is UNVERIFIED on a clean
+      # Windows box, and the failure mode if we are wrong is silent
+      # (0xC0000135, no stderr, undiagnosable from a hook error). Kept until
+      # a win-x64 release is dumpbin-checked; ~750 KB is cheap insurance.
       # dasein.exe imports msvcp140/vcruntime140 — VC++ redistributable DLLs
       # that are present on this runner (VS is installed) but absent on clean
       # user machines, where the loader kills the process before main()

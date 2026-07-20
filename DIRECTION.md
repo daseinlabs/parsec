@@ -15,7 +15,7 @@ flips on a **local proxy** that compresses the agent's context per turn using th
 curator (GNN)** — the proxy runs on the user's machine, model traffic rides the user's own
 Anthropic credentials (subscription or API key), and the proxy calls our **hosted brain API**
 for keep/cut scores. Training stays server-side, fed by **opt-in, featurized trace telemetry**.
-Weights never leave our cloud; raw code never leaves the user's machine.
+Weights never leave our cloud; model traffic never leaves the user's machine.
 
 ## 2. The one rule that shapes everything
 
@@ -24,11 +24,18 @@ Weights never leave our cloud; raw code never leaves the user's machine.
 - **Data plane** (model requests → Anthropic): always leaves from the user's machine, with the
   user's credentials. We never middleman model traffic in the default product. This is what
   makes subscription ($200 Max plan) users servable at all (their OAuth token is only legitimate
-  as their own local Claude Code traffic — the pxpipe posture), keeps token cost off our books
-  entirely, and keeps customer code out of our cloud.
+  as their own local Claude Code traffic — the pxpipe posture), and keeps token cost off our
+  books entirely.
 - **Control plane** (scoring, auth, savings ledger, rule updates, telemetry): always our backend.
-  The GNN weights live only here. The local proxy sends chunk **vectors + structural features**,
-  never raw text, and receives keep/cut decisions.
+  The GNN weights live only here. The local proxy sends chunk **text + structural features** and
+  receives scores; it applies the keep/cut decision itself.
+
+⚠️ **Revised 2026-07-20** (see `docs/server-side-embedding.md`). This rule previously read
+"the proxy sends vectors, never raw text," enforced by a contract in which text was
+structurally unrepresentable. Embedding now runs server-side in the brain, so chunk text does
+cross the wire. What survives — and is still absolute — is the **data-plane** half: model
+requests always leave from the user's machine with the user's own credentials, and
+subscription OAuth tokens are never routed through our cloud.
 
 The hosted BYOK gateway is not a different product — it is the same proxy **deployed in our
 cloud** for teams who explicitly choose it (API keys only, never subscription tokens; zero
@@ -60,16 +67,16 @@ Notes:
 │      │  ANTHROPIC_BASE_URL (paid tier)                        │
 │      ▼                                                        │
 │  local proxy                                                  │
-│    • chunking + local embedder (small ONNX, no torch)         │
+│    • chunking + structural featurization (no embedder)        │
 │    • applies keep/cut, tool-prune, cache-safe splicing        │
 │    • deterministic quantized freezing (no session-state trap) │
 │    • count_tokens counterfactual measurement                  │
-│      │ vectors+features        │ curated request,             │
+│      │ text+features           │ curated request,             │
 │      ▼                         ▼ user's own auth headers      │
 │  [brain API] ◄─────────   api.anthropic.com                   │
 └───────│───────────────────────────────────────────────────────┘
         ▼  our cloud (control plane)
-   brain API (GNN inference)
+   brain API (in-process GPU embedder + GNN inference)
    platform API (auth/accounts · billing · savings ledger ·
                  telemetry intake: quarantine → validate → corpus)
    trainer (server-side; produces versioned checkpoint bundles)
@@ -99,12 +106,18 @@ Key architecture decisions (each learned from a reference system):
 
 ## 5. Local inference — what runs on the user's machine
 
-- **Embedding**: a small local embedder (ONNX, CPU/MPS-friendly; no torch install). ⚠️ The
-  current checkpoints are matched to dasein-embed (bge-large) vectors — shipping a local
-  embedder implies **one central retrain against the chosen local embedder**. This is the
-  long pole of the Pro tier; start it first.
+- **No local embedder** (revised 2026-07-20; see `docs/server-side-embedding.md`). Embedding
+  runs in the brain, in-process on a GPU. The client ships no ONNX model, no `ort`, and no
+  1.3GB download. This deletes the retrain that used to be the Pro long pole — the existing
+  checkpoints are already matched to dasein-embed `bge-large-en-v1.5` vectors, which is exactly
+  what we now serve ourselves.
+- **Chunking + structural featurization stay local.** The freezer must chunk to know what to
+  drop and render, so this is not optional. The proxy sends chunk text plus the struct rows and
+  readout it computes locally.
 - **Scoring**: remote (brain API) by default. Latency budget: decisions are per-chunk-at-birth
   and frozen, so one round-trip per turn, cacheable.
+- **Decisions are applied locally.** The brain returns scores and a τ; the proxy applies the
+  coverage budget and the cut. The brain never learns what was dropped.
 - **No local training.** Local *adaptation* instead: self-calibrating per-config τ (streaming
   score-quantile sketch per harness/model config — designed in the handoff docs, unbuilt) and
   per-repo localization indexes. Cheap, deterministic, can't corrupt the model. Rationale
@@ -126,9 +139,11 @@ Training stays central (trainer + corpus + eval gates), fed by opt-in telemetry 
   outcome signal, harness version, latency. No content, no paths, no prompts.
 - **Tier 2 — featurized traces** (the training tier): chunk **embeddings** + trace graph
   structure + tool names + token counts + mechanically-computed `is_needed` labels + outcome.
-  No source code, no prompts. The GNN consumes embeddings + features, never raw text, so this
-  is sufficient to train on. Disclose honestly: vectors are a *mitigation, not anonymity*
-  (embedding inversion exists).
+  No source code, no prompts. The GNN consumes embeddings + features, so this is sufficient to
+  train on. Disclose honestly: vectors are a *mitigation, not anonymity* (embedding inversion
+  exists). Note this describes what the **training corpus** persists — since 2026-07-20 the
+  serving path does carry chunk text to the brain (§2), so this is no longer a claim about the
+  system as a whole.
 - **Tier 3 — full traces**: design partners only, contract-governed.
 
 **Consent UX:**
@@ -174,9 +189,9 @@ learner/
                           auth, count_tokens measurement. Rust (`dasein proxy`). Ported from
                           adaptive-context-clean/service (absorbing the gateway's upstream
                           bridge as provider adapters: anthropic-passthrough | vertex | byok).
-    engine/               the client-side deterministic core the proxy uses: chunking, local
-                          embedder (ONNX via ort), freezing, feature extraction. Rust crate,
-                          no torch. Ported from adaptive_context/ minus the GNN.
+    engine/               the client-side deterministic core the proxy uses: chunking,
+                          freezing, feature extraction. Rust crate, no torch, no embedder.
+                          Ported from adaptive_context/ minus the GNN.
     brain/                the hosted scoring API: GNN inference (torch), checkpoint-bundle
                           loading (ckpt + matched dials versioned as one immutable artifact —
                           a mismatch is a load-time error, never silent), τ calibration
@@ -230,8 +245,8 @@ The shape:
 - **One `dasein` binary, subcommands for every role**: `dasein mcp` (stdio MCP server —
   codescout/Search), `dasein hook <event>` (no-reread gate, session, telemetry), `dasein proxy`
   (Pro data plane; same binary deploys as the Team gateway in a scratch container),
-  `dasein statusline`. Crates: axum/hyper + tokio (proxy, SSE), rmcp (MCP), ort (ONNX
-  embedder), tree-sitter, serde_json with `preserve_order`.
+  `dasein statusline`. Crates: axum/hyper + tokio (proxy, SSE), rmcp (MCP), tree-sitter,
+  serde_json with `preserve_order`.
 - **Plugin repo = markdown + JSON + committed per-platform binaries**
   (`bin/{darwin-arm64,darwin-x64,linux-x64,win-x64}/`) plus a two-line platform shim
   (`sh` stub + `.cmd`) — the only non-Rust client code.
@@ -245,10 +260,10 @@ The shape:
   reproduce the Python reference byte-for-byte on cache freezing (JSON key order, escaping,
   float formatting) and vector-for-vector on featurization. Divergence = the "silently wrong
   scores" failure mode.
-- **Sequencing guard**: the Rust port is the Pro-tier deliverable, built in parallel with the
-  embedder retrain (similar timelines). If the free plugin must ship before the binary is
-  ready, its v0 (maps + savings line) can ship with the `mcp`+`hook` subcommands only — the
-  proxy subcommand lands with Pro.
+- **Sequencing guard**: the Rust port is the Pro-tier deliverable. (It used to be gated on the
+  embedder retrain running in parallel; server-side embedding removed that dependency.) If the
+  free plugin must ship before the binary is ready, its v0 (maps + savings line) can ship with
+  the `mcp`+`hook` subcommands only — the proxy subcommand lands with Pro.
 
 ## 7c. Platform layer decision (2026-07-09)
 
@@ -292,8 +307,12 @@ ecosystems win and iteration speed matters more than anything Rust buys.
    `count_tokens` measurement. Everything depends on this being solid.
 2. **Ship the free plugin** (maps + no-reread hook + savings display): weeks of work, validates
    distribution, starts the flywheel before the brain API lands.
-3. **Embedder retrain** (the Pro long pole): pick the local ONNX embedder, retrain the curator
-   against its vectors, stand up the brain API with checkpoint bundles.
+3. **Stand up the brain as a serving monolith** (revised 2026-07-20 — this step used to be
+   "embedder retrain, the Pro long pole"; server-side embedding deleted the retrain). Host
+   `bge-large-en-v1.5` in-process on a GPU, add the text-carrying contract, keep the
+   checkpoint-bundle handshake and its 409 matched-pair guard. Single-threaded per process;
+   scale by running N processes behind nginx (round-robin — determinism means no sticky
+   routing). Add per-key throttling before it takes real traffic.
 4. **Ship Pro** (plugin manages local proxy + brain API + the `platform` service — signup,
    entitlements, billing per §7c).
 5. **Team gateway** when teams ask: same proxy deployed on GKE (reuse the serving-engine
@@ -303,7 +322,15 @@ ecosystems win and iteration speed matters more than anything Rust buys.
 
 ## 10. Open questions
 
-- Local embedder choice (quality vs size vs MPS/CPU latency) and the retrain cost/timeline.
+- ~~Local embedder choice and retrain timeline~~ / ~~low-memory machines can't load fp32
+  bge-large~~ — **both closed 2026-07-20** by moving embedding server-side. The Windows
+  bad-allocation failure (observed 2026-07-18) is the change's proximate cause; it cannot recur
+  once the client ships no model.
+- Deployment target for a GPU monolith: Cloud Run with L4 (keeps the current Cloud Run posture,
+  no k8s) vs GKE (matches `docs/brain-serving-v0.md`, but no manifests exist in the repo yet).
+- Per-key throttling design — quota, concurrency cap, 429 + `Retry-After`, and proxy-side
+  backoff. None of this exists today, and the brain is currently open by default when
+  `DASEIN_BRAIN_KEY` is unset.
 - Brain API scoring latency budget per turn at p95, and offline/degraded mode (proxy falls
   back to deterministic-only when the brain is unreachable — fail-open, measured).
 - Self-calibrating per-config τ design (handoff `CHAIN_HASHDUP_HANDOFF.md` direction) — needed

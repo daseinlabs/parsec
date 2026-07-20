@@ -1,0 +1,985 @@
+[2m2026-07-18T23:21:47.842761Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m brain scorer active — brain-api/v1 (client featurization, no raw text on the wire) [3murl[0m[2m=[0mhttps://dasein-brain-939340394421.us-central1.run.app [3mtarget_cov[0m[2m=[0m0.70 [3mtool_prune[0m[2m=[0mtrue [3membed[0m[2m=[0monnx
+[2m2026-07-18T23:21:47.843722Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m idle self-shutdown armed: exit after 1800s without traffic
+Error: Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)
+[2m2026-07-18T23:32:12.672463Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m brain scorer active — brain-api/v1 (client featurization, no raw text on the wire) [3murl[0m[2m=[0mhttps://dasein-brain-939340394421.us-central1.run.app [3mtarget_cov[0m[2m=[0m0.70 [3mtool_prune[0m[2m=[0mtrue [3membed[0m[2m=[0monnx
+[2m2026-07-18T23:32:12.673120Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m idle self-shutdown armed: exit after 1800s without traffic
+[2m2026-07-18T23:32:12.676230Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m dasein proxy listening on 127.0.0.1:8082
+[2m2026-07-18T23:32:12.753045Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0x7, vendor:Intel, type:0, metadata: [Description=13th Gen Intel(R) Core(TM) i9-13900H, ]}
+[2m2026-07-18T23:32:12.753089Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0xa7a0, vendor:Intel Corporation, type:1, metadata: [Description=Intel(R) Iris(R) Xe Graphics, Discrete=0, DxgiAdapterNumber=0, DxgiHighPerformanceIndex=1, DxgiVideoMemory=128 MB, LUID=91904, ]}
+[2m2026-07-18T23:32:12.753104Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Discovered OrtHardwareDevice {vendor_id:0x10de, device_id:0x2820, vendor:NVIDIA, type:1, metadata: [Description=NVIDIA GeForce RTX 4070 Laptop GPU, Discrete=1, DxgiAdapterNumber=1, DxgiHighPerformanceIndex=0, DxgiVideoMemory=7949 MB, LUID=92887, ]}
+[2m2026-07-18T23:32:12.753698Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Session Options {  execution_mode:0 execution_order:DEFAULT enable_profiling:0 optimized_model_filepath: enable_mem_pattern:1 enable_mem_reuse:1 enable_cpu_mem_arena:1 profile_file_prefix:onnxruntime_profile_ session_logid: session_log_severity_level:-1 session_log_verbosity_level:0 max_num_graph_transformation_steps:10 graph_optimization_level:4 intra_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 0 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } inter_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 0 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } use_per_session_threads:1 thread_pool_allow_spinning:1 use_deterministic_compute:0 ep_selection_policy:5 config_options: {  } }
+[2m2026-07-18T23:32:12.753732Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Flush-to-zero and denormal-as-zero are off
+[2m2026-07-18T23:32:12.753742Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Creating and using per session threadpools since use_per_session_threads_ is true
+[2m2026-07-18T23:32:12.753779Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Dynamic block base set to 0
+[2m2026-07-18T23:32:13.719788Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Initializing session.
+[2m2026-07-18T23:32:13.719852Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Creating BFCArena for Cpu with following configs: initial_chunk_size_bytes: 1048576 max_dead_bytes_per_chunk: 134217728 initial_growth_chunk_size_bytes: 2097152 max_power_of_two_extend_bytes: 1073741824 memory limit: 18446744073709551615 arena_extend_strategy: 0
+[2m2026-07-18T23:32:13.723708Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m This model does not have any local functions defined. AOT Inlining is not performed
+[2m2026-07-18T23:32:14.344837Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[2m2026-07-18T23:32:14.346771Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level1_RuleBasedTransformer modified: 1 with status: OK
+[2m2026-07-18T23:32:14.373489Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DoubleQDQPairsRemover modified: 0 with status: OK
+[2m2026-07-18T23:32:14.381511Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total shared scalar initializer count: 793
+[2m2026-07-18T23:32:14.381584Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConstantSharing modified: 1 with status: OK
+[2m2026-07-18T23:32:14.412382Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer CommonSubexpressionElimination modified: 1 with status: OK
+[2m2026-07-18T23:32:14.443603Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConstantFolding modified: 1 with status: OK
+[2m2026-07-18T23:32:14.467902Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/Constant_10_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.468031Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/Shape_3_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.469388Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.469998Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.0/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470037Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.0/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470066Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.0/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470114Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.1/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470145Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.1/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470173Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.1/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470212Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.2/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470240Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.2/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470266Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.2/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470304Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.3/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470330Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.3/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470358Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.3/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470394Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.4/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470420Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.4/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470447Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.4/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470484Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.5/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470513Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.5/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470539Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.5/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470653Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.6/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470686Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.6/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470714Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.6/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470756Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.7/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470783Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.7/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470809Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.7/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470845Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.8/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470871Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.8/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470897Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.8/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.470933Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.9/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.470960Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.9/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.470986Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.9/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471024Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.10/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471052Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.10/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471078Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.10/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471116Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.11/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471143Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.11/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471170Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.11/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471206Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.12/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471234Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.12/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471260Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.12/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471296Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.13/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471322Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.13/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471349Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.13/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471385Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.14/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471412Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.14/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471439Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.14/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471478Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.15/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471505Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.15/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471531Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.15/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471569Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.16/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471595Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.16/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471622Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.16/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471659Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.17/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471686Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.17/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471712Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.17/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471748Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.18/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471774Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.18/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471800Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.18/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471836Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.19/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471862Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.19/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471888Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.19/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.471924Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.20/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.471951Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.20/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.471977Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.20/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.472014Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.21/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.472041Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.21/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.472068Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.21/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.472108Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.22/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.472142Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.22/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.472169Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.22/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.472206Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.23/attention/self/Reshape_output_0
+[2m2026-07-18T23:32:14.472233Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.23/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:32:14.472260Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.23/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:32:14.472312Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total fused reshape node count: 72
+[2m2026-07-18T23:32:14.472326Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ReshapeFusion modified: 1 with status: OK
+[2m2026-07-18T23:32:14.486491Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.2/attention/self/Constant_4_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.486537Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.9/attention/self/Constant_13_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.486988Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FreeDimensionOverrideTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.487017Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:32:14.487029Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:32:14.487640Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQPropagationTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.488056Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WeightBiasQuantization modified: 0 with status: OK
+[2m2026-07-18T23:32:14.488424Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[2m2026-07-18T23:32:14.488779Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WhereDummyDq modified: 0 with status: OK
+[2m2026-07-18T23:32:14.492503Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer TransposeOptimizer modified: 1 with status: OK
+[2m2026-07-18T23:32:14.507231Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_21_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507303Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_23_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507318Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_9_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507335Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_19_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507352Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_37_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507428Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_3_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507447Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_31_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507478Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_29_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507496Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_35_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507539Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_11_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507558Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_5_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507585Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_33_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507601Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_41_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507615Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_27_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507631Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507656Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_1_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507667Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_7_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507675Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_13_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507682Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_15_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507689Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_17_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507697Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_25_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507704Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_39_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507711Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_43_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.507719Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_45_out0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.508984Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level1_RuleBasedTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.509407Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DoubleQDQPairsRemover modified: 0 with status: OK
+[2m2026-07-18T23:32:14.511173Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer CommonSubexpressionElimination modified: 0 with status: OK
+[2m2026-07-18T23:32:14.511862Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConstantFolding modified: 0 with status: OK
+[2m2026-07-18T23:32:14.512377Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.512963Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ReshapeFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.512982Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FreeDimensionOverrideTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.512991Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:32:14.512999Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:32:14.513434Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQPropagationTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.513799Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WeightBiasQuantization modified: 0 with status: OK
+[2m2026-07-18T23:32:14.514165Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[2m2026-07-18T23:32:14.514510Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WhereDummyDq modified: 0 with status: OK
+[2m2026-07-18T23:32:14.536258Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Running graph optimizations in loop 1 time/s (Graph Optimizations Loop Level : 1)
+[2m2026-07-18T23:32:14.536969Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level2_RuleBasedTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.540057Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer TransposeOptimizer_CPUExecutionProvider modified: 0 with status: OK
+[2m2026-07-18T23:32:14.540528Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQS8ToU8Transformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.541546Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQSelectorActionTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.541942Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GemmActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.542369Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulIntegerToFloatFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.542728Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DynamicQuantizeMatMulFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.543196Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConvActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.544089Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL2 modified: 1 with status: OK
+[2m2026-07-18T23:32:14.561976Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.8/intermediate/intermediate_act_fn/Constant_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.562037Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.9/intermediate/intermediate_act_fn/Constant_2_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.564378Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL2 modified: 1 with status: OK
+[2m2026-07-18T23:32:14.577287Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.19/output/LayerNorm/Constant_1_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.577339Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.22/attention/output/LayerNorm/Constant_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:32:14.578142Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SimplifiedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.578517Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer AttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.578886Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EmbedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.579674Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherSliceToSplitFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.579970Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherToSliceFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.580524Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatmulTransposeFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.581351Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasGeluFusion modified: 1 with status: OK
+[2m2026-07-18T23:32:14.595724Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GroupQueryAttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.596183Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.596532Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SkipLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.596833Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FastGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.597105Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QuickGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.597364Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasSoftmaxFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.597592Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasDropoutFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.597949Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulScaleFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.598207Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.598539Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulNBitsFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.598803Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQFinalCleanupTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.599047Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level2_RuleBasedTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.599300Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQS8ToU8Transformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.600195Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQSelectorActionTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.600580Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GemmActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.600990Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulIntegerToFloatFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.601387Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DynamicQuantizeMatMulFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.601857Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConvActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.602169Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL2 modified: 0 with status: OK
+[2m2026-07-18T23:32:14.602571Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL2 modified: 0 with status: OK
+[2m2026-07-18T23:32:14.602953Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SimplifiedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.603523Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer AttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.603940Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EmbedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.604822Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherSliceToSplitFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.605084Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherToSliceFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.605520Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatmulTransposeFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.606060Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.606403Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GroupQueryAttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.606749Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.607060Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SkipLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.607342Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FastGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.607603Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QuickGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.607856Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasSoftmaxFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.608114Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasDropoutFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.608478Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulScaleFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.608712Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.609019Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulNBitsFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.609329Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQFinalCleanupTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.609640Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer NchwcTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.610897Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer NhwcTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.611232Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConvAddActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:32:14.612722Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer RemoveDuplicateCastTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.612752Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer CastFloat16Transformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.612983Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FuseFp16InitializerToFp32NodeTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.613014Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MemcpyTransformer modified: 0 with status: OK
+[2m2026-07-18T23:32:14.631600Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Use DeviceBasedPartition as default
+[2m2026-07-18T23:32:14.861351Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Saving initialized tensors.
+[2m2026-07-18T23:32:14.861584Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861628Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861658Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861675Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861687Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.861715Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861730Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861772Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861789Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861833Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.861847Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861870Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861893Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861914Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861939Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861955Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861974Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.861992Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862003Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862027Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862051Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862125Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862140Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862170Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862188Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862225Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862235Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862245Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862279Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862289Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.862302Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862314Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862324Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862335Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862351Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4
+[2m2026-07-18T23:32:14.862363Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862394Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862409Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862425Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862438Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862453Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862475Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862485Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862500Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862512Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862530Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862541Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862575Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862596Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862606Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862617Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862644Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862675Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862718Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862732Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862746Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.862763Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862782Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.862794Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862808Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862821Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862840Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862852Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862865Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862886Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4
+[2m2026-07-18T23:32:14.862907Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862944Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862963Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862986Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.862997Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.863014Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863030Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863039Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863053Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863072Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863119Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863129Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.863153Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863177Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863190Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863212Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863230Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863249Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863270Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863280Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863304Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863343Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:32:14.863361Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863373Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863391Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863408Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863417Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863431Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863443Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863451Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863461Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863482Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863494Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863512Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863523Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863544Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863556Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863571Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863582Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863595Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863614Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863629Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863641Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:32:14.863659Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4
+[2m2026-07-18T23:32:14.863678Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Done saving initialized tensors
+[2m2026-07-18T23:32:14.865571Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.869975Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.874017Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.878165Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.882264Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:14.900058Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:14.917468Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.921716Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.925993Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.930710Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.935109Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:14.953201Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:14.970044Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.974493Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.978980Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.983492Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:14.987882Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.005403Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.021883Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.025960Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.029998Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.034378Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.038832Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.056575Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.073233Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.077409Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.081624Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.086069Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.090271Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.107439Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.127577Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.132468Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.137333Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.141767Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.146018Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.164631Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.182290Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.186546Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.190728Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.194953Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.199239Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.217665Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.236053Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.240271Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.244525Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.248683Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.253079Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.271525Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.288958Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.293066Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.297362Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.301809Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.307113Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.324640Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.342684Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.347006Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.351456Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.355923Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.360129Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.378153Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.395360Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.399961Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.404912Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.409108Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.413231Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.432274Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.449912Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.455311Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.459761Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.464060Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.468406Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.487653Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.505047Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.509492Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.514146Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.518504Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.522657Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.540404Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.557543Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.561621Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.565789Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.570400Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.574718Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.592776Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.610817Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.615146Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.619788Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.624186Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.628384Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.646864Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.664799Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.669335Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.673415Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.677622Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.681833Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.699867Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.717447Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.722152Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.726511Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.730736Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.735525Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.753209Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.770076Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.774541Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.778726Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.782980Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.787420Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.804865Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.821802Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.826453Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.831197Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.835730Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.840353Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.859334Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.877205Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.881608Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.886360Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.890556Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.894641Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.913089Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.930625Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.934924Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.939303Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.943747Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.948075Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.965888Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:15.983957Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.988869Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.993262Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:15.997456Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.001938Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:16.020402Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:16.038735Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.042952Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.047101Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.052730Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.056969Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:16.074635Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:16.096103Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.100987Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.105250Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.109466Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:32:16.113854Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:16.131832Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:32:16.151104Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Session successfully initialized.
+[2m2026-07-18T23:32:16.171930Z[0m [32m INFO[0m [2mdasein_proxy::brain[0m[2m:[0m onnx embedder loaded (shared for the process) [3mdir[0m[2m=[0mC:\Users\nicks\.dasein\models\bge-large-onnx [3melapsed_ms[0m[2m=[0m3499
+[2m2026-07-18T23:45:42.936916Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m brain scorer active — brain-api/v1 (client featurization, no raw text on the wire) [3murl[0m[2m=[0mhttps://dasein-brain-939340394421.us-central1.run.app [3mtarget_cov[0m[2m=[0m0.70 [3mtool_prune[0m[2m=[0mtrue [3membed[0m[2m=[0monnx
+[2m2026-07-18T23:45:42.937718Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m idle self-shutdown armed: exit after 1800s without traffic
+[2m2026-07-18T23:45:42.941719Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m dasein proxy listening on 127.0.0.1:8082
+[2m2026-07-18T23:45:43.040165Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0x7, vendor:Intel, type:0, metadata: [Description=13th Gen Intel(R) Core(TM) i9-13900H, ]}
+[2m2026-07-18T23:45:43.040196Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Discovered OrtHardwareDevice {vendor_id:0x10de, device_id:0x2820, vendor:NVIDIA, type:1, metadata: [Description=NVIDIA GeForce RTX 4070 Laptop GPU, Discrete=1, DxgiAdapterNumber=1, DxgiHighPerformanceIndex=0, DxgiVideoMemory=7949 MB, LUID=98484, ]}
+[2m2026-07-18T23:45:43.040212Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0xa7a0, vendor:Intel Corporation, type:1, metadata: [Description=Intel(R) Iris(R) Xe Graphics, Discrete=0, DxgiAdapterNumber=0, DxgiHighPerformanceIndex=1, DxgiVideoMemory=128 MB, LUID=97498, ]}
+[2m2026-07-18T23:45:43.041641Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Session Options {  execution_mode:0 execution_order:DEFAULT enable_profiling:0 optimized_model_filepath: enable_mem_pattern:1 enable_mem_reuse:1 enable_cpu_mem_arena:1 profile_file_prefix:onnxruntime_profile_ session_logid: session_log_severity_level:-1 session_log_verbosity_level:0 max_num_graph_transformation_steps:10 graph_optimization_level:4 intra_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 0 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } inter_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 0 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } use_per_session_threads:1 thread_pool_allow_spinning:1 use_deterministic_compute:0 ep_selection_policy:5 config_options: {  } }
+[2m2026-07-18T23:45:43.226815Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Flush-to-zero and denormal-as-zero are off
+[2m2026-07-18T23:45:43.226838Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Creating and using per session threadpools since use_per_session_threads_ is true
+[2m2026-07-18T23:45:43.226896Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Dynamic block base set to 0
+[2m2026-07-18T23:45:44.008169Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Initializing session.
+[2m2026-07-18T23:45:44.008228Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Creating BFCArena for Cpu with following configs: initial_chunk_size_bytes: 1048576 max_dead_bytes_per_chunk: 134217728 initial_growth_chunk_size_bytes: 2097152 max_power_of_two_extend_bytes: 1073741824 memory limit: 18446744073709551615 arena_extend_strategy: 0
+[2m2026-07-18T23:45:44.013364Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m This model does not have any local functions defined. AOT Inlining is not performed
+[2m2026-07-18T23:45:44.389659Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[2m2026-07-18T23:45:44.390903Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level1_RuleBasedTransformer modified: 1 with status: OK
+[2m2026-07-18T23:45:44.406304Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DoubleQDQPairsRemover modified: 0 with status: OK
+[2m2026-07-18T23:45:44.411428Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total shared scalar initializer count: 793
+[2m2026-07-18T23:45:44.411497Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConstantSharing modified: 1 with status: OK
+[2m2026-07-18T23:45:44.425741Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer CommonSubexpressionElimination modified: 1 with status: OK
+[2m2026-07-18T23:45:44.445081Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConstantFolding modified: 1 with status: OK
+[2m2026-07-18T23:45:44.456679Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/Constant_10_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.456737Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/Shape_3_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.457546Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.457928Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.0/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.457955Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.0/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458075Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.0/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458130Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.1/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458155Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.1/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458175Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.1/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458199Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.2/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458220Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.2/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458239Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.2/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458269Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.3/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458292Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.3/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458310Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.3/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458337Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.4/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458358Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.4/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458378Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.4/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458403Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.5/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458424Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.5/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458441Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.5/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458468Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.6/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458491Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.6/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458510Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.6/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458537Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.7/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458555Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.7/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458576Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.7/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458603Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.8/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458625Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.8/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458644Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.8/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458671Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.9/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458692Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.9/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458713Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.9/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458739Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.10/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458760Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.10/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458780Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.10/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458807Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.11/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458825Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.11/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458846Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.11/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458875Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.12/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458897Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.12/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458916Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.12/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.458943Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.13/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.458963Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.13/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.458985Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.13/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459012Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.14/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459031Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.14/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.459052Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.14/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459079Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.15/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459100Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.15/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.459119Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.15/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459146Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.16/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459167Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.16/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.459185Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.16/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459210Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.17/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459231Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.17/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.459251Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.17/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459277Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.18/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459297Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.18/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.459318Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.18/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459344Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.19/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459365Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.19/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.459384Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.19/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.459411Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.20/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.459433Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.20/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.517716Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.20/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.517794Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.21/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.517832Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.21/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.517866Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.21/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.517920Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.22/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.517960Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.22/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.518002Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.22/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.518059Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.23/attention/self/Reshape_output_0
+[2m2026-07-18T23:45:44.518094Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.23/attention/self/Reshape_1_output_0
+[2m2026-07-18T23:45:44.518128Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Fused reshape node: /encoder/layer.23/attention/self/Reshape_2_output_0
+[2m2026-07-18T23:45:44.518149Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total fused reshape node count: 72
+[2m2026-07-18T23:45:44.518165Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ReshapeFusion modified: 1 with status: OK
+[2m2026-07-18T23:45:44.542340Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.2/attention/self/Constant_4_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.542383Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.9/attention/self/Constant_13_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.542939Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FreeDimensionOverrideTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.542987Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:45:44.543010Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:45:44.543693Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQPropagationTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.544133Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WeightBiasQuantization modified: 0 with status: OK
+[2m2026-07-18T23:45:44.544568Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[2m2026-07-18T23:45:44.544945Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WhereDummyDq modified: 0 with status: OK
+[2m2026-07-18T23:45:44.549642Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer TransposeOptimizer modified: 1 with status: OK
+[2m2026-07-18T23:45:44.565827Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_21_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.565890Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_23_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.565904Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_9_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.565918Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_19_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.565931Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_37_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.565995Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_3_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566014Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_31_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566040Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_29_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566058Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_35_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566100Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_11_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566117Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_5_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566145Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_33_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566159Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_41_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566172Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_27_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566185Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566191Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_1_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566197Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_7_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566205Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_13_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566213Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_15_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566222Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_17_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566229Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_25_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566237Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_39_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566246Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_43_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.566252Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing NodeArg 'Gather_token_45_out0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.567294Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level1_RuleBasedTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.567761Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DoubleQDQPairsRemover modified: 0 with status: OK
+[2m2026-07-18T23:45:44.570081Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer CommonSubexpressionElimination modified: 0 with status: OK
+[2m2026-07-18T23:45:44.570681Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConstantFolding modified: 0 with status: OK
+[2m2026-07-18T23:45:44.571112Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.571837Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ReshapeFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.571881Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FreeDimensionOverrideTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.571899Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:45:44.571923Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL1 modified: 0 with status: OK
+[2m2026-07-18T23:45:44.572659Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQPropagationTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.573392Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WeightBiasQuantization modified: 0 with status: OK
+[2m2026-07-18T23:45:44.573759Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[2m2026-07-18T23:45:44.574036Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer WhereDummyDq modified: 0 with status: OK
+[2m2026-07-18T23:45:44.596147Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Running graph optimizations in loop 1 time/s (Graph Optimizations Loop Level : 1)
+[2m2026-07-18T23:45:44.596708Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level2_RuleBasedTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.599289Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer TransposeOptimizer_CPUExecutionProvider modified: 0 with status: OK
+[2m2026-07-18T23:45:44.599618Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQS8ToU8Transformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.600453Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQSelectorActionTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.600738Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GemmActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.601077Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulIntegerToFloatFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.601426Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DynamicQuantizeMatMulFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.602069Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConvActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.603103Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL2 modified: 1 with status: OK
+[2m2026-07-18T23:45:44.620342Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.8/intermediate/intermediate_act_fn/Constant_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.620404Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.9/intermediate/intermediate_act_fn/Constant_2_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.623497Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL2 modified: 1 with status: OK
+[2m2026-07-18T23:45:44.633423Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.19/output/LayerNorm/Constant_1_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.633470Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Removing initializer '/encoder/layer.22/attention/output/LayerNorm/Constant_output_0'. It is no longer used by any node.
+[2m2026-07-18T23:45:44.634365Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SimplifiedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.634800Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer AttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.635070Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EmbedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.635616Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherSliceToSplitFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.635816Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherToSliceFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.636163Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatmulTransposeFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.636719Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasGeluFusion modified: 1 with status: OK
+[2m2026-07-18T23:45:44.647051Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GroupQueryAttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.647518Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.647941Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SkipLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.648392Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FastGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.648904Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QuickGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.649337Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasSoftmaxFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.649717Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasDropoutFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.650429Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulScaleFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.650834Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.651244Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulNBitsFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.651606Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQFinalCleanupTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.651951Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer Level2_RuleBasedTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.652189Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQS8ToU8Transformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.653366Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQSelectorActionTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.653871Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GemmActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.654382Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulIntegerToFloatFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.654985Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer DynamicQuantizeMatMulFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.655702Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConvActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.656174Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GeluFusionL2 modified: 0 with status: OK
+[2m2026-07-18T23:45:44.656583Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer LayerNormFusionL2 modified: 0 with status: OK
+[2m2026-07-18T23:45:44.657015Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SimplifiedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.657598Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer AttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.657883Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer EmbedLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.658456Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherSliceToSplitFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.658649Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GatherToSliceFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.658989Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatmulTransposeFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.659275Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.659482Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer GroupQueryAttentionFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.659835Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.660201Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer SkipLayerNormFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.660440Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FastGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.660645Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QuickGeluFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.660832Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasSoftmaxFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.661003Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer BiasDropoutFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.661288Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulScaleFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.661551Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.661837Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MatMulNBitsFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.662030Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer QDQFinalCleanupTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.662292Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer NchwcTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.663377Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer NhwcTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.663651Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer ConvAddActivationFusion modified: 0 with status: OK
+[2m2026-07-18T23:45:44.664597Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer RemoveDuplicateCastTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.664609Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer CastFloat16Transformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.664786Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer FuseFp16InitializerToFp32NodeTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.664808Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m GraphTransformer MemcpyTransformer modified: 0 with status: OK
+[2m2026-07-18T23:45:44.678562Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Use DeviceBasedPartition as default
+[2m2026-07-18T23:45:44.887112Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Saving initialized tensors.
+[2m2026-07-18T23:45:44.887349Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887389Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.887403Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887434Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887443Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887457Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887467Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887481Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887498Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887511Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887523Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887536Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887550Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887564Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.887592Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887615Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887637Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887649Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887723Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887771Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887813Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887832Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4
+[2m2026-07-18T23:45:44.887862Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.887889Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888024Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888093Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888119Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888135Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888212Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888284Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888357Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888629Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.888721Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888750Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888761Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888781Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888809Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4
+[2m2026-07-18T23:45:44.888825Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888850Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888861Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888870Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888881Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888893Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888910Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888922Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888934Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.888967Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.888982Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889011Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889020Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889028Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889037Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889053Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4
+[2m2026-07-18T23:45:44.889066Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889077Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889084Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889094Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889104Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889123Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889143Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889170Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889183Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889194Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889210Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889222Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889233Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889259Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889271Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889279Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889300Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889324Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889334Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.889356Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889366Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889376Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889387Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889415Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889426Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889449Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889469Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889478Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889490Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889500Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889508Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889516Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889525Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889533Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.889541Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889548Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889563Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889571Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889579Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.889593Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889609Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889619Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889634Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889644Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889656Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889665Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889680Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889695Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889708Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889720Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889730Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889750Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889758Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889770Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889779Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 32
+[2m2026-07-18T23:45:44.889799Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 8
+[2m2026-07-18T23:45:44.889814Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Done saving initialized tensors
+[2m2026-07-18T23:45:44.891772Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.894892Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.898141Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.901182Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.904648Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:44.917177Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:44.930976Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.934365Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.937851Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.941698Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.945205Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:44.959566Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:44.974565Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.978131Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.981710Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.985075Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:44.989049Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.004132Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.017470Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.020674Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.024077Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.027172Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.030419Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.043184Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.055493Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.058559Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.061820Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.065190Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.068360Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.081119Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.093648Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.096726Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.099798Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.102897Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.106273Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.119375Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.132256Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.135393Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.138643Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.141717Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.145330Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.158636Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.172182Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.175826Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.178946Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.182058Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.185214Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.197295Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.208896Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.211793Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.214858Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.217742Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.220494Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.231997Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.243039Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.245900Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.248677Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.251471Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.254335Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.265330Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.276874Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.279649Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.282416Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.285492Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.288262Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.299385Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.310475Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.313191Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.315988Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.318769Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.321607Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.332598Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.343344Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.345987Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.348629Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.351320Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.354303Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.365370Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.376274Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.378987Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.381659Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.384437Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.387069Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.398233Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.408944Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.411658Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.414282Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.416848Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.419429Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.431051Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.442194Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.444961Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.447602Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.450239Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.452909Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.464040Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.475015Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.477758Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.480546Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.483249Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.485945Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.497196Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.510757Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.514743Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.519255Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.523558Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.527962Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.544157Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.557770Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.561091Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.564768Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.568005Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.571556Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.585419Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.598620Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.601816Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.605080Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.609292Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.613180Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.625689Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.638405Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.641420Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.644397Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.647352Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.650313Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.662751Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.675584Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.678632Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.681992Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.685055Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.688023Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.700597Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.714283Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.717773Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.721457Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.724679Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.727741Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.740197Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.752719Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.756139Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.759102Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.762112Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 4194304
+[2m2026-07-18T23:45:45.765514Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.778344Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Reserving memory in BFCArena for Cpu size: 16777216
+[2m2026-07-18T23:45:45.792254Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Session successfully initialized.
+[2m2026-07-18T23:45:45.828942Z[0m [32m INFO[0m [2mdasein_proxy::brain[0m[2m:[0m onnx embedder loaded (shared for the process) [3mdir[0m[2m=[0mC:\Users\nicks\.dasein\models\bge-large-onnx [3melapsed_ms[0m[2m=[0m2891
+[2m2026-07-18T23:46:30.161441Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m request pipeline [3mconv[0m[2m=[0m3e881b7f7033 [3mturn[0m[2m=[0m0 [3mcurate_ms[0m[2m=[0m0.9 [3mbrain_ms[0m[2m=[0m0.0 [3mprobe_ms[0m[2m=[0m133.4 [3mupstream_ms[0m[2m=[0m232.8 [3mbirths_scored[0m[2m=[0m0 [3mfolds_total[0m[2m=[0m1 [3mfolds_new[0m[2m=[0m1 [3manchors[0m[2m=[0m[0] [3mtools_kept[0m[2m=[0mNone [3mtools_total[0m[2m=[0mNone [3mgovernor[0m[2m=[0m"off" [3mgov_directive[0m[2m=[0mfalse [3mfail_open[0m[2m=[0mfalse [3mstatus[0m[2m=[0m429 [3mledger[0m[2m=[0mC:\Users\nicks\.dasein\ledger.jsonl
+[2m2026-07-18T23:46:30.161689Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m request served — ~8 input tok avoided [3mconv[0m[2m=[0m3e881b7f7033 [3mmodel[0m[2m=[0m"claude-opus-4-8" [3mcounterfactual_in[0m[2m=[0m8 [3mbilled_in[0m[2m=[0m0 [3mcache_read[0m[2m=[0m0 [3mcache_write[0m[2m=[0m0 [3mout[0m[2m=[0m0 [3msaved[0m[2m=[0m8 [3mfail_open[0m[2m=[0mfalse
+[2m2026-07-18T23:46:40.437670Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:0 (requested) num_bytes: 16 (actual) rounded_bytes:256
+[2m2026-07-18T23:46:40.437745Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 1048576 bytes.
+[2m2026-07-18T23:46:40.437759Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1209011340
+[2m2026-07-18T23:46:40.437772Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 000002174318B080 to 000002174328B080
+[2m2026-07-18T23:46:40.438097Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:11 (requested) num_bytes: 778240 (actual) rounded_bytes:778240
+[2m2026-07-18T23:46:40.438144Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 2097152 bytes.
+[2m2026-07-18T23:46:40.438154Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1211108492
+[2m2026-07-18T23:46:40.438165Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 000002177B41F080 to 000002177B61F080
+[2m2026-07-18T23:46:40.439262Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:11 (requested) num_bytes: 778240 (actual) rounded_bytes:778240
+[2m2026-07-18T23:46:40.439292Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 4194304 bytes.
+[2m2026-07-18T23:46:40.439302Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1215302796
+[2m2026-07-18T23:46:40.439313Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 000002177B631080 to 000002177BA31080
+[2m2026-07-18T23:46:40.454943Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:13 (requested) num_bytes: 3112960 (actual) rounded_bytes:3112960
+[2m2026-07-18T23:46:40.455035Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 8388608 bytes.
+[2m2026-07-18T23:46:40.455050Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1223691404
+[2m2026-07-18T23:46:40.455063Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 000002177BA48080 to 000002177C248080
+[2m2026-07-18T23:46:40.957949Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:18 (requested) num_bytes: 67108864 (actual) rounded_bytes:67108864
+[2m2026-07-18T23:46:40.958023Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 67108864 bytes.
+[2m2026-07-18T23:46:40.958036Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1290800268
+[2m2026-07-18T23:46:40.958049Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 000002170202E080 to 000002170602E080
+[2m2026-07-18T23:46:40.964638Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:18 (requested) num_bytes: 67108864 (actual) rounded_bytes:67108864
+[2m2026-07-18T23:46:40.964710Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 67108864 bytes.
+[2m2026-07-18T23:46:40.964723Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1357909132
+[2m2026-07-18T23:46:40.964735Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 0000021711043080 to 0000021715043080
+[2m2026-07-18T23:46:40.971431Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:18 (requested) num_bytes: 67108864 (actual) rounded_bytes:67108864
+[2m2026-07-18T23:46:40.971478Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 134217728 bytes.
+[2m2026-07-18T23:46:40.971571Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 1492126860
+[2m2026-07-18T23:46:40.971588Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 0000021715059080 to 000002171D059080
+[2m2026-07-18T23:46:41.226127Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:20 (requested) num_bytes: 536870912 (actual) rounded_bytes:536870912
+[2m2026-07-18T23:46:41.226239Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 536870912 bytes.
+[2m2026-07-18T23:46:41.226257Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 2028997772
+[2m2026-07-18T23:46:41.226274Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 000002177F6F2080 to 000002179F6F2080
+[2m2026-07-18T23:46:41.344161Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:20 (requested) num_bytes: 536870912 (actual) rounded_bytes:536870912
+[2m2026-07-18T23:46:41.344243Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 536870912 bytes.
+[2m2026-07-18T23:46:41.344258Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 2565868684
+[2m2026-07-18T23:46:41.344272Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 00000217A0713080 to 00000217C0713080
+[2m2026-07-18T23:47:17.924201Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extending BFCArena for Cpu. bin_num:20 (requested) num_bytes: 1377833728 (actual) rounded_bytes:1377833728
+[2m2026-07-18T23:47:17.924389Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Extended allocation by 2147483648 bytes.
+[2m2026-07-18T23:47:17.924408Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Total allocated bytes: 4713352332
+[2m2026-07-18T23:47:17.924422Z[0m [32m INFO[0m [2mort::logging[0m[2m:[0m Allocated memory at 00000217C1732080 to 0000021841732080
+[2m2026-07-18T23:56:04.658624Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m request pipeline [3mconv[0m[2m=[0m3e881b7f7033 [3mturn[0m[2m=[0m0 [3mcurate_ms[0m[2m=[0m5.0 [3mbrain_ms[0m[2m=[0m0.0 [3mprobe_ms[0m[2m=[0m97.0 [3mupstream_ms[0m[2m=[0m1808.5 [3mbirths_scored[0m[2m=[0m0 [3mfolds_total[0m[2m=[0m1 [3mfolds_new[0m[2m=[0m1 [3manchors[0m[2m=[0m[0] [3mtools_kept[0m[2m=[0mNone [3mtools_total[0m[2m=[0mNone [3mgovernor[0m[2m=[0m"off" [3mgov_directive[0m[2m=[0mfalse [3mfail_open[0m[2m=[0mfalse [3mstatus[0m[2m=[0m200 [3mledger[0m[2m=[0mC:\Users\nicks\.dasein\ledger.jsonl
+[2m2026-07-18T23:56:04.659924Z[0m [32m INFO[0m [2mdasein_proxy::server[0m[2m:[0m request served — ~0 input tok avoided [3mconv[0m[2m=[0m3e881b7f7033 [3mmodel[0m[2m=[0m"claude-haiku-4-5-20251001" [3mcounterfactual_in[0m[2m=[0m8 [3mbilled_in[0m[2m=[0m8 [3mcache_read[0m[2m=[0m0 [3mcache_write[0m[2m=[0m0 [3mout[0m[2m=[0m1 [3msaved[0m[2m=[0m0 [3mfail_open[0m[2m=[0mfalse

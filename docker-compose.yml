@@ -3,12 +3,17 @@
 # process (`scripts/proxy_dev.sh`) so Claude Code's auth never enters a
 # container.
 #
-#   docker compose up -d brain                       # demo mode (hash embeds + forced tau)
-#   EMBED=dasein DASEIN_SERVE_TAU= docker compose up -d   # real mode: bge vectors via host
-#                                                    #   kubectl port-forward svc/dasein-embed 18080:80
+#   make dev                    # brain (container) + proxy (host), one command
+#   docker compose up -d brain  # brain only, demo mode (hash embeds + forced tau)
+#
+# The client no longer embeds anything (docs/server-side-embedding.md), so the
+# brain owns the embedder for every contract. Until the in-process GPU embedder
+# lands, REAL vectors still come from the port-forwarded cluster service:
+#   kubectl port-forward svc/dasein-embed 18080:80
+#   EMBED=dasein DASEIN_SERVE_TAU= docker compose up -d brain
 #
 # Requires the checkpoint at ~/.dasein/brain/curator_v4_prod.pt
-# (gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.dasein/brain/).
+# (gcloud storage cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.dasein/brain/).
 services:
   brain:
     build: ./packages/brain
@@ -22,6 +27,10 @@ services:
       # so the machinery visibly trims regardless of what the model thinks of
       # your conversation. real: un-forced calibrated tau (0.70 cov) + bge
       # vectors from the port-forwarded in-cluster embedder — honest scores.
+      #
+      # NOTE: hash vectors are NOT the trained bge embeddings. They exercise
+      # the wiring end to end; they say nothing about whether the curator is
+      # making good decisions. Use EMBED=dasein for anything score-related.
       DASEIN_EMBED_BACKEND: ${EMBED:-hash}          # hash | dasein
       DASEIN_EMBED_URL: http://host.docker.internal:18080/embed
       DASEIN_SERVE_TAU: ${DASEIN_SERVE_TAU-0.999}   # export DASEIN_SERVE_TAU= for calibrated

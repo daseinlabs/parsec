@@ -3,10 +3,8 @@
 # The proxy is a host process on purpose: your Claude auth headers pass
 # through it to api.anthropic.com and must never enter a container.
 #
-#   scripts/proxy_dev.sh          # v1 contract, hash client embeddings (demo)
-#   scripts/proxy_dev.sh real     # v1 contract, real embeddings via
-#                                 #   kubectl port-forward svc/dasein-embed 18080:80
-#   scripts/proxy_dev.sh dev-raw  # legacy dev contract (raw text to the brain)
+#   scripts/proxy_dev.sh          # v2 contract (default) — the brain embeds
+#   scripts/proxy_dev.sh dev-raw  # legacy dev contract (raw messages, server re-chunks)
 #
 # Env overrides: DASEIN_BRAIN_URL (default http://127.0.0.1:8090 = compose),
 # DASEIN_PROXY_PORT (default 8082), DASEIN_UPSTREAM, DASEIN_RECORD_DIR.
@@ -19,13 +17,10 @@ export DASEIN_PROXY_PORT="${DASEIN_PROXY_PORT:-8082}"
 
 case "$MODE" in
   demo)
-    export DASEIN_BRAIN_CONTRACT=v1 DASEIN_EMBED_BACKEND=hash ;;
-  real)
-    export DASEIN_BRAIN_CONTRACT=v1 DASEIN_EMBED_BACKEND=remote \
-           DASEIN_EMBED_URL="${DASEIN_EMBED_URL:-http://127.0.0.1:18080/embed}" ;;
+    export DASEIN_BRAIN_CONTRACT=v2 ;;
   dev-raw)
     export DASEIN_BRAIN_DEV_RAW=1 ;;
-  *) echo "usage: $0 [demo|real|dev-raw]"; exit 1 ;;
+  *) echo "usage: $0 [demo|dev-raw]"; exit 1 ;;
 esac
 
 curl -sf "$DASEIN_BRAIN_URL/health" >/dev/null \

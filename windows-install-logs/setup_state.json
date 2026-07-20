@@ -1,0 +1,9 @@
+{
+  "contract_version": "setup-state/v0",
+  "phase": "ready",
+  "bytes_done": 1337630154,
+  "bytes_total": 1337630154,
+  "env_written": true,
+  "port": 8082,
+  "updated_unix": 1784416907
+}

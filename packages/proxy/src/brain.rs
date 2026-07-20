@@ -2,18 +2,29 @@
 //! `ChunkScorer` seam, plus the tool-schema keep-set machinery
 //! (docs/brain-serving-v0.md; contracts brain-api-dev/v0 + brain-api/v1).
 //!
-//! Two contracts, selected by `DASEIN_BRAIN_CONTRACT` (default `dev`):
+//! Three contracts, selected by `DASEIN_BRAIN_CONTRACT` (default `dev` for an
+//! explicit URL; a release-BAKED url defaults to `v2`):
 //! - **dev** (brain-api-dev/v0): the request carries the INTERNAL MESSAGE
 //!   VIEW (raw text) to OUR cluster, so this path additionally requires the
 //!   explicit `DASEIN_BRAIN_DEV_RAW=1` opt-in — the same data-plane exception
 //!   STATUS.md blesses for the dev embed fallback, never for real users.
+//!   The server RE-CHUNKS and 409s on `chunk_checksum` drift; it has no
+//!   checkpoint_id guard.
 //! - **v1** (brain-api/v1): the client featurizes where the text lives
 //!   (`featurize.rs` — local embedder + engine node/readout structs + rel-4
 //!   pairs); the wire carries vectors + features + salted opaque ids, raw
-//!   text UNREPRESENTABLE. No raw-text opt-in needed. On first score() the
-//!   scorer handshakes `GET /v1/bundle` for the checkpoint_id (the §8.2
-//!   matched-pair guard rides in every payload); an unreachable brain is a
-//!   per-step fail-open exactly like a failed score, retried next serve.
+//!   text UNREPRESENTABLE. Retained for deployments that require text never
+//!   to leave the machine.
+//! - **v2** (brain-api/v2): v1 with chunk TEXT in the three embedding slots —
+//!   the embedder moved server-side (docs/server-side-embedding.md), so the
+//!   client ships no ONNX model. STRUCTURAL featurization still happens here
+//!   (the freezer needs the chunk set regardless); only the readout's
+//!   trailing dupcos pair is left zeroed for the brain to fill.
+//!
+//! v1 and v2 both handshake `GET /v1/bundle` on first score() for the
+//! checkpoint_id (the §8.2 matched-pair guard rides in every payload); an
+//! unreachable brain is a per-step fail-open exactly like a failed score,
+//! retried next serve.
 //!
 //! Invariants owned here:
 //! - Scorer failure returns `Err(ScoreError)` — the Freezer leaves the birth
@@ -23,7 +34,6 @@
 //!   target_cov), so the Freezer's per-owner-pool tau calls are served from
 //!   the same-live-set response cache.
 
-use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -31,7 +41,6 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use dasein_engine::embed::{Embedder, HashEmbedder};
 use dasein_engine::freeze::{BirthQuery, ChunkScorer, ScoreError, ScoreResult};
 use dasein_engine::pystr::char_prefix;
 
@@ -43,19 +52,28 @@ pub enum BrainContract {
     /// brain-api-dev/v0 — raw internal view, dev machines only.
     #[default]
     Dev,
-    /// brain-api/v1 — client-side featurization, data-plane clean.
-    V1,
+    /// brain-api/v2 — client-side STRUCTURAL featurization, chunk text on the
+    /// wire, the brain embeds (docs/server-side-embedding.md). No local
+    /// embedder, so no ONNX model ships with the client.
+    V2,
 }
 
 impl BrainContract {
-    /// `DASEIN_BRAIN_CONTRACT` parsing: only the exact string "v1" selects
-    /// the v1 contract; anything else (unset, "dev", typos) stays dev — the
-    /// conservative default while v1 is being proven out.
+    /// `DASEIN_BRAIN_CONTRACT` parsing: the exact strings "v1"/"v2" select
+    /// those contracts; anything else (unset, "dev", typos) stays dev — the
+    /// conservative default for an explicitly-configured URL.
     pub fn from_env_value(v: Option<&str>) -> BrainContract {
         match v.map(str::trim) {
-            Some("v1") => BrainContract::V1,
+            Some("v2") => BrainContract::V2,
             _ => BrainContract::Dev,
         }
+    }
+
+    /// Does this contract do the /v1/bundle handshake and carry
+    /// `checkpoint_id`? v2 does; dev has no matched-pair guard, which is
+    /// precisely why v2 derives from v1 (docs/server-side-embedding.md §4).
+    pub fn needs_handshake(self) -> bool {
+        self == BrainContract::V2
     }
 }
 
@@ -73,15 +91,8 @@ pub struct BrainConfig {
     /// DASEIN_TOOL_STUB — serve pruned tools as name+note stubs instead of
     /// dropping them (default on); "off" restores the reference hard-drop.
     pub tool_stub: bool,
-    /// DASEIN_BRAIN_CONTRACT: dev (default) | v1.
+    /// DASEIN_BRAIN_CONTRACT: dev (default) | v1 | v2.
     pub contract: BrainContract,
-    /// v1 client embedder: DASEIN_EMBED_BACKEND = hash | remote | onnx.
-    pub embed_backend: String,
-    /// DASEIN_EMBED_URL — required for the remote backend (dev fallback:
-    /// raw text rides to the embed service; our machines only).
-    pub embed_url: Option<String>,
-    /// DASEIN_ONNX_DIR — the local bge-large export directory (onnx backend).
-    pub onnx_dir: Option<String>,
 }
 
 /// Release-baked default brain URL: `DASEIN_DEFAULT_BRAIN_URL` at BUILD time
@@ -92,9 +103,9 @@ pub struct BrainConfig {
 const BAKED_BRAIN_URL: Option<&str> = option_env!("DASEIN_DEFAULT_BRAIN_URL");
 
 /// URL + contract resolution, pure for testability. Env URL beats baked.
-/// A BAKED url defaults the contract to v1 (a released binary must be
-/// data-plane-clean by default; dev's raw-text wire is opt-in only), while
-/// an env-supplied URL keeps the conservative dev default. An explicit
+/// A BAKED url defaults the contract to **v2** (revised 2026-07-20): released
+/// binaries ship no embedder, so v1 is not a topology they can speak. An
+/// env-supplied URL keeps the conservative dev default. An explicit
 /// `DASEIN_BRAIN_CONTRACT` always wins. Returns (url, contract, baked).
 fn resolve_url_contract(
     env_url: Option<&str>,
@@ -110,7 +121,7 @@ fn resolve_url_contract(
     }
     let contract = match env_contract {
         Some(v) => BrainContract::from_env_value(Some(v)),
-        None if baked => BrainContract::V1,
+        None if baked => BrainContract::V2,
         None => BrainContract::Dev,
     };
     Some((url.trim_end_matches('/').to_string(), contract, baked))
@@ -145,26 +156,7 @@ impl BrainConfig {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000);
-        let embed_backend = std::env::var("DASEIN_EMBED_BACKEND").unwrap_or_else(|_| "hash".into());
-        if contract == BrainContract::V1 && embed_backend == "hash" {
-            if baked {
-                // The baked release default must never DEGRADE anyone: hash
-                // vectors are not the trained bge embeddings, and unlike an
-                // HTTP failure, garbage scores don't fail open. Stay off
-                // until a real embedder is configured.
-                tracing::info!(
-                    "release brain URL is baked in, but DASEIN_EMBED_BACKEND is 'hash' \
-                     (test vectors) — brain stays OFF until a real embedder is \
-                     configured (DASEIN_EMBED_BACKEND=remote|onnx)"
-                );
-                return None;
-            }
-            tracing::warn!(
-                "v1 contract with the HASH embed backend — deterministic test vectors, \
-                 NOT the checkpoint's trained bge embeddings (set DASEIN_EMBED_BACKEND=\
-                 remote|onnx for real scores)"
-            );
-        }
+        let _ = baked; // no longer gates anything (was the hash-embedder interlock)
         Some(BrainConfig {
             url,
             key: std::env::var("DASEIN_BRAIN_KEY")
@@ -179,83 +171,7 @@ impl BrainConfig {
             tool_prune: std::env::var("DASEIN_TOOL_PRUNE").ok().as_deref() != Some("off"),
             tool_stub: std::env::var("DASEIN_TOOL_STUB").ok().as_deref() != Some("off"),
             contract,
-            embed_backend,
-            embed_url: std::env::var("DASEIN_EMBED_URL")
-                .ok()
-                .filter(|u| !u.is_empty()),
-            onnx_dir: std::env::var("DASEIN_ONNX_DIR")
-                .ok()
-                .filter(|d| !d.is_empty()),
         })
-    }
-}
-
-/// Build the v1 client embedder from config. Deterministic backends only;
-/// `onnx` requires the engine `onnx` cargo feature (compile-gated — the
-/// default binary stays light) and errors otherwise.
-pub fn build_embedder(cfg: &BrainConfig) -> Result<Box<dyn Embedder + Send>, ScoreError> {
-    match cfg.embed_backend.as_str() {
-        "hash" => Ok(Box::new(HashEmbedder::default())),
-        "remote" => {
-            let url = cfg.embed_url.clone().ok_or_else(|| {
-                ScoreError("DASEIN_EMBED_URL required for DASEIN_EMBED_BACKEND=remote".into())
-            })?;
-            Ok(Box::new(
-                dasein_engine::embed::RemoteEmbedder::new(url)
-                    .map_err(|e| ScoreError(format!("remote embedder: {e}")))?,
-            ))
-        }
-        "onnx" => {
-            #[cfg(feature = "onnx")]
-            {
-                use std::sync::{Arc, OnceLock};
-                // The bge-large session is ~1.3GB: load ONCE per process and
-                // share across every conversation's BrainScorer. First caller
-                // pays the load (server::run warms it at startup, off the
-                // request path); concurrent callers block on the OnceLock
-                // until it resolves rather than failing open. The dir is
-                // fixed by env for the life of the process, so caching the
-                // first result (success OR failure) is sound.
-                static SHARED: OnceLock<Result<Arc<dasein_engine::embed::OnnxEmbedder>, String>> =
-                    OnceLock::new();
-                let dir = cfg.onnx_dir.clone().unwrap_or_else(|| {
-                    crate::setup::home_dir()
-                        .join(".dasein")
-                        .join("models")
-                        .join("bge-large-onnx")
-                        .to_string_lossy()
-                        .into_owned()
-                });
-                let shared = SHARED.get_or_init(|| {
-                    let started = std::time::Instant::now();
-                    dasein_engine::embed::OnnxEmbedder::load(std::path::Path::new(&dir))
-                        .map(|e| {
-                            tracing::info!(
-                                dir = %dir,
-                                elapsed_ms = started.elapsed().as_millis() as u64,
-                                "onnx embedder loaded (shared for the process)"
-                            );
-                            Arc::new(e)
-                        })
-                        .map_err(|e| format!("onnx embedder ({dir}): {e}"))
-                });
-                match shared {
-                    Ok(e) => Ok(Box::new(e.clone())),
-                    Err(msg) => Err(ScoreError(msg.clone())),
-                }
-            }
-            #[cfg(not(feature = "onnx"))]
-            {
-                Err(ScoreError(
-                    "DASEIN_EMBED_BACKEND=onnx but this binary was built without the \
-                     `onnx` cargo feature (cargo build --features onnx)"
-                        .into(),
-                ))
-            }
-        }
-        other => Err(ScoreError(format!(
-            "unknown DASEIN_EMBED_BACKEND {other:?} (hash | remote | onnx)"
-        ))),
     }
 }
 
@@ -381,12 +297,6 @@ pub struct BrainScorer {
     /// extra=forbid: an unknown key is a 422 = total curation outage).
     /// Refreshed with every handshake (incl. the 409 re-pair).
     v1_doom: bool,
-    /// Client embedder, built lazily on the first v1 score (blocking
-    /// context — Freezer::serve always runs inside spawn_blocking).
-    v1_embedder: Option<Box<dyn Embedder + Send>>,
-    /// Exact-text embed cache (keys are the CLIPPED strings — the
-    /// reference's two-layer cache collapsed to one, curator L281-286).
-    v1_embed_cache: HashMap<String, Vec<f32>>,
     /// Per-conversation opaque-id salt (never leaves this process).
     conv_salt: String,
 }
@@ -407,8 +317,6 @@ impl BrainScorer {
             attach_gf: false,
             v1_checkpoint: None,
             v1_doom: false,
-            v1_embedder: None,
-            v1_embed_cache: HashMap::new(),
             conv_salt,
         }
     }
@@ -421,32 +329,24 @@ impl BrainScorer {
         format!("{:x}", h.finalize())
     }
 
-    /// v1 request body: handshake (cached) + client featurization. Any
-    /// failure surfaces as ScoreError = per-step fail-open, retried whole
-    /// (including the handshake) on the next serve.
-    fn v1_body(&mut self, q: &BirthQuery) -> Result<Value, ScoreError> {
+    /// v2 request body: the same handshake (the §8.2 matched-pair guard rides
+    /// on v2 exactly as on v1) + structural featurization only. No embedder,
+    /// so the only failure mode left is the handshake itself.
+    fn v2_body(&mut self, q: &BirthQuery) -> Result<Value, ScoreError> {
         if self.v1_checkpoint.is_none() {
             let info = fetch_bundle(&self.http, &self.cfg)?;
-            // Finding 6: gate `gf` on the handshake's doom capability — a
-            // pre-gf v1 brain (extra=forbid) would 422 every trace body.
             self.v1_doom = info.doom_served();
             self.v1_checkpoint = Some(info.checkpoint_id);
         }
-        if self.v1_embedder.is_none() {
-            self.v1_embedder = Some(build_embedder(&self.cfg)?);
-        }
         let checkpoint_id = self.v1_checkpoint.clone().expect("handshake done");
-        let embedder: &dyn Embedder = &**self.v1_embedder.as_ref().expect("embedder built");
-        featurize::build_v1_trace_payload(
+        Ok(featurize::build_v2_trace_payload(
             q,
-            embedder,
-            &mut self.v1_embed_cache,
             featurize::changeprone(),
             &self.conv_salt,
             &self.conv_id,
             &checkpoint_id,
             &self.cfg.target_cov,
-        )
+        ))
     }
 }
 
@@ -483,7 +383,7 @@ impl ChunkScorer for BrainScorer {
                 "chunk_checksum": q.chunk_checksum,
                 "target_cov": self.cfg.target_cov,
             }),
-            BrainContract::V1 => self.v1_body(q)?,
+            BrainContract::V2 => self.v2_body(q)?,
         };
         // Governor doom head input (wire contract addition, both contracts):
         // loop_feats over the SAME internal view being scored. Omitted when
@@ -494,7 +394,8 @@ impl ChunkScorer for BrainScorer {
         // extras, so dev attaches unconditionally.
         let gf_capable = match self.cfg.contract {
             BrainContract::Dev => true,
-            BrainContract::V1 => self.v1_doom, // set by the handshake above
+            // v2 handshakes, so it gates on the served doom capability
+            BrainContract::V2 => self.v1_doom,
         };
         if self.attach_gf && gf_capable {
             if let Some(gf) = crate::governor::gf_of(q.messages) {
@@ -516,7 +417,7 @@ impl ChunkScorer for BrainScorer {
             .map_err(|e| ScoreError(format!("brain unreachable: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            if status.as_u16() == 409 && self.cfg.contract == BrainContract::V1 {
+            if status.as_u16() == 409 && self.cfg.contract.needs_handshake() {
                 // checkpoint drift (brain redeployed mid-conversation):
                 // forget the handshake so the retry re-pairs features+weights.
                 self.v1_checkpoint = None;
@@ -604,17 +505,15 @@ pub async fn score_tools(
             "messages": internal,
             "tools": tools,
         }),
-        BrainContract::V1 => {
-            // Handshake + featurization are blocking work (blocking HTTP
-            // handshake, possible remote/onnx embedder) — off the async
-            // runtime. Once per conversation: the keep-set freezes after the
-            // first successful prune.
+        BrainContract::V2 => {
+            // Same shape as v1 minus the embedder: the handshake is still
+            // blocking HTTP, so it stays off the async runtime.
             let cfg2 = cfg.clone();
             let conv2 = conv_id.to_string();
             let internal2 = internal.to_vec();
             let tools2 = tools.clone();
             let built = tokio::task::spawn_blocking(move || {
-                build_v1_tools_body(&cfg2, &conv2, &internal2, &tools2)
+                build_v2_tools_body(&cfg2, &conv2, &internal2, &tools2)
             })
             .await
             .ok()?;
@@ -622,7 +521,7 @@ pub async fn score_tools(
                 Ok(Some(body)) => body,
                 Ok(None) => return None, // ineligible roster/view: full roster
                 Err(e) => {
-                    tracing::warn!("v1 tools featurization failed ({e}): full roster served");
+                    tracing::warn!("v2 tools assembly failed ({e}): full roster served");
                     return None;
                 }
             }
@@ -670,9 +569,9 @@ pub async fn score_tools(
     Some(ts)
 }
 
-/// Blocking v1 tools-request assembly: bundle handshake + client
-/// featurization. Ok(None) = ineligible (fail-open, full roster).
-fn build_v1_tools_body(
+/// Blocking v2 tools-request assembly: bundle handshake + STRUCTURAL
+/// featurization (no embedder). Ok(None) = ineligible (fail-open, full roster).
+fn build_v2_tools_body(
     cfg: &BrainConfig,
     conv_id: &str,
     internal: &[Value],
@@ -683,17 +582,13 @@ fn build_v1_tools_body(
         .build()
         .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
     let checkpoint_id = fetch_bundle(&http, cfg)?.checkpoint_id;
-    let embedder = build_embedder(cfg)?;
-    let mut cache = HashMap::new();
-    featurize::build_v1_tools_payload(
+    Ok(featurize::build_v2_tools_payload(
         internal,
         tools,
-        &*embedder,
-        &mut cache,
         &fresh_salt(conv_id),
         conv_id,
         &checkpoint_id,
-    )
+    ))
 }
 
 // ── governor consumers: /v1/score/rules + /v1/neighbors ────────────────────
@@ -746,12 +641,12 @@ pub async fn score_rules(
             "tools": tools.as_array().cloned().unwrap_or_default(),
             "step": cur_step,
         }),
-        BrainContract::V1 => {
+        BrainContract::V2 => {
             let cfg2 = cfg.clone();
             let conv2 = conv_id.to_string();
             let internal2 = internal.to_vec();
             let built = tokio::task::spawn_blocking(move || {
-                build_v1_rules_body(&cfg2, &conv2, &internal2, cur_step)
+                build_v2_rules_body(&cfg2, &conv2, &internal2, cur_step)
             })
             .await
             .ok()?;
@@ -759,7 +654,7 @@ pub async fn score_rules(
                 Ok(Some(body)) => body,
                 Ok(None) => return None, // nothing chunkable: skip rules
                 Err(e) => {
-                    tracing::warn!("v1 rules featurization failed ({e}): rules skipped");
+                    tracing::warn!("v2 rules assembly failed ({e}): rules skipped");
                     return None;
                 }
             }
@@ -787,71 +682,25 @@ pub async fn score_rules(
 /// score/trace (chunks/steps as opaque ids + vectors, `cur_step` included)
 /// built over the full internal view with an empty decided mask. Ok(None) =
 /// ineligible (fail-open, rules skipped).
-fn build_v1_rules_body(
+/// Blocking v2 rules-request assembly: handshake + structural featurization.
+fn build_v2_rules_body(
     cfg: &BrainConfig,
     conv_id: &str,
     internal: &[Value],
     cur_step: i64,
 ) -> Result<Option<Value>, ScoreError> {
-    use dasein_engine::chunking::{accumulated_chunks, ChunkMode};
-    use dasein_engine::messages::{assistant_chunks_of, reasoning_chunks_of, steps_of};
-
     let http = reqwest::blocking::Client::builder()
         .timeout(cfg.timeout)
         .build()
         .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
     let checkpoint_id = fetch_bundle(&http, cfg)?.checkpoint_id;
-    let embedder = build_embedder(cfg)?;
-    let steps = steps_of(internal);
-    let t_last = steps.len().max(1) - 1;
-    let mut chunks = accumulated_chunks(&steps, t_last, Some(10), ChunkMode::Fixed);
-    chunks.extend(
-        assistant_chunks_of(internal)
-            .into_iter()
-            .filter(|c| c.step <= t_last as i64),
-    );
-    chunks.extend(
-        reasoning_chunks_of(internal)
-            .into_iter()
-            .filter(|c| c.step <= t_last as i64),
-    );
-    chunks.sort_by_key(|c| c.step);
-    if chunks.is_empty() {
-        return Ok(None);
-    }
-    let live_owner = vec![0usize; chunks.len()];
-    let q = BirthQuery {
-        cur_step,
-        task_text: first_user_text(internal),
-        recent_cmds: String::new(),
-        live: &chunks,
-        live_owner: &live_owner,
-        live_gi: (0..chunks.len()).collect(),
-        messages: internal,
-        chunk_checksum: String::new(),
-        mask: Vec::new(),
-    };
-    let mut cache = HashMap::new();
-    let mut payload = featurize::build_v1_trace_payload(
-        &q,
-        &*embedder,
-        &mut cache,
-        featurize::changeprone(),
+    Ok(featurize::build_v2_rules_payload(
+        internal,
         &fresh_salt(conv_id),
         conv_id,
         &checkpoint_id,
-        &cfg.target_cov,
-    )?;
-    // The rules request is the TRACE payload shape minus the decision-side
-    // fields: the brain's ScoreRulesV1Request is extra=forbid, so carrying
-    // mask/decided_struct/target_cov 422s live (guarded by
-    // tests/proxy_governor.rs::v1_governor_bodies_match_brain_schema).
-    if let Some(o) = payload.as_object_mut() {
-        o.remove("mask");
-        o.remove("decided_struct");
-        o.remove("target_cov");
-    }
-    Ok(Some(payload))
+        cur_step,
+    ))
 }
 
 /// `/v1/neighbors` response: null median when hoods are off or fewer than 4
@@ -887,35 +736,31 @@ pub async fn fetch_neighbors(
             "conv_id": conv_id,
             "task_text": task_text,
         }),
-        BrainContract::V1 => {
-            // The client embeds the task head locally; raw text stays
-            // unrepresentable on the v1 wire.
+        BrainContract::V2 => {
+            // The server embeds the task head; only the handshake is blocking.
             let cfg2 = cfg.clone();
             let built = tokio::task::spawn_blocking(move || -> Result<Value, ScoreError> {
                 let http = reqwest::blocking::Client::builder()
                     .timeout(cfg2.timeout)
                     .build()
                     .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
-                let checkpoint_id = fetch_bundle(&http, &cfg2)?.checkpoint_id;
-                let embedder = build_embedder(&cfg2)?;
-                let vecs = embedder
-                    .embed(&[task_text.as_str()])
-                    .map_err(|e| ScoreError(format!("task embed: {e}")))?;
-                let task_vec = vecs.into_iter().next().unwrap_or_default();
-                Ok(json!({"checkpoint_id": checkpoint_id, "task_vec": task_vec}))
+                Ok(json!({
+                    "checkpoint_id": fetch_bundle(&http, &cfg2)?.checkpoint_id,
+                    "task_text": task_text,
+                }))
             })
             .await
             .ok()?;
             match built {
                 Ok(mut b) => {
                     if let Some(o) = b.as_object_mut() {
-                        o.insert("contract".into(), json!("brain-api/v1"));
+                        o.insert("contract".into(), json!("brain-api/v2"));
                         o.insert("conv_id".into(), json!(conv_id));
                     }
                     b
                 }
                 Err(e) => {
-                    tracing::warn!("v1 neighbors featurization failed ({e}): neighbors skipped");
+                    tracing::warn!("v2 neighbors assembly failed ({e}): neighbors skipped");
                     return None;
                 }
             }
@@ -1156,12 +1001,14 @@ mod tests {
             Some(("http://x:1".into(), BrainContract::Dev, false))
         );
         // Unset env falls back to the baked release URL, which defaults the
-        // contract to v1 — a released binary is data-plane-clean by default.
+        // contract to v2 (revised 2026-07-20): released binaries ship no
+        // embedder, so v1 is not a topology they can speak.
         assert_eq!(
             resolve_url_contract(None, Some("https://baked.example/"), None),
-            Some(("https://baked.example".into(), BrainContract::V1, true))
+            Some(("https://baked.example".into(), BrainContract::V2, true))
         );
-        // An explicit contract always wins over the baked v1 default.
+        // An explicit contract always wins over the baked v2 default — both
+        // backwards (dev) and to the textless contract (v1).
         assert_eq!(
             resolve_url_contract(None, Some("https://baked.example"), Some("dev")),
             Some(("https://baked.example".into(), BrainContract::Dev, true))
@@ -1186,14 +1033,17 @@ mod tests {
         );
         assert_eq!(BrainContract::from_env_value(Some("")), BrainContract::Dev);
         assert_eq!(
-            BrainContract::from_env_value(Some("V1")),
+            BrainContract::from_env_value(Some("V2")),
             BrainContract::Dev
         );
-        assert_eq!(BrainContract::from_env_value(Some("v1")), BrainContract::V1);
+        assert_eq!(BrainContract::from_env_value(Some("v2")), BrainContract::V2);
         assert_eq!(
-            BrainContract::from_env_value(Some(" v1 ")),
-            BrainContract::V1
+            BrainContract::from_env_value(Some(" v2 ")),
+            BrainContract::V2
         );
+        // dev has no matched-pair guard; v2 handshakes
+        assert!(!BrainContract::Dev.needs_handshake());
+        assert!(BrainContract::V2.needs_handshake());
         assert_eq!(BrainContract::default(), BrainContract::Dev);
     }
 }
