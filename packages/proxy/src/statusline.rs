@@ -99,7 +99,11 @@ fn setup_note() -> Option<String> {
             std::time::Duration::from_millis(100),
         )
         .is_ok();
-        return (!up).then(|| format!("proxy DOWN (127.0.0.1:{port} — restarts next session)"));
+        // A live port means the supervisor is up; a dead worker behind it is
+        // invisible here (the supervisor answers and falls back to Anthropic),
+        // which is correct — the session keeps working. Only a dead SUPERVISOR
+        // shows through, and that is the case `dasein up` fixes.
+        return (!up).then(|| format!("proxy DOWN (127.0.0.1:{port} — run `dasein up`)"));
     }
     let st = crate::setup::load_state()?;
     match st.phase.as_str() {

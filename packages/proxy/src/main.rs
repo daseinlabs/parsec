@@ -23,8 +23,16 @@ enum Command {
         /// Hook event name, e.g. PreToolUse.
         event: String,
     },
-    /// Local data-plane proxy (Pro tier); deploys unchanged as the Team gateway.
+    /// Local data-plane proxy (Pro tier); deploys unchanged as the Team
+    /// gateway. This is the SUPERVISOR: it owns the routed port, spawns +
+    /// restarts the curating worker, and forwards straight to Anthropic
+    /// whenever the worker is down (so a worker crash never wedges a session).
     Proxy,
+    /// The curating worker behind the supervisor (spawned by `dasein proxy`;
+    /// binds an ephemeral loopback port passed via DASEIN_PROXY_PORT). Hidden:
+    /// it is an implementation detail of `proxy`, never launched by hand.
+    #[command(hide = true)]
+    ProxyWorker,
     /// Status line: reads harness JSON on stdin, prints savings summary.
     Statusline,
     /// Human-readable savings report across recent sessions (/dasein-savings).
@@ -48,31 +56,39 @@ enum Command {
     Up,
 }
 
+/// Tracing for the long-running proxy processes (supervisor + worker):
+/// fail-open events are a first-class metric (§8.3) and must be VISIBLE —
+/// stderr, RUST_LOG-filterable (default info; DASEIN_VERBOSE=1 flips the
+/// default to debug for a per-request pipeline trace — counts/hashes/timings
+/// only, never message text or auth headers). Hook/statusline stay
+/// subscriber-free: their stdout is protocol, and a stray log line would
+/// corrupt it.
+fn init_service_tracing() {
+    let default_filter = if std::env::var("DASEIN_VERBOSE").ok().as_deref() == Some("1") {
+        "info,dasein_proxy=debug"
+    } else {
+        "info"
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter)),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Mcp => dasein_mapgen::mcp::serve_stdio(),
         Command::Hook { event } => dasein_proxy::hook::run(&event),
         Command::Proxy => {
-            // Long-running service: fail-open events are a first-class metric
-            // (§8.3) and must be VISIBLE — stderr, RUST_LOG-filterable
-            // (default info; DASEIN_VERBOSE=1 flips the default to debug for
-            // a per-request pipeline trace — counts/hashes/timings only,
-            // never message text or auth headers). Hook/statusline stay
-            // subscriber-free: their stdout is protocol, and a stray log
-            // line would corrupt it.
-            let default_filter = if std::env::var("DASEIN_VERBOSE").ok().as_deref() == Some("1") {
-                "info,dasein_proxy=debug"
-            } else {
-                "info"
-            };
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::try_from_default_env()
-                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter)),
-                )
-                .with_writer(std::io::stderr)
-                .init();
+            init_service_tracing();
+            dasein_proxy::supervisor::run()
+        }
+        Command::ProxyWorker => {
+            init_service_tracing();
             dasein_proxy::server::run()
         }
         Command::Statusline => dasein_proxy::statusline::run(),

@@ -114,6 +114,34 @@ pub fn default_port() -> u16 {
         .unwrap_or(8082)
 }
 
+fn port_bindable(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// The port setup writes into settings.json — resolved at write time, the one
+/// moment we may freely pick (Claude Code has not yet read routing). Prefer
+/// `preferred`; if a FOREIGN process squats it, scan upward for a free port so
+/// routing never lands on someone else's server (bug: "fall back to a random
+/// port when the proxy port is already in use"). A dasein proxy already on
+/// `preferred` is reused as-is — re-running setup must not strand it.
+pub fn choose_free_port(preferred: u16) -> u16 {
+    if port_bindable(preferred) {
+        return preferred;
+    }
+    if proxy_request(preferred, "GET", "/health").is_some_and(|h| h.contains("dasein-proxy")) {
+        return preferred; // our own supervisor — keep the port it owns
+    }
+    for p in (preferred.saturating_add(1))..=(preferred.saturating_add(64)) {
+        if port_bindable(p) {
+            tracing::warn!(
+                "port {preferred} is held by a non-dasein process — routing to {p} instead"
+            );
+            return p;
+        }
+    }
+    preferred // nothing free nearby; the supervisor bind will report it loudly
+}
+
 // ── model source resolution ─────────────────────────────────────────────────
 
 pub fn run(auto: bool) -> anyhow::Result<()> {
@@ -128,7 +156,7 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     // (docs/server-side-embedding.md), so setup is settings routing + a warm
     // proxy. The `downloading` phase and its resumable state machine are gone.
     let mut st = SetupState::new("routing");
-    st.port = default_port();
+    st.port = choose_free_port(default_port());
     save_state(&st)?;
 
     match write_settings_env(st.port) {
@@ -173,9 +201,11 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
 }
 
 /// `dasein up` — bring the proxy back on the routed port. The manual twin of
-/// the SessionStart hook's autostart, for when the proxy dies (or idle-exits)
-/// MID-session: routing env is read at Claude Code launch and cannot change,
-/// so revival means putting a listener back on the same port. Idempotent —
+/// the SessionStart hook's autostart, for the rare case the supervisor itself
+/// died MID-session: routing env is read at Claude Code launch and cannot
+/// change, so revival means putting a supervisor back on the same port.
+/// (A dead *worker* needs no intervention — the supervisor respawns it and
+/// falls back to Anthropic in the gap.) Idempotent —
 /// a live proxy (ours or the user's own) is never double-spawned.
 pub fn up() -> anyhow::Result<()> {
     let port = routed_port();
@@ -307,11 +337,9 @@ fn stop_proxy(port: u16) -> String {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            // Pre-/shutdown binaries ignore the route; they still exit on
-            // their own via DASEIN_PROXY_IDLE_EXIT_S once routing is gone.
             format!(
-                "proxy on 127.0.0.1:{port} did not stop when asked — it will \
-                 exit by itself once idle (routing is already removed)"
+                "proxy on 127.0.0.1:{port} did not stop when asked — kill it by \
+                 hand if it lingers (routing is already removed)"
             )
         }
         Some(_) => {
@@ -571,14 +599,14 @@ pub fn ensure_routing(port: u16) -> anyhow::Result<MergeOutcome> {
 
 // ── detached spawns (shared with the SessionStart hook) ─────────────────────
 
-/// Spawn `dasein proxy` on `port`, detached, logging to ~/.dasein/proxy.log.
-/// Managed proxies idle-exit after 30 min unless the user pinned a value.
+/// Spawn `dasein proxy` (the SUPERVISOR) on `port`, detached, logging to
+/// ~/.dasein/proxy.log. The supervisor owns the port for its whole life and
+/// spawns/restarts the curating worker itself — there is no idle self-exit
+/// any more (removed 2026-07-21: it wedged still-active sessions that went
+/// briefly idle, and a self-killing worker would just be respawned).
 pub fn spawn_proxy_detached(port: u16, extra_env: &[(String, String)]) -> anyhow::Result<()> {
     let mut cmd = std::process::Command::new(std::env::current_exe()?);
     cmd.arg("proxy").env("DASEIN_PROXY_PORT", port.to_string());
-    if std::env::var("DASEIN_PROXY_IDLE_EXIT_S").is_err() {
-        cmd.env("DASEIN_PROXY_IDLE_EXIT_S", "1800");
-    }
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
@@ -779,6 +807,26 @@ mod tests {
         assert!(dir.join("setup_state.json").exists());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn choose_free_port_scans_past_a_foreign_squatter() {
+        // Occupy a port with a non-HTTP listener that accepts one connection
+        // and drops it — so the /health identity probe reads empty (fails
+        // fast) and choose_free_port treats it as foreign and scans onward.
+        let squat = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = squat.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((s, _)) = squat.accept() {
+                drop(s); // FIN → the probe's read returns "" immediately
+            }
+            // hold the port bound until the test's choose_free_port has run
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        });
+        let chosen = choose_free_port(port);
+        // The scan range is preferred+1.., so it can never return the squatted
+        // port — the point is that it did NOT mistake the squatter for ours.
+        assert_ne!(chosen, port);
     }
 
     #[test]

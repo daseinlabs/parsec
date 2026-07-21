@@ -1,0 +1,194 @@
+{
+  "schema": "dasein-demo-tape/v0",
+  "generatedFrom": {
+    "ledger": "/Users/surya/.dasein/ledger.jsonl",
+    "sessions": "/Users/surya/.dasein/sessions",
+    "savingsBinary": "/Users/surya/code/daseinlabs/learner/packages/plugin/bin/dasein"
+  },
+  "prompt": "Same task, same model, same machine — routed through Claude Code with and without the dasein plugin.",
+  "conv": "84b6017e04e8be9944762940",
+  "turns": [
+    {
+      "t": 0,
+      "plainContext": 57454,
+      "pluginContext": 25344,
+      "saved": 32110,
+      "model": "claude-opus-4-8",
+      "freezeCut": 3461,
+      "toolsTotal": 36,
+      "toolsKept": 16,
+      "toolsStubbed": 20,
+      "insists": 0,
+      "brainMs": 3243.8,
+      "failOpen": false
+    },
+    {
+      "t": 3500,
+      "plainContext": 57694,
+      "pluginContext": 25584,
+      "saved": 32110,
+      "model": "claude-opus-4-8",
+      "freezeCut": 3464,
+      "toolsTotal": 36,
+      "toolsKept": 16,
+      "toolsStubbed": 20,
+      "insists": 0,
+      "brainMs": 3338.4,
+      "failOpen": false
+    },
+    {
+      "t": 7000,
+      "plainContext": 58047,
+      "pluginContext": 25959,
+      "saved": 32088,
+      "model": "claude-opus-4-8",
+      "freezeCut": 3454,
+      "toolsTotal": 36,
+      "toolsKept": 16,
+      "toolsStubbed": 20,
+      "insists": 0,
+      "brainMs": 3449.5,
+      "failOpen": false
+    }
+  ],
+  "totals": {
+    "plainContext": 173195,
+    "pluginContext": 76887,
+    "saved": 96308,
+    "pct": 55.6
+  },
+  "hook": {
+    "sessionCount": 33,
+    "reReadsBlocked": 139,
+    "loopsBroken": 3,
+    "tokensSaved": 207100,
+    "deniedSamples": [
+      {
+        "kind": "reread",
+        "label": "webfetch-1784392681802-xc1q2m.pdf · lines(1, 1000000000)",
+        "count": 2
+      },
+      {
+        "kind": "reread",
+        "label": "webfetch-1784392709900-j2jcqa.pdf · lines(1, 1000000000)",
+        "count": 2
+      },
+      {
+        "kind": "reread",
+        "label": "webfetch-1784394400593-tewych.pdf · lines(1, 1000000000)",
+        "count": 2
+      },
+      {
+        "kind": "reread",
+        "label": "toolu_0114vkE4au8AoUczR9KBkAA1.txt · lines(1, 40)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "br7i1xgzm.txt · lines(1, 3)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "plugin-user-messaging.md · lines(1, 1000000000)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "test_platform.py · tail(20)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "measure.rs · lines(1, 1000000000)",
+        "count": 2
+      },
+      {
+        "kind": "reread",
+        "label": "server.rs · lines(1, 10)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "server.rs · lines(1424, 1438)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "statusline.rs · lines(1, 40)",
+        "count": 2
+      },
+      {
+        "kind": "reread",
+        "label": "statusline.rs · lines(1, 99)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "release.yml · lines(1, 1000000000)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "server-side-embedding.md · lines(1, 22)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "server-side-embedding.md · lines(1, 25)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "server-side-embedding.md · lines(14, 20)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "server-side-embedding.md · lines(5, 13)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "app.py · lines(1, 40)",
+        "count": 2
+      },
+      {
+        "kind": "reread",
+        "label": "embedding.py · lines(1, 12)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "DIRECTION.md · lines(1, 20)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "DIRECTION.md · lines(1, 40)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "DIRECTION.md · tail(30)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "setup.rs · lines(1, 60)",
+        "count": 1
+      },
+      {
+        "kind": "reread",
+        "label": "main.rs · lines(1, 80)",
+        "count": 1
+      }
+    ]
+  },
+  "proxyLifetime": {
+    "counterfactual": 3318737,
+    "billed": 2166521,
+    "saved": 1152216,
+    "pct": 34.7
+  }
+}

@@ -312,11 +312,12 @@ fn maybe_autostart_proxy() -> Option<String> {
         return None; // already up (ours or the user's own) — never double-spawn
     }
     let log_path = crate::setup::dasein_home().join("proxy.log");
-    // A MANAGED proxy also turns itself off: 30 min without traffic and it
-    // exits (this hook revives it next session); spawn_proxy_detached sets
-    // that default. Own process group: the proxy outlives this hook AND the
-    // session — it is a local service, idle-cheap (~10MB), reused by the
-    // next one.
+    // Spawns the SUPERVISOR (`dasein proxy`), which owns the port and keeps a
+    // curating worker alive behind it. Own process group: it outlives this
+    // hook AND the session — a local service, idle-cheap (~10MB per process),
+    // reused by the next session. It no longer idle-exits, so this autostart
+    // is now mostly a cold-start / post-reboot safety net rather than the
+    // routine revival path.
     if let Err(e) = crate::setup::spawn_proxy_detached(port, &[]) {
         return Some(format!(
             "⌁ dasein: ANTHROPIC_BASE_URL routes through 127.0.0.1:{port} but the proxy \

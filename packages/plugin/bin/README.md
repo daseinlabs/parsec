@@ -21,3 +21,10 @@ are the only non-Rust client code in the product.
 
 Free-tier v0 may ship with only the `mcp` + `hook` subcommands implemented;
 `proxy` lands with the Pro tier (DIRECTION.md §7b sequencing guard).
+
+The Pro-tier `proxy` subcommand is a **supervisor**: it owns the routed
+loopback port (`ANTHROPIC_BASE_URL`) and spawns/restarts a hidden
+`proxy-worker` that does the curation. If the worker crashes or wedges, the
+supervisor forwards requests straight to Anthropic — so a session never
+stalls on a dead proxy — then respawns the worker. `proxy-worker` is an
+implementation detail of `proxy`, never launched by hand.

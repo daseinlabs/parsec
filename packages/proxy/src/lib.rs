@@ -25,3 +25,4 @@ pub mod server;
 pub mod setup;
 pub mod splice;
 pub mod statusline;
+pub mod supervisor;

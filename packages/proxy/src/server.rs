@@ -302,14 +302,12 @@ pub fn run() -> anyhow::Result<()> {
         );
     }
 
-    // Lifecycle dials: DASEIN_PROXY_IDLE_EXIT_S (0/unset = run forever — the
-    // manual default; the plugin's SessionStart auto-start sets 1800 so the
-    // managed proxy also turns itself OFF), plus the reference's conversation
-    // memo bounds (sessions.py: TTL 3600s, max 512).
-    let idle_exit_s: u64 = std::env::var("DASEIN_PROXY_IDLE_EXIT_S")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    // Memo bounds (reference sessions.py: TTL 3600s, max 512). There is NO
+    // idle self-shutdown any more: the worker is owned by the supervisor,
+    // which decides its lifetime — a worker that killed itself on a timer
+    // would just be respawned, and (removed 2026-07-21) the old 1800s exit
+    // was a live source of mid-session wedges when a still-active session
+    // went briefly idle. The worker runs until the supervisor stops it.
     let ttl_s: u64 = std::env::var("DASEIN_SESSION_TTL_S")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -318,9 +316,13 @@ pub fn run() -> anyhow::Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(512);
-    if idle_exit_s > 0 {
-        tracing::info!("idle self-shutdown armed: exit after {idle_exit_s}s without traffic");
-    }
+
+    // Orphan guard: if the supervisor that spawned us dies (crash, kill -9,
+    // reboot-race), no OS mechanism reparents-then-kills us portably, so we
+    // watch its heartbeat file and exit when it goes stale. Only armed when
+    // spawned under a supervisor (DASEIN_SUPERVISOR_HEARTBEAT set); a
+    // hand-run worker has no parent to outlive.
+    crate::supervisor::arm_orphan_guard();
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
@@ -343,22 +345,10 @@ pub fn run() -> anyhow::Result<()> {
                                     pure caches, replayable"
                     );
                 }
-                if idle_exit_s > 0
-                    && maint.in_flight.load(Ordering::SeqCst) == 0
-                    && epoch_s().saturating_sub(maint.last_request_epoch_s.load(Ordering::Relaxed))
-                        >= idle_exit_s
-                {
-                    tracing::info!(
-                        "no traffic for {idle_exit_s}s and nothing in flight — exiting \
-                         (the plugin SessionStart hook restarts the proxy on demand)"
-                    );
-                    log_shutdown(&maint, "idle");
-                    std::process::exit(0);
-                }
             }
         });
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-        tracing::info!("dasein proxy listening on 127.0.0.1:{port}");
+        tracing::info!("dasein proxy worker listening on 127.0.0.1:{port}");
         let on_exit = state.clone();
         axum::serve(listener, router(state))
             .with_graceful_shutdown(shutdown_signal())
@@ -424,7 +414,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// proxy cannot isolate runs without it). These values are never logged or
 /// stored (§3: user's own auth headers pass through, subscription tokens
 /// never touch our cloud).
-fn forward_auth_headers(inbound: &HeaderMap) -> HeaderMap {
+pub(crate) fn forward_auth_headers(inbound: &HeaderMap) -> HeaderMap {
     let mut out = HeaderMap::new();
     for (name, value) in inbound {
         let n = name.as_str();
