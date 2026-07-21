@@ -123,20 +123,37 @@ The swap point is clean. `TraceScorer.__init__` builds `EmbeddingClient(cfg, bac
 `dasein` branch does it at `:56`), preserving the
 `embed(texts, as_query=False) -> list[list[float]]` contract. No call-site changes.
 
-**Use `onnxruntime-gpu`, not sentence-transformers.** `pyproject.toml` pins
+**DECIDED 2026-07-21 — implemented with `transformers`, not ORT** (reversing the
+recommendation below). `vendored/local_embed.py` loads bge-large via
+`transformers.AutoModel` in-process (`DASEIN_EMBED_BACKEND=local`). The ORT
+concern — that adding transformers pressures the `torch>=2.2,<2.3` pin and
+drifts the curator — did **not** materialize: `transformers>=4.40,<5` resolves
+against the existing torch 2.2.2 with no upgrade, and all golden/parity tests
+pass unchanged. Chosen because the cluster embedder *is* a SentenceTransformer
+of the same model, so transformers-with-the-same-model matches by construction,
+and it avoids reimplementing tokenize+pool+normalize around an ONNX session.
+Cost accepted: `transformers` in the image, and the `parity_gate.py`/ONNX export
+below are not on this path (a one-off cosine check vs the `dasein` endpoint
+still gates prod — see `docs/deploy-cloud-run.md`).
+
+<details><summary>Superseded recommendation (ORT)</summary>
+
+Use `onnxruntime-gpu`, not sentence-transformers. `pyproject.toml` pins
 `torch>=2.2,<2.3` because the vendored GNN reference path was validated against that line.
 Pulling in transformers pressures that pin and risks silent score drift on the curator. ORT
 decouples the embedder from torch entirely, and it reuses the export
 (`scripts/embed/export_bge_onnx.py`) and parity gate (`scripts/embed/parity_gate.py`) already
 built for the client — that work relocates rather than being discarded.
+</details>
 
-### Text-prep contract — must be reimplemented, currently done elsewhere
+### Text-prep contract — IMPLEMENTED in `local_embed.py`
 
 Character truncation happens brain-side already (`[:2000]` chunk/task/sys, `[:240]` heads —
-`scorer.py:236-253`). But **512-token truncation, CLS pooling, and L2 normalization currently
-happen inside the remote pod**, not in the client. The in-process backend must do all three
-itself or vectors silently drift. `as_query` must stay a no-op — **no bge query prefix, ever**
-(`parity_gate.py:17-19`; a prefix would break checkpoint match).
+`scorer.py:236-253`). The remaining three — **512-token truncation, CLS pooling, and L2
+normalization** — used to happen only inside the remote pod; the in-process backend now does
+all three itself (`local_embed.py`: `max_length=512`, `last_hidden_state[:, 0]`,
+`F.normalize`). `as_query` is a no-op — **no bge query prefix, ever** (`parity_gate.py:17-19`;
+a prefix would break checkpoint match).
 
 Rule texts are the deliberate exception: untruncated, because the raw text is the assemble
 cache key (`scorer.py:502`, `app.py:433-435`).

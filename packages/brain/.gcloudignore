@@ -1,0 +1,10 @@
+# `gcloud builds submit packages/brain` uploads THIS dir as the build context.
+# Mirror .dockerignore, but bundle/ must ride along (it holds the fetched ckpt).
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+.ruff_cache/
+*.egg-info/
+.venv/

@@ -25,6 +25,14 @@ test = [
     "httpx",
     "jsonschema",   # brain-api/v1 schema + example validation (test_v1.py)
 ]
+# In-process bge-large-en-v1.5 embedder (DASEIN_EMBED_BACKEND=local): collapses
+# the dasein-embed HTTP hop so the brain is a single proxy->brain->proxy round
+# trip. The Cloud Run deploy target. torch is already a core dep; this adds the
+# encoder + weight loader. Omit for the 'dasein'/'hash' backends.
+embed = [
+    "transformers>=4.40,<5",
+    "safetensors",
+]
 
 [build-system]
 requires = ["hatchling"]

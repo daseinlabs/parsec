@@ -1,7 +1,9 @@
-.venv
-tests
-.pytest_cache
-__pycache__
-**/__pycache__
-Dockerfile
-.dockerignore
+# Keep the build context lean. NOTE: bundle/ is intentionally NOT ignored —
+# Cloud Build drops the checkpoint there to bake it into the image.
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+.ruff_cache/
+*.egg-info/
+.venv/

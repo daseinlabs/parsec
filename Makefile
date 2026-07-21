@@ -34,8 +34,14 @@ rust-test:
 
 check: fmt clippy rust-test
 
+# Build + install the local (gitignored) plugin binary. Pass BRAIN_URL to bake
+# a default brain endpoint into the binary (brain.rs BAKED_BRAIN_URL, same knob
+# release.yml uses) so the plugin reaches it with zero runtime config; omit it
+# for a dev build that reads DASEIN_BRAIN_URL at runtime.
+#   make plugin
+#   make plugin BRAIN_URL=https://dasein-brain-939340394421.us-central1.run.app
 plugin:
-	scripts/refresh_plugin_bin.sh
+	DASEIN_DEFAULT_BRAIN_URL="$(BRAIN_URL)" scripts/refresh_plugin_bin.sh
 
 test:
 	scripts/test_all.sh

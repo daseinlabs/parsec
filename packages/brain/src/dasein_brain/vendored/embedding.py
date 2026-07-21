@@ -1,8 +1,10 @@
 """Embedding client with write-time caching (§6.5: compute once, cache, never re-embed).
 
 Backends:
-  - "dasein": the bge-large-en-v1.5 encoder we already run on GPU in the dasein cluster (1024-d,
-              native batching, no Vertex). The production embedder.
+  - "local":  the bge-large-en-v1.5 encoder loaded IN-PROCESS (local_embed.py) — same model as
+              "dasein", no HTTP hop. The Cloud Run deploy target (one GPU holds embedder + GNN).
+  - "dasein": the same bge-large-en-v1.5 encoder, but called over HTTP at a GPU pod we run in the
+              dasein cluster (1024-d, native batching, no Vertex). The current production path.
   - "vertex": gemini-embedding (CODE_RETRIEVAL), 768-d — legacy / fallback.
   - "hash":   deterministic pseudo-embeddings (no network). Used by unit tests and offline
               dev so the suite never spends or requires ADC.
@@ -43,6 +45,7 @@ class EmbeddingClient:
         self._cache: dict[str, Vector] = {}
         self._vertex = None
         self._dasein = None
+        self._local = None
         self.calls = 0          # network calls actually made (overhead accounting)
 
     def _key(self, text: str, as_query: bool) -> str:
@@ -51,7 +54,13 @@ class EmbeddingClient:
     def embed(self, texts: Sequence[str], as_query: bool = True) -> list[Vector]:
         missing = [t for t in texts if self._key(t, as_query) not in self._cache]
         if missing:
-            if self.backend == "dasein":
+            if self.backend == "local":
+                if self._local is None:
+                    from .local_embed import LocalEmbedClient
+                    self._local = LocalEmbedClient(self.cfg)
+                vecs = self._local.embed(list(missing), as_query=as_query)
+                self.calls += 1
+            elif self.backend == "dasein":
                 if self._dasein is None:
                     from .dasein_embed import DaseinEmbedClient
                     self._dasein = DaseinEmbedClient(self.cfg)
