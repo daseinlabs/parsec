@@ -89,6 +89,29 @@ Two things to keep true:
   claim, and fall back to fp32 or `torch.use_deterministic_algorithms(True)` if
   the edge bites.
 
+## GPU deploy gotchas (learned the hard way)
+
+The first L4 deploy hit two non-obvious walls — both fixed in `cloudbuild.yaml`,
+noted here so they're not a surprise next time:
+
+1. **Zonal redundancy is a separate quota.** A plain `--gpu 1 --gpu-type
+   nvidia-l4` deploy fails with *"You do not have quota for using GPUs with
+   zonal redundancy"* even when you have plenty of ordinary L4 quota. Add
+   `--no-gpu-zonal-redundancy` (the default, quota-free tier). Zonal redundancy
+   is a higher tier you request separately (g.co/cloudrun/gpu-quota).
+
+2. **Service-level `run.googleapis.com/maxScale` ≠ per-revision maxScale.**
+   `--max-instances N` (and `gcloud run services update`) set only the
+   *revision template* `autoscaling.knative.dev/maxScale`. There is a second,
+   *service-level* `run.googleapis.com/maxScale` annotation that defaults to
+   **100**, and the GPU quota check reads *that* one — so the deploy requests
+   100 GPUs and fails against a quota of 3, no matter what `--max-instances`
+   says. gcloud does not expose it as a flag. The reliable fix is a YAML
+   `gcloud run services replace` that sets **both** maxScale annotations to your
+   quota (≤ your L4 count). That is how `dasein-brain-00004` (L4, maxScale 3)
+   was deployed; the exported+edited spec pattern is the fallback whenever a GPU
+   deploy reports `requested: 100`.
+
 ## Throttling / API keys — do it at the edge
 
 Rate-limit and per-key quota state is per-user and mutable; putting it in a

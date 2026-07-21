@@ -130,7 +130,9 @@ steps:
         if [ "$_GPU" = "true" ]; then
           # In-process bge on an L4: attach the GPU, disable CPU throttling so the
           # model stays resident. L4 requires >=4 CPU / 16 GiB, pinned here.
-          FLAGS+=(--gpu 1 --gpu-type nvidia-l4 --no-cpu-throttling --cpu 4 --memory 16Gi)
+          # --no-gpu-zonal-redundancy uses the default (quota-free) GPU tier;
+          # zonal redundancy is a separate higher quota (g.co/cloudrun/gpu-quota).
+          FLAGS+=(--gpu 1 --gpu-type nvidia-l4 --no-gpu-zonal-redundancy --no-cpu-throttling --cpu 4 --memory 16Gi)
         else
           FLAGS+=(--cpu "$_CPU" --memory "$_MEMORY")
         fi
