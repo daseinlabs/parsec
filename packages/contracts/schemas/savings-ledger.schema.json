@@ -119,6 +119,11 @@
    "minimum": 0,
    "description": "Pruned tools re-added to the keep-set THIS request because the prefix called them (reactive unfreeze) — present only on the request that unfroze them."
   },
+  "tools_stubbed": {
+   "type": "integer",
+   "minimum": 0,
+   "description": "Pruned tools served as name+note stubs instead of hard-dropped (DASEIN_TOOL_STUB on) — present only when the stub path ran."
+  },
   "curator_insists": {
    "type": "integer",
    "minimum": 0,

@@ -52,9 +52,14 @@ jobs:
       # the DASEIN_DEFAULT_MODEL_* repo variables, and first-run model
       # download are all gone. Install → first session → curation on, with
       # no 1.3GB download in the middle.
+      # DASEIN_DEFAULT_PLATFORM_URL is baked the same way (ledger_ship.rs
+      # BAKED_PLATFORM_URL): released binaries know where to POST savings-ledger
+      # rows. Shipping still requires a per-user DASEIN_API_KEY at runtime (the
+      # dsn_ key the user mints in the dashboard), so no rows leave without it.
       - run: cargo build --release -p dasein-proxy
         env:
           DASEIN_DEFAULT_BRAIN_URL: https://dasein-brain-939340394421.us-central1.run.app
+          DASEIN_DEFAULT_PLATFORM_URL: ${{ vars.DASEIN_DEFAULT_PLATFORM_URL }}
       # Launch smoke: a binary that builds but can't start must fail HERE,
       # not on a user's machine after install.
       - run: ./target/release/dasein${{ matrix.ext }} --version

@@ -158,20 +158,6 @@ export default function DemoPage() {
 
   return (
     <main className="mx-auto min-h-full w-full max-w-6xl px-6 py-10">
-      <header className="mb-8">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">The dasein cost race</h1>
-          <span className="rounded-full border border-teal-500/40 bg-teal-500/10 px-2 py-0.5 text-xs font-medium text-teal-500">
-            measured · not estimated
-          </span>
-        </div>
-        <p className="mt-2 max-w-2xl text-sm text-neutral-500">
-          Same task, same model ({tape.turns[0]?.model ?? "—"}), same machine — routed through
-          Claude Code with and without the dasein plugin. Each meter fills with the tokens actually
-          sent to the model. The gap is what dasein saved, replayed from the real ledger.
-        </p>
-      </header>
-
       {/* Prompt bar — type a task, press Enter, it runs on both sides at once */}
       <form
         onSubmit={(e) => {

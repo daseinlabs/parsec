@@ -7,6 +7,24 @@
 
 use clap::{Parser, Subcommand};
 
+/// `dasein key …` actions — manage the per-account API key used for savings
+/// reporting to the dashboard.
+#[derive(Subcommand)]
+enum KeyAction {
+    /// Store the dsn_ API key minted in the dashboard (takes effect next request).
+    Set {
+        /// The `dsn_…` key from the dashboard.
+        key: String,
+        /// Platform base URL (dev builds only; release builds bake it).
+        #[arg(long)]
+        platform_url: Option<String>,
+    },
+    /// Show the configured key (masked) and where it resolves from.
+    Show,
+    /// Remove the stored key (stops dashboard reporting).
+    Clear,
+}
+
 #[derive(Parser)]
 #[command(name = "dasein", version, about = "Dasein Learner client")]
 struct Cli {
@@ -54,6 +72,12 @@ enum Command {
     /// Bring the proxy back on the routed port if it died mid-session
     /// (detached; no-op when it is already listening).
     Up,
+    /// Set/show/clear the per-account API key the proxy reports savings with
+    /// (from the dashboard). Stored in ~/.dasein/credentials.json.
+    Key {
+        #[command(subcommand)]
+        action: KeyAction,
+    },
 }
 
 /// Tracing for the long-running proxy processes (supervisor + worker):
@@ -97,5 +121,10 @@ fn main() -> anyhow::Result<()> {
         Command::Disable => dasein_proxy::setup::disable(),
         Command::Uninstall => dasein_proxy::setup::uninstall(),
         Command::Up => dasein_proxy::setup::up(),
+        Command::Key { action } => match action {
+            KeyAction::Set { key, platform_url } => dasein_proxy::setup::key_set(key, platform_url),
+            KeyAction::Show => dasein_proxy::setup::key_show(),
+            KeyAction::Clear => dasein_proxy::setup::key_clear(),
+        },
     }
 }

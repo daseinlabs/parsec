@@ -14,10 +14,12 @@
 
 pub mod adjudicator;
 pub mod brain;
+pub mod credentials;
 pub mod featurize;
 pub mod governor;
 pub mod hook;
 pub mod internal;
+pub mod ledger_ship;
 pub mod measure;
 pub mod noreread;
 pub mod providers;

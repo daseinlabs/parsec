@@ -14,7 +14,7 @@ import json
 import os
 import secrets
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
 from dasein_platform.auth import hash_key, require_account, require_key_account
 from dasein_platform.models import LedgerRow
@@ -119,9 +119,29 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     @app.get("/ledger/summary")
     def ledger_summary(account_id: str = Depends(require_account)) -> dict:
-        """Per-account savings reporting (§7c): the billing basis, the upsell
-        proof, the trust artifact — all from count_tokens counterfactual rows
-        (§8.4), never a modeled baseline."""
-        return app.state.store.ledger_summary(account_id)
+        """Per-account usage + savings reporting (§7c): the billing basis, the
+        upsell proof, the trust artifact — all from count_tokens counterfactual
+        rows (§8.4), never a modeled baseline. Carries a per-model/cost
+        breakdown (`by_model`) plus the account-wide total `cost_usd` summed from
+        the priced models (unpriced-model tokens simply add no cost)."""
+        summary = app.state.store.ledger_summary(account_id)
+        priced = [m["cost_usd"] for m in summary.get("by_model", []) if m["cost_usd"] is not None]
+        summary["cost_usd"] = round(sum(priced), 6)
+        summary["currency"] = "USD"
+        return summary
+
+    @app.get("/ledger/usage")
+    def ledger_usage(
+        account_id: str = Depends(require_account),
+        days: int = Query(default=30, ge=1, le=365),
+    ) -> dict:
+        """Per-day usage series for the account over the last `days` days — the
+        dashboard's usage-over-time view (tokens, tokens_saved, cost per day).
+        Same measurement honesty as the summary; empty days are omitted."""
+        return {
+            "days": app.state.store.usage_daily(account_id, days),
+            "window_days": days,
+            "currency": "USD",
+        }
 
     return app

@@ -48,6 +48,14 @@
 //!   pathological unicode directly adjacent to command keywords diverges.
 //! - Line numbers beyond i64 (Python ints are unbounded) saturate at
 //!   i64::MAX in chunk coordinates.
+//! - `digest`'s tail line is served whenever a body has >= 3 non-blank lines,
+//!   not > 3. The reference (curator._digest) gates the tail on `> 3`, which
+//!   at exactly three body lines omits the LAST line while labelling it
+//!   "0 lines omitted" — silent data loss on the served bytes. We serve the
+//!   line (head(2) + "0 omitted" + tail(1) == all three, nothing lost). This
+//!   diverges from the reference ONLY at len==3; `adaptive-context-clean`'s
+//!   curator._digest needs the same one-char fix before a fixture regen can
+//!   include that case. Correctness over byte-parity on a data-loss path.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -656,6 +664,13 @@ impl<S: ChunkScorer> Freezer<S> {
     }
 
     /// curator._digest: informative truncation; returncode line survives.
+    ///
+    /// Renders head(<=2 lines) + an omission marker + tail(1 line). The tail
+    /// is served whenever the body has >= 3 non-blank lines: at exactly three,
+    /// head(2)+tail(1) is the whole body and `omitted` is 0, so no line is
+    /// lost. Gating the tail on `> 3` (as the reference does) drops the third
+    /// line while still printing "0 lines omitted" — see the module-level
+    /// deviation note.
     fn digest(m: &Value, ntok: i64, file: Option<&str>, lo: Option<i64>, hi: Option<i64>) -> Value {
         let txt = m_text(m);
         let lines = py_splitlines(&txt);
@@ -683,7 +698,7 @@ impl<S: ChunkScorer> Freezer<S> {
             ntok,
             Self::ptr(file, lo, hi)
         ));
-        if body.len() > 3 {
+        if body.len() >= 3 {
             parts.push(char_prefix(body[body.len() - 1], 300).to_string());
         }
         let mut out = m.as_object().cloned().unwrap_or_default();
@@ -921,4 +936,86 @@ fn validate_internal(messages: &[Value]) -> Result<(), FreezeError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Render `n` non-blank body lines (L0..L{n-1}) through `digest` with no
+    /// re-read pointer and return the served content text.
+    fn digest_text(n: usize) -> String {
+        let body = (0..n)
+            .map(|i| format!("L{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let m = json!({ "role": "user", "content": body });
+        Freezer::<PassthroughScorer>::digest(&m, 10, None, None, None)
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string()
+    }
+
+    /// Regression for the served-bytes truncation: an observation digested down
+    /// to exactly three body lines MUST keep its last line. The reference's
+    /// `> 3` tail guard dropped `L2` here while still printing "0 lines
+    /// omitted" — the model saw the observation with its end silently cut off.
+    #[test]
+    fn digest_keeps_tail_line_at_three_lines() {
+        assert_eq!(
+            digest_text(3),
+            "L0\nL1\n[... 0 lines (~10 tokens) omitted ...]\nL2"
+        );
+    }
+
+    /// No-loss guard: while `head(2)+tail(1)` still covers the whole body
+    /// (1..=3 lines) every input line must survive — there is nothing to omit.
+    /// (For 4+ lines digest DELIBERATELY omits the middle; that is its job.)
+    #[test]
+    fn digest_lossless_while_head_plus_tail_cover_the_body() {
+        for n in 1..=3 {
+            let out = digest_text(n);
+            for i in 0..n {
+                assert!(
+                    out.contains(&format!("L{i}")),
+                    "digest of {n} lines dropped L{i}: {out:?}"
+                );
+            }
+        }
+    }
+
+    /// Shapes the fix must leave byte-identical to the reference: len 1/2 keep
+    /// their (spurious but content-lossless) "0 omitted" marker — pinned by the
+    /// freeze parity fixtures — and len >= 4 omits exactly the middle lines
+    /// while serving head(2) + tail(1).
+    #[test]
+    fn digest_boundaries_off_the_bug_are_unchanged() {
+        assert_eq!(digest_text(1), "L0\n[... 0 lines (~10 tokens) omitted ...]");
+        assert_eq!(
+            digest_text(2),
+            "L0\nL1\n[... 0 lines (~10 tokens) omitted ...]"
+        );
+        assert_eq!(
+            digest_text(4),
+            "L0\nL1\n[... 1 lines (~10 tokens) omitted ...]\nL3"
+        );
+        assert_eq!(
+            digest_text(5),
+            "L0\nL1\n[... 2 lines (~10 tokens) omitted ...]\nL4"
+        );
+    }
+
+    /// The re-read pointer and the returncode line both still ride along with
+    /// the (now-preserved) tail line at the three-line boundary.
+    #[test]
+    fn digest_three_lines_with_returncode_and_pointer() {
+        let m = json!({ "role": "user", "content": "returncode: 0\nL0\nL1\nL2" });
+        let out = Freezer::<PassthroughScorer>::digest(&m, 10, Some("f.py"), Some(5), Some(9));
+        assert_eq!(
+            out.get("content").and_then(Value::as_str).unwrap(),
+            "returncode: 0\nL0\nL1\n[... 0 lines (~10 tokens) · re-read f.py:L5-9 omitted ...]\nL2"
+        );
+    }
 }

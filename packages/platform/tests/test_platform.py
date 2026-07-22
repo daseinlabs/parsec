@@ -245,6 +245,70 @@ def test_ledger_ingest_to_summary(client: TestClient) -> None:
     assert other["rows_count"] == 0
 
 
+def test_ledger_per_model_cost(client: TestClient) -> None:
+    """The seams-bearing row (carries `model`) is stored in `extra` and shows up
+    as a per-model, per-cost breakdown — the dashboard's model/cost granularity.
+    Cost derives from token sums × the seeded model_pricing (no per-row dollars)."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    row = json.loads(CONTRACTS_GOVERNOR_EXAMPLE.read_text())  # model=claude-sonnet-5
+    assert (
+        client.post("/ledger", json=row, headers={"X-Dasein-Key": key}).status_code
+        == 201
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    by_model = {m["model"]: m for m in summary["by_model"]}
+    assert "claude-sonnet-5" in by_model, summary["by_model"]
+    m = by_model["claude-sonnet-5"]
+
+    # tokens_saved is §8.4-honest per model (counterfactual − billed_input).
+    assert m["tokens_saved"] == (
+        row["counterfactual_input_tokens"] - row["billed_input_tokens"]
+    )
+    # cost = Σ(tokens × per-MTok price) / 1e6 at seeded Sonnet-5 rates
+    # (3 / 15 / 0.3 / 3.75) — computed at report time, not stored.
+    expected = round(
+        (2110 * 3.0 + 640 * 15.0 + 27400 * 0.3 + 1980 * 3.75) / 1_000_000, 6
+    )
+    assert float(m["cost_usd"]) == expected
+    assert m["currency"] == "USD"
+    # Account-wide total cost (one model here) sums the priced breakdown.
+    assert float(summary["cost_usd"]) == expected
+    assert summary["currency"] == "USD"
+
+
+def test_ledger_usage_series(client: TestClient) -> None:
+    """The per-day usage series buckets rows by date with tokens + cost, and
+    honors the `days` window bound."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    row = json.loads(CONTRACTS_GOVERNOR_EXAMPLE.read_text())  # ts 2026-07-10
+    assert (
+        client.post("/ledger", json=row, headers={"X-Dasein-Key": key}).status_code
+        == 201
+    )
+
+    usage = client.get(
+        "/ledger/usage", params={"days": 365}, headers=auth(mint_jwt())
+    ).json()
+    assert usage["window_days"] == 365
+    assert len(usage["days"]) == 1
+    bucket = usage["days"][0]
+    assert bucket["date"] == "2026-07-10"
+    assert bucket["rows_count"] == 1
+    assert bucket["tokens_saved"] == (
+        row["counterfactual_input_tokens"] - row["billed_input_tokens"]
+    )
+    assert bucket["cost_usd"] > 0
+
+    # Out-of-range `days` is rejected (Query bounds).
+    assert (
+        client.get(
+            "/ledger/usage", params={"days": 0}, headers=auth(mint_jwt())
+        ).status_code
+        == 422
+    )
+
+
 def test_jwks_verification(monkeypatch: pytest.MonkeyPatch) -> None:
     """The asymmetric path (SUPABASE_JWKS_URL): ES256 tokens verify against
     the JWKS signing key; HS256 tokens (legacy/forged alg) are rejected. The

@@ -597,6 +597,83 @@ pub fn ensure_routing(port: u16) -> anyhow::Result<MergeOutcome> {
     write_settings_env(port)
 }
 
+// ── per-account API key (`dasein key …`) ────────────────────────────────────
+
+/// `dasein key set <dsn_…> [--platform-url URL]` — store the account's API key
+/// (and optional platform URL) in ~/.dasein/credentials.json. The proxy reads
+/// it live per shipped row, so this takes effect on the NEXT request — no
+/// restart. `DASEIN_API_KEY` in the env still overrides the file if set.
+pub fn key_set(key: String, platform_url: Option<String>) -> anyhow::Result<()> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        anyhow::bail!("empty key — pass the dsn_ key minted in the dashboard");
+    }
+    if !key.starts_with("dsn_") {
+        println!("warning: key does not start with 'dsn_' — storing it anyway");
+    }
+    let mut creds = crate::credentials::load();
+    creds.api_key = Some(key.clone());
+    if let Some(url) = platform_url {
+        let url = url.trim().trim_end_matches('/').to_string();
+        creds.platform_url = (!url.is_empty()).then_some(url);
+    }
+    crate::credentials::store(&creds)?;
+    println!(
+        "saved API key {} to {} — savings now report to your dashboard on the next \
+         request (no restart needed).",
+        crate::credentials::mask(&key),
+        crate::credentials::path().display()
+    );
+    if std::env::var("DASEIN_API_KEY").is_ok_and(|v| !v.is_empty()) {
+        println!(
+            "note: DASEIN_API_KEY is set in the environment and OVERRIDES this file — \
+             unset it to use the stored key."
+        );
+    }
+    Ok(())
+}
+
+/// `dasein key show` — the configured key (masked) and where it resolves from.
+pub fn key_show() -> anyhow::Result<()> {
+    let env_key = std::env::var("DASEIN_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty());
+    let creds = crate::credentials::load();
+    match (&env_key, &creds.api_key) {
+        (Some(k), _) => println!(
+            "API key: {} (from DASEIN_API_KEY env)",
+            crate::credentials::mask(k)
+        ),
+        (None, Some(k)) => println!(
+            "API key: {} (from {})",
+            crate::credentials::mask(k),
+            crate::credentials::path().display()
+        ),
+        (None, None) => println!("API key: not set — run `dasein key set <dsn_…>`"),
+    }
+    match crate::ledger_ship::resolve() {
+        Some(_) => println!("shipping: active (key + platform URL both resolved)"),
+        None => println!(
+            "shipping: inactive — need both an API key and a platform URL (baked in \
+             release builds; set DASEIN_PLATFORM_URL or `--platform-url` on a dev build)"
+        ),
+    }
+    Ok(())
+}
+
+/// `dasein key clear` — remove the stored key (stops dashboard reporting).
+pub fn key_clear() -> anyhow::Result<()> {
+    crate::credentials::clear()?;
+    println!(
+        "cleared stored API key ({})",
+        crate::credentials::path().display()
+    );
+    if std::env::var("DASEIN_API_KEY").is_ok_and(|v| !v.is_empty()) {
+        println!("note: DASEIN_API_KEY is still set in the environment — unset it to fully stop reporting.");
+    }
+    Ok(())
+}
+
 // ── detached spawns (shared with the SessionStart hook) ─────────────────────
 
 /// Spawn `dasein proxy` (the SUPERVISOR) on `port`, detached, logging to

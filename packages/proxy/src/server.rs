@@ -283,6 +283,12 @@ pub fn run() -> anyhow::Result<()> {
             ),
         }
     }
+    if crate::ledger_ship::resolve().is_some() {
+        tracing::info!(
+            "per-account savings shipping active (API key configured) — rows post to \
+             the platform ledger in addition to the local ~/.dasein ledger"
+        );
+    }
     let state = Arc::new(AppState::with_brain(upstream, ledger, brain));
     if state.governor.mode != GovMode::Off {
         tracing::info!(
@@ -1585,6 +1591,13 @@ fn write_ledger(
         }
         Err(e) => tracing::warn!("ledger append failed: {e}"),
     }
+
+    // Also ship the row to the platform for per-account attribution (the
+    // dashboard's savings view). Fire-and-forget and fail-open: the row is
+    // already on disk, and shipping never blocks or fails the request. `ship`
+    // resolves the API key live (env → ~/.dasein/credentials.json) and no-ops
+    // when shipping is unconfigured.
+    crate::ledger_ship::ship(&st.client, &row);
 }
 
 // ── SSE usage extraction (anthropic_sse.usage_from_sse) ─────────────────────
