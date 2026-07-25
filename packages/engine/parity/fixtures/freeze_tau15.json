@@ -510,9 +510,9 @@
    ],
    "registries": {
     "dropped": [
-     "11:read:    return y - 1\ndef handler_2(x):\n    # handles case 2\n    ",
-     "12:asst:Observation 40: handler_4 looks wrong 🐍.\nObservation 41: han",
-     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    "
+     "11:read:    return y - 1\ndef handler_2(x):\n    # handles case 2\n    :a4fba13582b4e416",
+     "12:asst:Observation 40: handler_4 looks wrong 🐍.\nObservation 41: han:d1e784da9aafc696",
+     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    :d4eb42d7e0f799a3"
     ],
     "dropped_fp": [
      "Observation 40: handler_4 looks wrong 🐍. Observation 41: handler_5 looks fine. Observation 42: handler_6 looks wrong 🐍. ",
@@ -769,7 +769,7 @@
    ],
    "registries": {
     "dropped": [
-     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    "
+     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    :d4eb42d7e0f799a3"
     ],
     "dropped_fp": [
      "return y - 6 def handler_7(x): # handles case 7 y = x * 7 + 1 return y - 7 def handler_8(x): # handles case 8 y = x * 8 "

@@ -180,6 +180,23 @@ def test_validate_unknown_key(client: TestClient) -> None:
     assert resp.json() == {"valid": False, "entitled": False}
 
 
+def test_auto_entitle_on_mint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DASEIN_AUTO_ENTITLE=1 (pre-billing) entitles an account the moment it
+    mints a key — no Stripe event needed."""
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", JWT_SECRET)
+    monkeypatch.setenv("DASEIN_AUTO_ENTITLE", "1")
+    client = TestClient(create_app(store=SQLiteStore(":memory:")))
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    assert client.get(f"/keys/validate/{key}").json() == {"valid": True, "entitled": True}
+
+
+def test_no_auto_entitle_by_default(client: TestClient) -> None:
+    """Default (flag unset): minting a key does NOT entitle — Stripe still owns
+    the flag, so the existing billing flow is unchanged."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    assert client.get(f"/keys/validate/{key}").json()["entitled"] is False
+
+
 def test_pydantic_model_accepts_contracts_example() -> None:
     """The JSON Schema file is authoritative; the pydantic mirror must accept
     its committed example (drift guard)."""

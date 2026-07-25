@@ -40,8 +40,13 @@ substitutions:
   _MAX_INSTANCES: '10'
   _TIMEOUT: '120'
   # Optional Secret Manager secret holding the bearer key (name:version), e.g.
-  # dasein-brain-key:latest. Empty = no auth gate (fine behind an authed edge).
+  # dasein-brain-key:latest. Empty = no static-key gate (fine behind an authed edge).
   _BRAIN_KEY_SECRET: ''
+  # Per-user entitlement gate: the platform base URL the brain validates dsn_
+  # keys against (/keys/validate). Set = the brain requires valid+entitled keys;
+  # empty = fall back to the static _BRAIN_KEY_SECRET gate (or open). The client
+  # sends the user's dsn_ key as the bearer, so this needs no secret.
+  _PLATFORM_URL: ''
 
 steps:
   # 1. Fetch the checkpoint into the build context so the Dockerfile bakes it.
@@ -137,6 +142,7 @@ steps:
           FLAGS+=(--cpu "$_CPU" --memory "$_MEMORY")
         fi
         [ -n "$_EMBED_URL" ]         && FLAGS+=(--set-env-vars "DASEIN_EMBED_URL=$_EMBED_URL")
+        [ -n "$_PLATFORM_URL" ]      && FLAGS+=(--set-env-vars "DASEIN_PLATFORM_URL=$_PLATFORM_URL")
         [ -n "$_BRAIN_KEY_SECRET" ]  && FLAGS+=(--set-secrets "DASEIN_BRAIN_KEY=$_BRAIN_KEY_SECRET")
         gcloud run deploy "$_SERVICE" "$${FLAGS[@]}"
 

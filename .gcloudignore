@@ -1,0 +1,14 @@
+# Keep Cloud Build upload context lean. Creating this file stops gcloud from
+# deriving ignores from .gitignore, so heavy/derived dirs are listed explicitly.
+# The platform build uses the REPO ROOT as context (only packages/platform is
+# COPYed by its Dockerfile), so excluding everything below is safe.
+.git
+**/node_modules
+**/target
+**/.venv
+**/.next
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache

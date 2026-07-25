@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function MintKey() {
+export function MintKey({ label = "Mint API key" }: { label?: string } = {}) {
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,7 @@ export function MintKey() {
           disabled={busy}
           className="w-fit rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
         >
-          {busy ? "Minting…" : "Mint API key"}
+          {busy ? "Minting…" : label}
         </button>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}

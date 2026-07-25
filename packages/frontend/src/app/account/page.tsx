@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
-import { MintKey } from "./mint-key";
+import { MintKey } from "@/components/mint-key";
 
 export const dynamic = "force-dynamic";
 

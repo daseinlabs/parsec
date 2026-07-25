@@ -1,0 +1,94 @@
+# Build + deploy the frontend (dashboard) to Cloud Run. Run from the repo root
+# via scripts/deploy_frontend.sh, or directly:
+#
+#   gcloud builds submit packages/frontend \
+#     --config packages/frontend/cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_REPO=dasein,_SERVICE=dasein-frontend,\
+# _PLATFORM_URL=https://dasein-platform-xxxxx.run.app,\
+# _SUPABASE_URL=https://<proj>.supabase.co,_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
+#
+# Server-rendered Next 16 (SSR + route handlers + the platform.ts BFF), so this
+# is a live node server, not a static export. The NEXT_PUBLIC_* values are baked
+# at build time (--build-arg); PLATFORM_URL is set at deploy time (runtime env).
+#
+# The frontend reaches the platform over the public internet (the platform is a
+# public, JWT/dsn_-authed service), so NO VPC connector is needed here.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: dasein
+  _SERVICE: dasein-frontend
+  # Runtime: where the server-side BFF calls the platform. The platform's public
+  # run.app URL (or a custom domain in front of it).
+  _PLATFORM_URL: ''
+  # Build-time (inlined into the client bundle). All non-secret.
+  _SUPABASE_URL: ''
+  _SUPABASE_PUBLISHABLE_KEY: ''
+  _STRIPE_CHECKOUT_URL: ''
+  _STRIPE_PORTAL_URL: ''
+  # SSR is I/O-bound; give it concurrency. min-instances 1 avoids a cold start
+  # on the dashboard's first paint.
+  _CONCURRENCY: '80'
+  _CPU: '1'
+  _MEMORY: 512Mi
+  _MIN_INSTANCES: '1'
+  _MAX_INSTANCES: '10'
+  _TIMEOUT: '60'
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - NEXT_PUBLIC_SUPABASE_URL=$_SUPABASE_URL
+      - --build-arg
+      - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$_SUPABASE_PUBLISHABLE_KEY
+      - --build-arg
+      - NEXT_PUBLIC_STRIPE_CHECKOUT_URL=$_STRIPE_CHECKOUT_URL
+      - --build-arg
+      - NEXT_PUBLIC_STRIPE_PORTAL_URL=$_STRIPE_PORTAL_URL
+      - -t
+      - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:$BUILD_ID
+      - -t
+      - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [ -z "$_PLATFORM_URL" ]; then
+          echo "_PLATFORM_URL is empty — the dashboard's BFF would fall back to" >&2
+          echo "http://127.0.0.1:8080 and every platform call would fail." >&2
+          exit 1
+        fi
+        gcloud run deploy "$_SERVICE" \
+          --image "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:$BUILD_ID" \
+          --region "$_REGION" \
+          --platform managed \
+          --port 8080 \
+          --concurrency "$_CONCURRENCY" \
+          --cpu "$_CPU" \
+          --memory "$_MEMORY" \
+          --min-instances "$_MIN_INSTANCES" \
+          --max-instances "$_MAX_INSTANCES" \
+          --timeout "$_TIMEOUT" \
+          --set-env-vars "PLATFORM_URL=$_PLATFORM_URL" \
+          --allow-unauthenticated
+        URL="$$(gcloud run services describe "$_SERVICE" --region "$_REGION" --format='value(status.url)')"
+        echo "── frontend deployed: $${URL}"
+
+images:
+  - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:$BUILD_ID
+  - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

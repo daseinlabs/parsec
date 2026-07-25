@@ -8,9 +8,14 @@ export default function LoginPage() {
 
   async function signIn() {
     const supabase = supabaseBrowser();
+    // ?next= is read at click time rather than via useSearchParams so this page
+    // needs no Suspense boundary. The callback re-validates it.
+    const next = new URLSearchParams(window.location.search).get("next");
+    const callback = new URL("/auth/callback", window.location.origin);
+    if (next) callback.searchParams.set("next", next);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "github",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: callback.toString() },
     });
     if (error) setError(error.message);
   }

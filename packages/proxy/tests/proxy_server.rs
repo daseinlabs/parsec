@@ -141,6 +141,10 @@ struct Ctx {
 }
 
 async fn setup() -> Ctx {
+    setup_entitled(true).await
+}
+
+async fn setup_entitled(entitled: bool) -> Ctx {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let mock = MockState::default();
     let mock_router = Router::new()
@@ -157,7 +161,9 @@ async fn setup() -> Ctx {
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = std::fs::remove_file(&ledger);
-    let state = Arc::new(AppState::new(format!("http://{mock_addr}"), ledger.clone()));
+    let mut st = AppState::new(format!("http://{mock_addr}"), ledger.clone());
+    st.entitled = entitled;
+    let state = Arc::new(st);
     let pl = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy_addr = pl.local_addr().unwrap();
     let app = router(state.clone());
@@ -216,6 +222,39 @@ fn ledger_rows(ctx: &Ctx) -> Vec<Value> {
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────
+
+/// Unentitled (no API key ⇒ `AppState::entitled = false`): the serve path is a
+/// PURE PASSTHROUGH. The body is forwarded byte-verbatim (no cache_control
+/// anchors, no fold/curation), auth still flows, and NO count_tokens probe is
+/// made — dasein saves nothing until a key is set. Contrast with
+/// `auth_headers_forwarded_and_anchors_added`, which asserts the entitled path
+/// DOES add anchors and probe.
+#[tokio::test]
+async fn unentitled_serve_is_pure_passthrough() {
+    let ctx = setup_entitled(false).await;
+    // A 2-turn conversation that WOULD get anchors + a probe when entitled.
+    let sent = body(vec![user("hello"), assistant("hi"), user("again")]);
+    let resp = post_messages(&ctx, &sent, &[("x-api-key", "sk-test")]).await;
+    assert_eq!(resp.status(), 200);
+
+    let msgs = ctx.mock.messages();
+    assert_eq!(msgs.len(), 1, "exactly one upstream forward");
+    assert_eq!(
+        msgs[0].body(),
+        sent,
+        "unentitled forward must be byte-verbatim — no anchors, no curation"
+    );
+    assert_eq!(
+        msgs[0].header("x-api-key"),
+        Some("sk-test"),
+        "auth header still passes through (Claude Code runs normally)"
+    );
+    assert_eq!(
+        ctx.mock.count_tokens().len(),
+        0,
+        "no counterfactual probe when unentitled"
+    );
+}
 
 /// (1) auth headers reach the mock verbatim; our server adds cache_control
 /// anchors to the forwarded body (system + tail on a first call).

@@ -510,23 +510,23 @@
    ],
    "registries": {
     "dropped": [
-     "10:asst:Let me re-read the whole file once more.",
-     "11:read:    return y - 1\ndef handler_2(x):\n    # handles case 2\n    ",
-     "12:asst:Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handl",
-     "12:asst:Observation 40: handler_4 looks wrong 🐍.\nObservation 41: han",
-     "3:read:    # handles case 4\n    y = x * 4 + 1\n    return y - 4\ndef ",
-     "3:read:    # handles case 9\n    y = x * 9 + 1\n    return y - 9\ndef ",
-     "3:read:    return y - 11\nclass App:\n    def run(self):\n        retu",
-     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    ",
-     "3:read:import mod0\nimport mod1\nimport mod2\ndef handler_0(x):\n    # ",
-     "5:grep:src/:5:directory-prefix match with empty basename",
-     "5:grep:src/app.py:14:    y = x * 2 + 1",
-     "5:grep:src/app.py:19:    y = x * 3 + 1",
-     "5:grep:src/app.py:24:    y = x * 4 + 1",
-     "5:grep:src/util.py:20:def helper():",
-     "5:other:binary file matches (x.bin)",
-     "7:other:<returncode>1</returncode>\n=== test session starts ===\ntest_",
-     "9:read:def handler_1(x):\n    # handles case 1\n    y = x * 1 + 1\n   "
+     "10:asst:Let me re-read the whole file once more.:8b31c5fc99b4988b",
+     "11:read:    return y - 1\ndef handler_2(x):\n    # handles case 2\n    :a4fba13582b4e416",
+     "12:asst:Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handl:80a7f2ce80f3dfb2",
+     "12:asst:Observation 40: handler_4 looks wrong 🐍.\nObservation 41: han:d1e784da9aafc696",
+     "3:read:    # handles case 4\n    y = x * 4 + 1\n    return y - 4\ndef :869686ae0f5b3c81",
+     "3:read:    # handles case 9\n    y = x * 9 + 1\n    return y - 9\ndef :a293210b05c9af3d",
+     "3:read:    return y - 11\nclass App:\n    def run(self):\n        retu:79e5d60375ea8ac2",
+     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    :d4eb42d7e0f799a3",
+     "3:read:import mod0\nimport mod1\nimport mod2\ndef handler_0(x):\n    # :504349517e1b789a",
+     "5:grep:src/:5:directory-prefix match with empty basename:dfe5e3da774a01b4",
+     "5:grep:src/app.py:14:    y = x * 2 + 1:f890c18a1766b252",
+     "5:grep:src/app.py:19:    y = x * 3 + 1:b80870d71dbe1f0c",
+     "5:grep:src/app.py:24:    y = x * 4 + 1:517ee1c84f9e851b",
+     "5:grep:src/util.py:20:def helper()::5748d2a3885edd1d",
+     "5:other:binary file matches (x.bin):fa49aaf043b58edd",
+     "7:other:<returncode>1</returncode>\n=== test session starts ===\ntest_:2638f97b833ec741",
+     "9:read:def handler_1(x):\n    # handles case 1\n    y = x * 1 + 1\n   :a7dda4c871445e02"
     ],
     "dropped_fp": [
      "# handles case 4 y = x * 4 + 1 return y - 4 def handler_5(x): # handles case 5 y = x * 5 + 1 return y - 5 def handler_6(",
@@ -787,13 +787,13 @@
    ],
    "registries": {
     "dropped": [
-     "0:asst:Upfront planning thought 0 about the handler bug.\nUpfront pl",
-     "0:asst:Upfront planning thought 40 about the handler bug.\nUpfront p",
-     "3:read:    # handles case 4\n    y = x * 4 + 1\n    return y - 4\ndef ",
-     "3:read:    # handles case 9\n    y = x * 9 + 1\n    return y - 9\ndef ",
-     "3:read:    return y - 11\nclass App:\n    def run(self):\n        retu",
-     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    ",
-     "3:read:import mod0\nimport mod1\nimport mod2\ndef handler_0(x):\n    # "
+     "0:asst:Upfront planning thought 0 about the handler bug.\nUpfront pl:2cf4dc8fe66549e0",
+     "0:asst:Upfront planning thought 40 about the handler bug.\nUpfront p:21bb71f573142ea0",
+     "3:read:    # handles case 4\n    y = x * 4 + 1\n    return y - 4\ndef :869686ae0f5b3c81",
+     "3:read:    # handles case 9\n    y = x * 9 + 1\n    return y - 9\ndef :a293210b05c9af3d",
+     "3:read:    return y - 11\nclass App:\n    def run(self):\n        retu:79e5d60375ea8ac2",
+     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    :d4eb42d7e0f799a3",
+     "3:read:import mod0\nimport mod1\nimport mod2\ndef handler_0(x):\n    # :504349517e1b789a"
     ],
     "dropped_fp": [
      "# handles case 4 y = x * 4 + 1 return y - 4 def handler_5(x): # handles case 5 y = x * 5 + 1 return y - 5 def handler_6(",

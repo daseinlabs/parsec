@@ -13,6 +13,7 @@
 //!   never routed through our infrastructure (§3).
 
 pub mod adjudicator;
+pub mod apikey;
 pub mod brain;
 pub mod credentials;
 pub mod featurize;

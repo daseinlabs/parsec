@@ -6,5 +6,6 @@
   "author": {
     "name": "Dasein Labs"
   },
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/dasein-hooks.json"
 }

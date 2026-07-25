@@ -1,0 +1,7 @@
+# Frontend build uses packages/frontend as its Cloud Build context; keep the
+# 450MB node_modules and build output out of the upload (the Dockerfile installs
+# deps and builds fresh inside the image).
+.git
+node_modules
+.next
+dist

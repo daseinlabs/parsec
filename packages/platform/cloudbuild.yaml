@@ -1,0 +1,137 @@
+# Build + deploy the platform (control plane) to Cloud Run. Run from the repo
+# root via scripts/deploy_platform.sh (it fills the substitutions), or directly:
+#
+#   gcloud builds submit . \
+#     --config packages/platform/cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_REPO=dasein,_SERVICE=dasein-platform,\
+# _DB_URL_SECRET=dasein-platform-db-url:latest,\
+# _SUPABASE_JWKS_URL=https://<proj>.supabase.co/auth/v1/.well-known/jwks.json,\
+# _STRIPE_WEBHOOK_SECRET=dasein-stripe-webhook:latest
+#
+# UNLIKE the brain, this image bakes NOTHING: the platform is stateless glue
+# over Supabase (Postgres + Auth) and Stripe. All state is external, wired in as
+# config. Consequences that shape this file:
+#   * The build context is the REPO ROOT (not packages/platform): the Dockerfile
+#     COPYs `packages/platform/...` and is designed to be built from root.
+#   * DB URL / JWT secret / Stripe secret are CREDENTIALS -> Secret Manager
+#     (--set-secrets), never --set-env-vars. Only the JWKS URL (a public
+#     endpoint) rides as a plain env var.
+#   * Migrations are NOT run here. `pgstore.py` applies migrations/*.sql
+#     out-of-band via the Supabase CLI, BEFORE this deploy (expand/contract).
+#     deploy_platform.sh reminds you; it never mutates the DB from the build.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: dasein                 # Artifact Registry repo (shared with the brain)
+  _SERVICE: dasein-platform
+  # Secret Manager refs (name:version). _DB_URL_SECRET is REQUIRED — the deploy
+  # step fails loudly if it is empty (an unset DB URL would silently fall back
+  # to ephemeral SQLite, which is wrong on multi-instance Cloud Run).
+  _DB_URL_SECRET: ''            # -> DASEIN_PLATFORM_DB_URL (Supavisor pooler URL)
+  # Supabase JWT verification — provide ONE. JWKS wins when both are set
+  # (auth.py). JWKS URL is public, so it is a plain substitution; the legacy
+  # HS256 shared secret is a credential, so it goes through Secret Manager.
+  _SUPABASE_JWKS_URL: ''        # -> SUPABASE_JWKS_URL   (env, ES256/RS256)
+  _JWT_SECRET_SECRET: ''        # -> SUPABASE_JWT_SECRET (secret, legacy HS256)
+  _STRIPE_WEBHOOK_SECRET: ''    # -> STRIPE_WEBHOOK_SECRET (secret; webhook off if unset)
+  # Pre-billing: '1' entitles every account at key-mint so the brain serves real
+  # users before Stripe exists (usage-pattern gathering). Set '0' when billing
+  # goes live so Stripe events own entitlement again.
+  _AUTO_ENTITLE: '1'
+  # Serving shape: async FastAPI over a small asyncpg pool (max_size=4), so give
+  # it real concurrency instead of the brain's 1. min-instances 1 avoids a cold
+  # start on /keys/validate, which sits on the brain's request path.
+  _CONCURRENCY: '60'
+  _CPU: '1'
+  _MEMORY: 512Mi
+  _MIN_INSTANCES: '1'
+  _MAX_INSTANCES: '10'
+  _TIMEOUT: '60'
+  # Ingress: 'all' because the platform has genuinely public, untrusted clients —
+  # the dasein binary POSTs /ledger from users' machines (ledger_ship.rs) and
+  # Stripe POSTs /webhooks/stripe. App-layer auth (Supabase JWT / dsn_ key /
+  # Stripe signature) is the boundary; there is no network path that makes those
+  # two endpoints private. Set 'internal-and-cloud-load-balancing' only if you
+  # front the service with an external HTTPS LB (the public edge for /ledger +
+  # webhook); plain 'internal' would make the client unable to ship rows.
+  _INGRESS: all
+
+steps:
+  # 1. Build from the repo root with the platform Dockerfile. No checkpoint, no
+  #    model bake — just the thin FastAPI image.
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - packages/platform/Dockerfile
+      - -t
+      - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:$BUILD_ID
+      - -t
+      - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:latest
+      - .
+
+  # 2. Push both tags.
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE]
+
+  # 3. Deploy to Cloud Run. Env + secrets are each collapsed into a SINGLE
+  #    --set-env-vars / --set-secrets flag: gcloud does not reliably merge
+  #    repeated occurrences of these flags (last-wins), so we comma-join.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        # $$ = a shell var (Cloud Build reads a single $ as a build substitution).
+        if [ -z "$_DB_URL_SECRET" ]; then
+          echo "_DB_URL_SECRET is empty — refusing to deploy (would fall back to" >&2
+          echo "ephemeral SQLite on Cloud Run). Point it at a Secret Manager ref." >&2
+          exit 1
+        fi
+
+        ENV_PARTS=("DASEIN_AUTO_ENTITLE=$_AUTO_ENTITLE")
+        [ -n "$_SUPABASE_JWKS_URL" ] && ENV_PARTS+=("SUPABASE_JWKS_URL=$_SUPABASE_JWKS_URL")
+
+        SECRET_PARTS=("DASEIN_PLATFORM_DB_URL=$_DB_URL_SECRET")
+        [ -n "$_JWT_SECRET_SECRET" ]     && SECRET_PARTS+=("SUPABASE_JWT_SECRET=$_JWT_SECRET_SECRET")
+        [ -n "$_STRIPE_WEBHOOK_SECRET" ] && SECRET_PARTS+=("STRIPE_WEBHOOK_SECRET=$_STRIPE_WEBHOOK_SECRET")
+
+        join() { local IFS=,; echo "$$*"; }
+
+        FLAGS=(
+          --image "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:$BUILD_ID"
+          --region "$_REGION"
+          --platform managed
+          --port 8080
+          --concurrency "$_CONCURRENCY"
+          --cpu "$_CPU"
+          --memory "$_MEMORY"
+          --min-instances "$_MIN_INSTANCES"
+          --max-instances "$_MAX_INSTANCES"
+          --timeout "$_TIMEOUT"
+          --ingress "$_INGRESS"
+          --set-secrets "$$(join "$${SECRET_PARTS[@]}")"
+          # In-app auth (JWT / dsn_ key) gates every real endpoint, and Stripe
+          # must be able to POST the (signature-verified) webhook — so the
+          # service itself is unauthenticated, like the brain.
+          --allow-unauthenticated
+        )
+        [ $${#ENV_PARTS[@]} -gt 0 ] && FLAGS+=(--set-env-vars "$$(join "$${ENV_PARTS[@]}")")
+
+        gcloud run deploy "$_SERVICE" "$${FLAGS[@]}"
+
+        URL="$$(gcloud run services describe "$_SERVICE" --region "$_REGION" --format='value(status.url)')"
+        echo "── platform deployed: $${URL}"
+        echo "   Stripe webhook endpoint: $${URL}/webhooks/stripe"
+        echo "   Frontend PLATFORM_URL:   $${URL}"
+
+images:
+  - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:$BUILD_ID
+  - $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

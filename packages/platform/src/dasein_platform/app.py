@@ -35,6 +35,12 @@ def create_app(store: Store | None = None) -> FastAPI:
         else:
             store = SQLiteStore()
     app.state.store = store
+    # Pre-billing measure: until Stripe is wired, grant entitlement the moment a
+    # user mints their key (the onboarding step) so we can gather usage patterns.
+    # Off by default — the correct long-term behavior is Stripe-gated — the
+    # deployment turns it on with DASEIN_AUTO_ENTITLE=1 and drops it when billing
+    # goes live. See mint_key.
+    auto_entitle = os.environ.get("DASEIN_AUTO_ENTITLE", "") == "1"
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -93,9 +99,16 @@ def create_app(store: Store | None = None) -> FastAPI:
     @app.post("/keys", status_code=201)
     def mint_key(account_id: str = Depends(require_account)) -> dict[str, str]:
         """Mint the opaque brain-API credential the local proxy calls with
-        (§7c). Shown once; only its hash is stored."""
+        (§7c). Shown once; only its hash is stored.
+
+        When DASEIN_AUTO_ENTITLE=1 (pre-billing phase), also flip the account to
+        entitled here — this is the "anyone who signs up is entitled" switch that
+        lets the brain serve real users before Stripe exists. Stripe events still
+        own the flag once billing is live and the switch is off."""
         key = "dsn_" + secrets.token_urlsafe(32)
         app.state.store.add_key(hash_key(key), account_id)
+        if auto_entitle:
+            app.state.store.set_entitlement(account_id, True)
         return {"key": key}
 
     @app.get("/keys/validate/{key}")

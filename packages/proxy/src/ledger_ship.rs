@@ -39,33 +39,32 @@ pub struct LedgerSink {
 /// what lets `dasein key set …` take effect immediately, with no proxy restart.
 pub fn resolve() -> Option<LedgerSink> {
     let creds = crate::credentials::load();
+    // The KEY is the account key, resolved in the ONE unified place
+    // (`apikey`) — never `DASEIN_BRAIN_KEY`, which must not reach the platform.
+    // Only the platform URL is ledger-specific.
     resolve_parts(
         std::env::var("DASEIN_PLATFORM_URL").ok().as_deref(),
         BAKED_PLATFORM_URL,
         creds.platform_url.as_deref(),
-        std::env::var("DASEIN_API_KEY").ok().as_deref(),
-        creds.api_key.as_deref(),
+        crate::apikey::account_key().as_deref(),
     )
 }
 
 /// Pure resolver, split out for tests. Empty values are off switches, mirroring
-/// the brain-URL/key semantics in `brain.rs`.
+/// the brain-URL/key semantics in `brain.rs`. `key` is the already-resolved
+/// account key (`apikey::account_key`).
 fn resolve_parts(
     env_url: Option<&str>,
     baked_url: Option<&str>,
     file_url: Option<&str>,
-    env_key: Option<&str>,
-    file_key: Option<&str>,
+    key: Option<&str>,
 ) -> Option<LedgerSink> {
     let url = env_url
         .or(baked_url)
         .or(file_url)
         .map(|u| u.trim().trim_end_matches('/'))
         .filter(|u| !u.is_empty())?;
-    let api_key = env_key
-        .or(file_key)
-        .map(str::trim)
-        .filter(|k| !k.is_empty())?;
+    let api_key = key.map(str::trim).filter(|k| !k.is_empty())?;
     Some(LedgerSink {
         url: url.to_string(),
         api_key: api_key.to_string(),
@@ -113,62 +112,35 @@ mod tests {
 
     #[test]
     fn needs_both_url_and_key() {
-        assert!(
-            resolve_parts(Some("https://p.example"), None, None, Some("dsn_abc"), None).is_some()
-        );
-        // missing key (env and file) -> no sink
-        assert!(resolve_parts(Some("https://p.example"), None, None, None, None).is_none());
+        assert!(resolve_parts(Some("https://p.example"), None, None, Some("dsn_abc")).is_some());
+        // missing key (apikey::account_key resolved to None) -> no sink
+        assert!(resolve_parts(Some("https://p.example"), None, None, None).is_none());
         // missing url (env, baked, file) -> no sink
-        assert!(resolve_parts(None, None, None, Some("dsn_abc"), None).is_none());
+        assert!(resolve_parts(None, None, None, Some("dsn_abc")).is_none());
         // empty strings are off switches
-        assert!(
-            resolve_parts(Some(""), Some("https://baked"), None, Some("dsn_abc"), None).is_none()
-        );
-        assert!(resolve_parts(Some("https://p.example"), None, None, Some("  "), None).is_none());
+        assert!(resolve_parts(Some(""), Some("https://baked"), None, Some("dsn_abc")).is_none());
+        assert!(resolve_parts(Some("https://p.example"), None, None, Some("  ")).is_none());
     }
 
     #[test]
-    fn url_precedence_env_baked_file_and_key_from_file() {
+    fn url_precedence_env_baked_file() {
         // env URL beats baked; trailing slash trimmed
         let s = resolve_parts(
             Some("https://env.example/"),
             Some("https://baked"),
             None,
-            Some("dsn_x"),
-            None,
+            Some("k"),
         )
         .expect("both present");
         assert_eq!(s.url, "https://env.example");
         // baked used only when env is absent
-        let b = resolve_parts(
-            None,
-            Some("https://baked.example/"),
-            None,
-            Some("dsn_x"),
-            None,
-        )
-        .unwrap();
+        let b = resolve_parts(None, Some("https://baked.example/"), None, Some("k")).unwrap();
         assert_eq!(b.url, "https://baked.example");
-        // credentials-file URL is the last fallback; the key can come from the file
-        let f = resolve_parts(
-            None,
-            None,
-            Some("https://file.example/"),
-            None,
-            Some("dsn_file"),
-        )
-        .expect("file supplies both");
+        // credentials-file URL is the last fallback
+        let f = resolve_parts(None, None, Some("https://file.example/"), Some("dsn_file"))
+            .expect("file url + key");
         assert_eq!(f.url, "https://file.example");
         assert_eq!(f.api_key, "dsn_file");
-        // env key beats file key
-        let k = resolve_parts(
-            Some("https://p"),
-            None,
-            None,
-            Some("dsn_env"),
-            Some("dsn_file"),
-        )
-        .unwrap();
-        assert_eq!(k.api_key, "dsn_env");
+        // (key precedence env>file now lives in `apikey::account_key`, tested there)
     }
 }

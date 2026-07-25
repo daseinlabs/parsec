@@ -43,6 +43,11 @@ pub fn run(event: &str) -> anyhow::Result<()> {
 
     match event.as_str() {
         "PreToolUse" => {
+            // Entitlement gate (apikey): no key ⇒ dasein saves nothing, so the
+            // no-reread / loop-breaker never fires and no state accrues.
+            if !crate::apikey::enabled() {
+                return Ok(());
+            }
             let mut st = load_session(&session_id);
             let gate = match tool {
                 "Read" => match read_tool_range(&tool_input, &cwd) {
@@ -71,6 +76,10 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             }
         }
         "PostToolUse" => {
+            // Same gate as PreToolUse: unentitled ⇒ record nothing.
+            if !crate::apikey::enabled() {
+                return Ok(());
+            }
             let mut st = load_session(&session_id);
             record_post(&mut st, tool, &tool_input, &cwd);
             let _ = save_session(&session_id, &st);
@@ -78,6 +87,16 @@ pub fn run(event: &str) -> anyhow::Result<()> {
         "SessionStart" => {
             prune_sessions(7);
             let mut msgs = Vec::new();
+            let is_startup = payload.get("source").and_then(Value::as_str) == Some("startup");
+            // Top of the session (and the install flow — first run is a
+            // startup): if there is no API key, dasein saves nothing — show the
+            // prominent get-a-key banner. Fresh startups only (resume/clear/
+            // compact must not re-nag). Single source: apikey::gate_banner.
+            if is_startup {
+                if let Some(m) = crate::apikey::gate_banner() {
+                    msgs.push(m);
+                }
+            }
             if let Some(m) = maybe_autosetup() {
                 msgs.push(m);
             }
@@ -87,7 +106,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // One-time awareness line (docs/plugin-user-messaging.md Part 1
             // §3): fresh startups only — resume/clear/compact re-fire
             // SessionStart and must not re-nag.
-            if payload.get("source").and_then(Value::as_str) == Some("startup") {
+            if is_startup {
                 if let Some(m) = crate::statusline::lifetime_note() {
                     msgs.push(m);
                 }
@@ -328,7 +347,11 @@ fn maybe_autostart_proxy() -> Option<String> {
     }
     for _ in 0..40 {
         if port_listening(port) {
-            let brain = std::env::var("DASEIN_BRAIN_URL").ok();
+            // Ask the SAME resolver the worker uses (env → release-baked URL,
+            // plus the key/contract gates) — reading DASEIN_BRAIN_URL directly
+            // reported "passthrough" on every baked build, which is every
+            // shipped release: the worker curates, the banner denies it.
+            let brain = crate::brain::BrainConfig::from_env().map(|c| c.url);
             return Some(match brain {
                 Some(b) => format!(
                     "⌁ dasein proxy auto-started on 127.0.0.1:{port} (brain: {b}; \

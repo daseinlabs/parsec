@@ -133,6 +133,11 @@ pub struct AppState {
     pub in_flight: AtomicU64,
     /// Construction instant, for the uptime figure in the shutdown summary.
     pub started: std::time::Instant,
+    /// Entitlement (apikey gate), resolved ONCE at startup like `brain`: false
+    /// ⇒ the serve path is a pure passthrough (no curation, probe, or ledger).
+    /// Defaults true in the constructors so tests are hermetic; real `run` sets
+    /// it from `apikey::enabled()`.
+    pub entitled: bool,
 }
 
 fn epoch_s() -> u64 {
@@ -179,6 +184,7 @@ impl AppState {
             last_request_epoch_s: AtomicU64::new(epoch_s()),
             in_flight: AtomicU64::new(0),
             started: std::time::Instant::now(),
+            entitled: true,
         }
     }
 
@@ -289,7 +295,20 @@ pub fn run() -> anyhow::Result<()> {
              the platform ledger in addition to the local ~/.dasein ledger"
         );
     }
-    let state = Arc::new(AppState::with_brain(upstream, ledger, brain));
+    let mut state = AppState::with_brain(upstream, ledger, brain);
+    // Entitlement resolved once, like the brain config: no key ⇒ pure
+    // passthrough serve path (apikey gate). The hook resolves live per
+    // invocation; a mid-session `dasein key set` activates the proxy on its
+    // next (re)start, same as the brain config.
+    state.entitled = crate::apikey::enabled();
+    if !state.entitled {
+        tracing::warn!(
+            "no API key — dasein is INERT: serving pure passthrough, saving nothing. \
+             Get a key at {} and run `dasein key set <dsn_…>`.",
+            crate::apikey::SIGNUP_URL
+        );
+    }
+    let state = Arc::new(state);
     if state.governor.mode != GovMode::Off {
         tracing::info!(
             mode = state.governor.mode.as_str(),
@@ -1770,34 +1789,52 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         record_inbound(&headers, b, &raw);
     }
 
+    // Entitlement gate (apikey, resolved at startup into `st.entitled`): with
+    // no API key dasein saves nothing, so the serve path is a PURE PASSTHROUGH
+    // — no curation, no counterfactual probe, no ledger row. Claude Code still
+    // streams normally (the forward/relay below sends the ORIGINAL body). This
+    // is NOT a fail-open (no error).
+    let entitled = st.entitled;
+
     // (b-d) conversation id, curation (freeze when a brain is configured),
     // breakpoint placement, tool keep-set — any error here means forwarding
     // the ORIGINAL body verbatim (fail-open, counted).
-    let plan = match body.as_ref() {
-        Some(b) => match curate(&st, &headers, b).await {
-            Ok(p) => Some(p),
-            Err(e) => {
-                note_fail_open(&st, &format!("curation failed: {e}"));
+    let plan = if !entitled {
+        None
+    } else {
+        match body.as_ref() {
+            Some(b) => match curate(&st, &headers, b).await {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    note_fail_open(&st, &format!("curation failed: {e}"));
+                    None
+                }
+            },
+            None => {
+                note_fail_open(&st, "inbound body is not JSON");
                 None
             }
-        },
-        None => {
-            note_fail_open(&st, "inbound body is not JSON");
-            None
         }
     };
-    let fail_open = plan.is_none();
+    // Unentitled passthrough is intentional, not a degraded fail-open.
+    let fail_open = entitled && plan.is_none();
     let stats = plan.as_ref().map(|p| p.stats.clone()).unwrap_or_default();
 
     // (e) §8.4 counterfactual — always on the ORIGINAL inbound content,
     // narrowed to the count_tokens field set (CC's `metadata` 400s there).
+    // Skipped when unentitled: no savings are claimed, so the extra
+    // count_tokens call would be pure waste.
     let t_probe = std::time::Instant::now();
-    let probe_bytes = body
-        .as_ref()
-        .and_then(probe_body)
-        .map(Bytes::from)
-        .unwrap_or_else(|| raw.clone());
-    let counterfactual = count_tokens_probe(&st, &headers, probe_bytes).await;
+    let counterfactual = if entitled {
+        let probe_bytes = body
+            .as_ref()
+            .and_then(probe_body)
+            .map(Bytes::from)
+            .unwrap_or_else(|| raw.clone());
+        count_tokens_probe(&st, &headers, probe_bytes).await
+    } else {
+        None
+    };
     let probe_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
     tracing::debug!(counterfactual = ?counterfactual, "count_tokens probe done");
 

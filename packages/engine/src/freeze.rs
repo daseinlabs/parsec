@@ -48,14 +48,15 @@
 //!   pathological unicode directly adjacent to command keywords diverges.
 //! - Line numbers beyond i64 (Python ints are unbounded) saturate at
 //!   i64::MAX in chunk coordinates.
-//! - `digest`'s tail line is served whenever a body has >= 3 non-blank lines,
-//!   not > 3. The reference (curator._digest) gates the tail on `> 3`, which
-//!   at exactly three body lines omits the LAST line while labelling it
-//!   "0 lines omitted" — silent data loss on the served bytes. We serve the
-//!   line (head(2) + "0 omitted" + tail(1) == all three, nothing lost). This
-//!   diverges from the reference ONLY at len==3; `adaptive-context-clean`'s
-//!   curator._digest needs the same one-char fix before a fixture regen can
-//!   include that case. Correctness over byte-parity on a data-loss path.
+//!
+//! Two data-loss bugs were fixed in BOTH this port and the reference in
+//! lockstep (so byte-parity holds and the freeze fixtures were regenerated):
+//! - `digest` serves its tail line at `body.len() >= 3` (was `> 3`, which at
+//!   exactly three body lines dropped the last line while printing "0 lines
+//!   omitted" — silent truncation of the served bytes).
+//! - `ckey` disambiguates the 60-char text prefix with a full-text sha256 (was
+//!   the bare `text[:60]`, which let two chunks sharing their first 60 chars
+//!   collide, so dropping one wrongly marked the other dropped).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -202,9 +203,23 @@ fn m_text(m: &Value) -> String {
     }
 }
 
-/// curator._ckey: the (lossy, 60-char) chunk kill-registry key.
+/// curator._ckey: chunk kill-registry key. The human-readable 60-char text
+/// prefix is disambiguated by a full-text sha256 so two chunks that share their
+/// first 60 chars (repetitive logs, banner-prefixed read windows) get DISTINCT
+/// keys — dropping one must never mark the other dropped. Matches the reference
+/// byte-for-byte (this string feeds `registry_snapshot`, a parity assertion).
 fn ckey(owner: usize, c: &Chunk) -> String {
-    format!("{}:{}:{}", owner, c.kind, char_prefix(&c.text, 60))
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(c.text.as_bytes());
+    let hex = format!("{:x}", h.finalize());
+    format!(
+        "{}:{}:{}:{}",
+        owner,
+        c.kind,
+        char_prefix(&c.text, 60),
+        &hex[..16]
+    )
 }
 
 /// Whitespace-normalized 120-char fingerprint (insist valve).
@@ -668,9 +683,8 @@ impl<S: ChunkScorer> Freezer<S> {
     /// Renders head(<=2 lines) + an omission marker + tail(1 line). The tail
     /// is served whenever the body has >= 3 non-blank lines: at exactly three,
     /// head(2)+tail(1) is the whole body and `omitted` is 0, so no line is
-    /// lost. Gating the tail on `> 3` (as the reference does) drops the third
-    /// line while still printing "0 lines omitted" — see the module-level
-    /// deviation note.
+    /// lost. Gating the tail on `> 3` drops the third line while still printing
+    /// "0 lines omitted" (silent truncation) — fixed here and in the reference.
     fn digest(m: &Value, ntok: i64, file: Option<&str>, lo: Option<i64>, hi: Option<i64>) -> Value {
         let txt = m_text(m);
         let lines = py_splitlines(&txt);
@@ -1005,6 +1019,28 @@ mod tests {
             digest_text(5),
             "L0\nL1\n[... 2 lines (~10 tokens) omitted ...]\nL4"
         );
+    }
+
+    /// Regression for the wrongful-over-cut: two chunks in the same message
+    /// that share their first 60 chars (repetitive logs, banner-prefixed read
+    /// windows) MUST get distinct drop-registry keys — otherwise dropping one
+    /// marks the other dropped in the `dropped` HashSet and its content is cut
+    /// though it was never scored below tau.
+    #[test]
+    fn ckey_disambiguates_chunks_sharing_a_60_char_prefix() {
+        let prefix = "x".repeat(60);
+        let a = Chunk::new(format!("{prefix}AAAA"), None, None, None, 1, "other");
+        let b = Chunk::new(format!("{prefix}BBBB"), None, None, None, 1, "other");
+        // Identical first 60 chars: the old bare `text[:60]` key collided here.
+        assert_eq!(char_prefix(&a.text, 60), char_prefix(&b.text, 60));
+        assert_ne!(
+            ckey(7, &a),
+            ckey(7, &b),
+            "distinct chunk texts must yield distinct ckeys"
+        );
+        // Stable per chunk (cold-replay memo depends on it) and owner-scoped.
+        assert_eq!(ckey(7, &a), ckey(7, &a.clone()));
+        assert_ne!(ckey(7, &a), ckey(8, &a));
     }
 
     /// The re-read pointer and the returncode line both still ride along with

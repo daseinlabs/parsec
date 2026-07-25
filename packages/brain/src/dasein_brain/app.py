@@ -27,7 +27,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import v1graph
+from . import keyauth, v1graph
 from ._log import COUNTERS, conv_sha8, count_fail_open, get_logger
 from .bundle import load_bundle
 from .scorer import _EMBED_DIM, TraceScorer, chunk_checksum
@@ -304,14 +304,26 @@ def create_app() -> FastAPI:
     scorer = TraceScorer(bundle)
     lock = threading.Lock()          # one CPU forward at a time; scorer caches are shared state
     key = os.environ.get("DASEIN_BRAIN_KEY", "")
+    # Per-user entitlement gate: when a platform URL is configured, the bearer
+    # token is the caller's dsn_ key, validated against the platform's
+    # /keys/validate seam (DIRECTION §7). Otherwise fall back to the static
+    # shared-key gate below. Platform mode takes precedence when both are set.
+    platform_url = os.environ.get("DASEIN_PLATFORM_URL", "").strip()
     # rules.json subset served when a /v1/score/rules request omits `rules`: the governor's live
     # roster = status active|always_on (candidate/retired rules are never fired unrequested).
     rule_defaults = [{"eid": r["eid"], "text": r["text"]} for r in bundle.rules
                      if r.get("status") in _RULE_DEFAULT_STATUS]
     app = FastAPI(title="dasein-brain", version="0.1.0")
 
+    def _bearer(request: Request) -> str | None:
+        h = request.headers.get("authorization", "")
+        return h[7:] if h[:7].lower() == "bearer " else None
+
     def _auth(request: Request) -> None:
-        if key and request.headers.get("authorization") != f"Bearer {key}":
+        if platform_url:
+            if not keyauth.check(platform_url, _bearer(request)):
+                raise HTTPException(status_code=401, detail="key invalid or not entitled")
+        elif key and request.headers.get("authorization") != f"Bearer {key}":
             raise HTTPException(status_code=401, detail="missing or invalid bearer token")
 
     @app.middleware("http")

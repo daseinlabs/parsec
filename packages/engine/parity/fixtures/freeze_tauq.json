@@ -510,25 +510,25 @@
    ],
    "registries": {
     "dropped": [
-     "11:read:    # handles case 4\n    y = x * 4 + 1\n    return y - 4\ndef ",
-     "11:read:    return y - 1\ndef handler_2(x):\n    # handles case 2\n    ",
-     "11:read:import mod0\nimport mod1\nimport mod2\ndef handler_0(x):\n    # ",
-     "12:asst:Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handl",
-     "12:asst:Observation 40: handler_4 looks wrong 🐍.\nObservation 41: han",
-     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    ",
-     "5:grep:src/:5:directory-prefix match with empty basename",
-     "5:grep:src/app.py:14:    y = x * 2 + 1",
-     "5:grep:src/app.py:19:    y = x * 3 + 1",
-     "5:grep:src/app.py:24:    y = x * 4 + 1",
-     "5:grep:src/app.py:29:    y = x * 5 + 1",
-     "5:grep:src/app.py:34:    y = x * 6 + 1",
-     "5:grep:src/app.py:4:    y = x * 0 + 1",
-     "5:grep:src/app.py:54:    y = x * 10 + 1",
-     "5:grep:src/app.py:59:    y = x * 11 + 1",
-     "5:grep:src/app.py:9:    y = x * 1 + 1",
-     "5:grep:src/util.py:20:def helper():",
-     "5:other:binary file matches (x.bin)",
-     "9:read:    y = x * 3 + 1\n    return y - 3\ndef handler_4(x):\n    # h"
+     "11:read:    # handles case 4\n    y = x * 4 + 1\n    return y - 4\ndef :869686ae0f5b3c81",
+     "11:read:    return y - 1\ndef handler_2(x):\n    # handles case 2\n    :a4fba13582b4e416",
+     "11:read:import mod0\nimport mod1\nimport mod2\ndef handler_0(x):\n    # :504349517e1b789a",
+     "12:asst:Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handl:80a7f2ce80f3dfb2",
+     "12:asst:Observation 40: handler_4 looks wrong 🐍.\nObservation 41: han:d1e784da9aafc696",
+     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    :d4eb42d7e0f799a3",
+     "5:grep:src/:5:directory-prefix match with empty basename:dfe5e3da774a01b4",
+     "5:grep:src/app.py:14:    y = x * 2 + 1:f890c18a1766b252",
+     "5:grep:src/app.py:19:    y = x * 3 + 1:b80870d71dbe1f0c",
+     "5:grep:src/app.py:24:    y = x * 4 + 1:517ee1c84f9e851b",
+     "5:grep:src/app.py:29:    y = x * 5 + 1:38e26ff7e62a7320",
+     "5:grep:src/app.py:34:    y = x * 6 + 1:fca4d490b5266968",
+     "5:grep:src/app.py:4:    y = x * 0 + 1:3c701efc667673ae",
+     "5:grep:src/app.py:54:    y = x * 10 + 1:dad3092d02bbfd3f",
+     "5:grep:src/app.py:59:    y = x * 11 + 1:d0b1e8d69357e9ba",
+     "5:grep:src/app.py:9:    y = x * 1 + 1:fb5a0f3bd639d456",
+     "5:grep:src/util.py:20:def helper()::5748d2a3885edd1d",
+     "5:other:binary file matches (x.bin):fa49aaf043b58edd",
+     "9:read:    y = x * 3 + 1\n    return y - 3\ndef handler_4(x):\n    # h:ee3312a7e4bc0933"
     ],
     "dropped_fp": [
      "# handles case 4 y = x * 4 + 1 return y - 4 def handler_5(x): # handles case 5 y = x * 5 + 1 return y - 5 def handler_6(",
@@ -787,7 +787,7 @@
    ],
    "registries": {
     "dropped": [
-     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    "
+     "3:read:    return y - 6\ndef handler_7(x):\n    # handles case 7\n    :d4eb42d7e0f799a3"
     ],
     "dropped_fp": [
      "return y - 6 def handler_7(x): # handles case 7 y = x * 7 + 1 return y - 7 def handler_8(x): # handles case 8 y = x * 8 "

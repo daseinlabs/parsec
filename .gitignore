@@ -19,6 +19,8 @@ packages/plugin/bin/*/
 .dasein/
 *.onnx
 .env
+# local platform-stack env (.env.local.example is the tracked template)
+.env.local
 .DS_Store
 
 # Cloud Run: checkpoint fetched into the brain build context (baked, never committed)

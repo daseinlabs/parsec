@@ -161,6 +161,56 @@ def test_bearer_auth_when_key_set(monkeypatch):
     assert ok.status_code == 200
 
 
+def test_platform_entitlement_gate(monkeypatch):
+    """DASEIN_PLATFORM_URL set -> the bearer is a dsn_ key validated against the
+    platform; only valid+entitled keys are served."""
+    import dasein_brain.keyauth as keyauth
+    keyauth._cache.clear()
+    monkeypatch.setattr(keyauth, "_validate_remote", lambda url, key: key == "dsn_good")
+    monkeypatch.setenv("DASEIN_PLATFORM_URL", "https://platform.test")
+    client = TestClient(create_app())
+    assert client.get("/health").status_code == 200                    # probes stay open
+    assert client.get("/v1/bundle").status_code == 401                 # no key
+    assert client.get("/v1/bundle",
+                      headers={"Authorization": "Bearer dsn_bad"}).status_code == 401
+    assert client.get("/v1/bundle",
+                      headers={"Authorization": "Bearer dsn_good"}).status_code == 200
+
+
+def test_platform_gate_fails_open_measured(monkeypatch):
+    """A platform outage must NOT block a paying user (CLAUDE.md fail-open), and
+    every fail-open is counted on /health."""
+    import dasein_brain.keyauth as keyauth
+    keyauth._cache.clear()
+
+    def _down(url, key):
+        raise RuntimeError("platform unreachable")
+
+    monkeypatch.setattr(keyauth, "_validate_remote", _down)
+    monkeypatch.setenv("DASEIN_PLATFORM_URL", "https://platform.test")
+    client = TestClient(create_app())
+    before = client.get("/health").json()["fail_opens"]
+    assert client.get("/v1/bundle",
+                      headers={"Authorization": "Bearer dsn_any"}).status_code == 200
+    assert client.get("/health").json()["fail_opens"] == before + 1
+
+
+def test_platform_gate_strict_fails_closed(monkeypatch):
+    """DASEIN_BRAIN_AUTH_STRICT=1 flips the outage behavior to fail-closed."""
+    import dasein_brain.keyauth as keyauth
+    keyauth._cache.clear()
+
+    def _down(url, key):
+        raise RuntimeError("platform unreachable")
+
+    monkeypatch.setattr(keyauth, "_validate_remote", _down)
+    monkeypatch.setenv("DASEIN_PLATFORM_URL", "https://platform.test")
+    monkeypatch.setenv("DASEIN_BRAIN_AUTH_STRICT", "1")
+    client = TestClient(create_app())
+    assert client.get("/v1/bundle",
+                      headers={"Authorization": "Bearer dsn_any"}).status_code == 401
+
+
 if __name__ == "__main__":                       # golden regeneration helper
     parsed = parse_internal(MESSAGES, 10)
     mask = [j for j, c in enumerate(parsed.chunks)

@@ -151,7 +151,7 @@ process level and not only per step.
 *before* the turn's API request goes out, so a liveness check there closes
 the exact mid-session gap. Both halves already exist — `port_listening`
 (`hook.rs:369`) and `up()` (`setup.rs:308`) — and the event is not currently
-registered in `packages/plugin/hooks/hooks.json`. Zero install footprint;
+registered in `packages/plugin/hooks/dasein-hooks.json`. Zero install footprint;
 turns "dead port" into "one slow turn."
 
 Caveats: cold start includes the ONNX model load, so the revived turn may

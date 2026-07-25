@@ -36,6 +36,9 @@ CPU="${CPU:-4}"
 MEMORY="${MEMORY:-8Gi}"
 TIMEOUT="${TIMEOUT:-300}"
 BRAIN_KEY_SECRET="${BRAIN_KEY_SECRET:-}"
+# Platform base URL for per-user dsn_ key validation (/keys/validate). Set it to
+# gate scoring on entitlement; empty keeps the static-key/open behavior.
+PLATFORM_URL="${PLATFORM_URL:-}"
 
 if [ -z "$PROJECT" ]; then
   echo "no GCP project — run: gcloud config set project <id>  (or PROJECT=<id> $0)" >&2
@@ -73,4 +76,4 @@ fi
 exec gcloud builds submit packages/brain \
   --project "$PROJECT" \
   --config packages/brain/cloudbuild.yaml \
-  --substitutions="_REGION=$REGION,_REPO=$REPO,_SERVICE=$SERVICE,_CKPT_GCS=$CKPT_GCS,_EMBED_BACKEND=$EMBED_BACKEND,_EMBED_URL=$EMBED_URL,_EMBED_MODEL=$EMBED_MODEL,_GPU=$GPU,_CONCURRENCY=$CONCURRENCY,_MIN_INSTANCES=$MIN_INSTANCES,_CPU=$CPU,_MEMORY=$MEMORY,_TIMEOUT=$TIMEOUT,_BRAIN_KEY_SECRET=$BRAIN_KEY_SECRET"
+  --substitutions="_REGION=$REGION,_REPO=$REPO,_SERVICE=$SERVICE,_CKPT_GCS=$CKPT_GCS,_EMBED_BACKEND=$EMBED_BACKEND,_EMBED_URL=$EMBED_URL,_EMBED_MODEL=$EMBED_MODEL,_GPU=$GPU,_CONCURRENCY=$CONCURRENCY,_MIN_INSTANCES=$MIN_INSTANCES,_CPU=$CPU,_MEMORY=$MEMORY,_TIMEOUT=$TIMEOUT,_BRAIN_KEY_SECRET=$BRAIN_KEY_SECRET,_PLATFORM_URL=$PLATFORM_URL"

@@ -152,6 +152,20 @@ impl BrainConfig {
         if std::env::var("DASEIN_FREEZE").ok().as_deref() == Some("off") {
             return None;
         }
+        // Entitlement gate (DIRECTION §7): the backend authenticates every
+        // request, so DO NOT configure a brain — and thus never send a request
+        // to the backend — without an API key. Without one the proxy stays in
+        // local passthrough and the SessionStart hook shows the get-a-key
+        // banner (`apikey::gate_banner`). Single source of truth for the key.
+        let Some(key) = crate::apikey::resolve_key() else {
+            tracing::warn!(
+                "a brain backend is configured but no API key is set — NOT sending \
+                 requests to the backend; curation stays in local passthrough. Get a \
+                 key from the dashboard and run `dasein key set <dsn_…>` (or set \
+                 DASEIN_API_KEY)."
+            );
+            return None;
+        };
         let timeout_ms: u64 = std::env::var("DASEIN_BRAIN_TIMEOUT_MS")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -159,9 +173,7 @@ impl BrainConfig {
         let _ = baked; // no longer gates anything (was the hash-embedder interlock)
         Some(BrainConfig {
             url,
-            key: std::env::var("DASEIN_BRAIN_KEY")
-                .ok()
-                .filter(|k| !k.is_empty()),
+            key: Some(key),
             timeout: Duration::from_millis(timeout_ms),
             target_cov: std::env::var("DASEIN_TARGET_COV").unwrap_or_else(|_| "0.70".into()),
             tool_cut: std::env::var("DASEIN_TOOL_CUT")

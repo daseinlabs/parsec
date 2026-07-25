@@ -36,9 +36,76 @@ services:
       DASEIN_SERVE_TAU: ${DASEIN_SERVE_TAU-0.999}   # export DASEIN_SERVE_TAU= for calibrated
       DASEIN_TARGET_COV: ${DASEIN_TARGET_COV:-0.70}
       DASEIN_BRAIN_KEY: ${DASEIN_BRAIN_KEY:-}
+      # Per-user entitlement gate (keyauth.py): when set, the bearer on every
+      # scoring request is the caller's dsn_ key, validated against the platform
+      # and required to be entitled — the DIRECTION §7 seam. Points at the
+      # `platform` service, so it only resolves under `--profile platform`;
+      # brain-only (`make dev`) leaves the platform unreachable and every request
+      # fail-opens-and-counts (visible as fail_opens on /health). Set it EMPTY
+      # (`DASEIN_PLATFORM_URL= make dev`) to fall back to the DASEIN_BRAIN_KEY
+      # shared-secret gate instead.
+      DASEIN_PLATFORM_URL: ${DASEIN_PLATFORM_URL-http://platform:8080}
       # DEBUG adds per-request detail incl. the full GNN score vectors
       DASEIN_BRAIN_LOG: ${DASEIN_BRAIN_LOG:-INFO}
       DASEIN_BRAIN_LOG_JSON: ${DASEIN_BRAIN_LOG_JSON:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # linux docker parity; no-op on Docker Desktop
     restart: unless-stopped
+
+  # Local platform stack (control plane), behind the `platform` profile so it
+  # never starts with `make dev`:
+  #
+  #   docker compose --profile platform up -d       # db + platform API on :8080
+  #   docker compose up -d db                       # db only (platform on the host)
+  #   docker compose --profile platform down -v     # wipe the DB (re-runs migrations)
+  #
+  # Throwaway credentials on purpose — this database holds nothing but local
+  # test rows, and PLATFORM_URL in packages/frontend/.env.local already points
+  # at 127.0.0.1:8080.
+  db:
+    image: postgres:16
+    profiles: ["platform"]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: dasein
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: dasein
+    volumes:
+      # Postgres runs *.sql here in lexical order, but ONLY on first init of an
+      # empty volume. A new migration means `down -v` (or psql it by hand) —
+      # the service itself never runs DDL (pgstore.py).
+      - ./packages/platform/migrations:/docker-entrypoint-initdb.d:ro
+      - dasein-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dasein -d dasein"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  platform:
+    build:
+      # Repo root: the Dockerfile copies contracts schemas for the drift tests.
+      context: .
+      dockerfile: packages/platform/Dockerfile
+    image: dasein-platform:local
+    profiles: ["platform"]
+    ports:
+      - "8080:8080"
+    env_file:
+      # Your knobs: SUPABASE_JWKS_URL, DASEIN_AUTO_ENTITLE, STRIPE_WEBHOOK_SECRET.
+      # Optional so `docker compose up -d brain` still works without it.
+      - path: .env.local
+        required: false
+    environment:
+      # Overrides whatever .env.local says: that value is host-oriented
+      # (127.0.0.1:5432, for `uv run uvicorn`), and in-container the DB is `db`.
+      DASEIN_PLATFORM_DB_URL: postgresql://dasein:dev@db:5432/dasein
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  dasein-pgdata:
