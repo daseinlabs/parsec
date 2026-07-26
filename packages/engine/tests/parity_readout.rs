@@ -1,6 +1,6 @@
 //! READOUT parity suite (DIRECTION.md §7b): replays conversations through the
 //! Rust 49-col decided_struct port and asserts f32 BIT-equality against the
-//! vendored brain reference (dasein_brain.scorer._het_readout — the serving
+//! vendored brain reference (parsec_brain.scorer._het_readout — the serving
 //! truth for curator_v4_prod.pt). Regenerate fixtures with:
 //!   ../brain/.venv/bin/python parity/gen_readout_fixtures.py
 //!
@@ -11,8 +11,8 @@
 //! argmax match) stays BIT-exact — a tolerance there would hide an argmax
 //! flip, which is a real divergence, not rounding.
 
-use dasein_engine::chunking::Chunk;
-use dasein_engine::readout::{decided_struct, Changeprone, ReadoutCtx, READ_STRUCT};
+use parsec_engine::chunking::Chunk;
+use parsec_engine::readout::{decided_struct, Changeprone, ReadoutCtx, READ_STRUCT};
 use serde_json::Value;
 
 const DUPCOS_COS_COL: usize = 47;

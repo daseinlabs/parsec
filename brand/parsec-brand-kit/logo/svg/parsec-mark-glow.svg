@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 160" width="260" height="160" role="img" aria-label="getparsec mark">
+  <defs>
+    <filter id="g" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#g)">
+    <g fill="none" stroke="#4AF626" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="44" y1="40" x2="194" y2="80"/>
+      <line x1="44" y1="120" x2="194" y2="80"/>
+    </g>
+    <path d="M194 54 L203.4 70.6 L220 80 L203.4 89.4 L194 106 L184.6 89.4 L168 80 L184.6 70.6 Z" fill="#4AF626"/>
+  </g>
+</svg>

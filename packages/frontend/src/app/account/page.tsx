@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { MintKey } from "@/components/mint-key";
+import { NavLink, PageTitle, SignOut } from "@/components/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export default async function AccountPage() {
   const supabase = await supabaseServer();
   if (!supabase) {
     return (
-      <main className="p-10 text-sm text-neutral-500">
+      <main className="p-10 text-sm text-muted">
         Set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to enable
         the dashboard (see .env.example).
       </main>
@@ -28,53 +28,51 @@ export default async function AccountPage() {
     : null;
 
   return (
-    <main className="mx-auto max-w-4xl p-10">
+    <main className="mx-auto w-full max-w-4xl p-10">
       <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Account</h1>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link href="/dashboard" className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white">
-            Savings
-          </Link>
-          <form action="/auth/signout" method="post">
-            <button className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white">
-              Sign out
-            </button>
-          </form>
+        <PageTitle>account</PageTitle>
+        <nav className="flex items-center gap-5 text-sm">
+          <NavLink href="/">savings</NavLink>
+          <SignOut />
         </nav>
       </div>
 
       <div className="flex flex-col gap-10">
         <section>
-          <h2 className="mb-1 text-sm font-medium">Signed in as</h2>
-          <p className="text-sm text-neutral-500">
-            {data.user.email} <span className="text-neutral-400">· {data.user.id}</span>
+          <h2 className="mb-1 text-xs tracking-caps text-faint uppercase">
+            Signed in as
+          </h2>
+          <p className="text-sm text-muted">
+            {data.user.email} <span className="text-faint">· {data.user.id}</span>
           </p>
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-medium">Brain API key</h2>
+          <h2 className="mb-3 text-xs tracking-caps text-faint uppercase">
+            Brain API key
+          </h2>
           <MintKey />
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-medium">Billing</h2>
+          <h2 className="mb-3 text-xs tracking-caps text-faint uppercase">Billing</h2>
           <div className="flex gap-3">
             {checkoutHref ? (
               <a
                 href={checkoutHref}
-                className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                className="rounded-md bg-phosphor px-4 py-2 text-sm font-medium text-on-phosphor transition-colors duration-150 ease-parsec hover:bg-phosphor-hover active:bg-phosphor-press"
               >
                 Upgrade to Pro
               </a>
             ) : (
-              <p className="text-sm text-neutral-500">
+              <p className="text-sm text-muted">
                 Set NEXT_PUBLIC_STRIPE_CHECKOUT_URL to enable upgrades.
               </p>
             )}
             {portal && (
               <a
                 href={portal}
-                className="rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                className="rounded-md border border-line-strong px-4 py-2 text-sm text-phosphor transition-colors duration-150 ease-parsec hover:bg-elevated"
               >
                 Manage billing
               </a>

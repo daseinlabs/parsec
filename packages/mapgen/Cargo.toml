@@ -1,13 +1,13 @@
 [package]
-name = "dasein-mapgen"
-description = "codescout's deterministic core as MCP tools: repo map, file outlines, symbol lookup with key lines. Backs the dasein:explore agent (free tier)."
+name = "parsec-mapgen"
+description = "codescout's deterministic core as MCP tools: repo map, file outlines, symbol lookup with key lines. Backs the parsec:explore agent (free tier)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-dasein-engine = { path = "../engine" }
+parsec-engine = { path = "../engine" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

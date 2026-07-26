@@ -2,11 +2,11 @@
 """Vector-parity gate for the local bge-large ONNX export (v1 embedder).
 
 Embeds a diverse text battery via:
-  (a) local onnxruntime on ~/.dasein/models/bge-large-onnx (fp32 reference),
-  (b) the real dasein-embed service, if reachable at DASEIN_EMBED_URL
+  (a) local onnxruntime on ~/.parsec/models/bge-large-onnx (fp32 reference),
+  (b) the real dasein-embed service, if reachable at PARSEC_EMBED_URL
       (kubectl port-forward svc/dasein-embed 18080:80),
   (c) optionally --rust-vectors: the OnnxEmbedder output from
-      `cargo run -p dasein-engine --features onnx --example onnx_battery`,
+      `cargo run -p parsec-engine --features onnx --example onnx_battery`,
   (d) optionally --int8: the model.int8.onnx dynamic-quantization variant.
 
 Reports per-text cosine and max-abs-diff against (a). PASS requires
@@ -34,7 +34,7 @@ from pathlib import Path
 import numpy as np
 
 MODEL_ID = "bge-large-en-v1.5"
-DEFAULT_MODEL_DIR = Path.home() / ".dasein" / "models" / "bge-large-onnx"
+DEFAULT_MODEL_DIR = Path.home() / ".parsec" / "models" / "bge-large-onnx"
 PASS_COSINE = 0.9999
 
 LONG_PROSE = (
@@ -63,7 +63,7 @@ def battery() -> list[str]:
         CHUNK_3000[:2000],
         HEAD_LONG[:240],
         "   \t\n  spaced\t\tout\n\n\nwords   ",
-        "$ cargo test -p dasein-engine\nrunning 13 tests\ntest embed::tests::hash_embedder_empty_input ... ok",
+        "$ cargo test -p parsec-engine\nrunning 13 tests\ntest embed::tests::hash_embedder_empty_input ... ok",
         "Traceback (most recent call last):\n  File \"app.py\", line 1, in <module>\nZeroDivisionError: division by zero",
         "x",
         "",
@@ -143,7 +143,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)
     ap.add_argument("--remote-url",
-                    default=os.environ.get("DASEIN_EMBED_URL",
+                    default=os.environ.get("PARSEC_EMBED_URL",
                                            "http://127.0.0.1:18080/embed"))
     ap.add_argument("--skip-remote", action="store_true")
     ap.add_argument("--int8", action="store_true",

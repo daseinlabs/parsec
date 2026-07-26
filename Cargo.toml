@@ -24,7 +24,7 @@ thiserror = "2"
 tracing = "0.1"
 # proxy data plane (DIRECTION.md §4): local axum server relaying to
 # api.anthropic.com; rustls only — no native-tls/openssl link burden in the
-# self-contained per-platform `dasein` binary.
+# self-contained per-platform `parsec` binary.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }

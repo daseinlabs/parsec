@@ -35,14 +35,14 @@ use std::sync::LazyLock;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use dasein_engine::chunking::{
+use parsec_engine::chunking::{
     accumulated_chunks, chunk_observation, Chunk, ChunkMode, DEFAULT_WIN,
 };
-use dasein_engine::features::{node_struct_with_type, supersession_edges};
-use dasein_engine::freeze::BirthQuery;
-use dasein_engine::messages::{actions, assistant_chunks_of, reasoning_chunks_of, steps_of};
-use dasein_engine::pystr::{char_len, char_prefix, py_json_dumps_opts, py_strip};
-use dasein_engine::readout::{decided_struct, Changeprone, ReadoutCtx};
+use parsec_engine::features::{node_struct_with_type, supersession_edges};
+use parsec_engine::freeze::BirthQuery;
+use parsec_engine::messages::{actions, assistant_chunks_of, reasoning_chunks_of, steps_of};
+use parsec_engine::pystr::{char_len, char_prefix, py_json_dumps_opts, py_strip};
+use parsec_engine::readout::{decided_struct, Changeprone, ReadoutCtx};
 
 /// AC_CHANGEPRONE sidecar, compiled in from the committed engine parity
 /// fixture (scripts/changeprone_to_json.py over models/changeprone.pkl —
@@ -244,7 +244,7 @@ fn tool_spec_view(internal: &[Value]) -> Option<(Vec<Chunk>, String)> {
     let task_text = tool_task_text(internal);
     if chunks.is_empty() {
         // step-0 fallback: no observations yet — condition the head on the
-        // task text chunked as an observation (the DASEIN-PATCH the brain's
+        // task text chunked as an observation (the PARSEC-PATCH the brain's
         // vendored build_tool_spec carries).
         chunks = chunk_observation("", &task_text, 0, DEFAULT_WIN, Some(10), ChunkMode::Fixed);
     }

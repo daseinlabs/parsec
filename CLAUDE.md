@@ -23,7 +23,7 @@ decisions. Non-negotiables when writing code here:
 - **Dependency direction**: `bench → proxy → engine`; `brain`/`trainer` import
   `contracts` only, never client crates. Training code must not be a runtime
   dependency of serving.
-- **No TypeScript in client/plugin code.** Client = Rust (`dasein` binary +
+- **No TypeScript in client/plugin code.** Client = Rust (`parsec` binary +
   plugin markdown/JSON); server = Python. The §7b rationale (runtime
   guarantee, binary auditability) is client-only — the web dashboard
   (`packages/frontend`, Next.js) is exempt.

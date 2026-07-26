@@ -8,9 +8,9 @@ cd "$(dirname "$0")/.."
 # Optional: bake default endpoints into the binary via option_env! (cargo
 # rebuilds when they change) — brain.rs BAKED_BRAIN_URL and ledger_ship.rs
 # BAKED_PLATFORM_URL. `make plugin BRAIN_URL=… PLATFORM_URL=…` sets them; empty
-# = dev build with no baked default (reads DASEIN_BRAIN_URL / DASEIN_PLATFORM_URL
+# = dev build with no baked default (reads PARSEC_BRAIN_URL / PARSEC_PLATFORM_URL
 # at runtime). Same two knobs release.yml bakes for shipped plugins.
-for v in DASEIN_DEFAULT_BRAIN_URL DASEIN_DEFAULT_PLATFORM_URL; do
+for v in PARSEC_DEFAULT_BRAIN_URL PARSEC_DEFAULT_PLATFORM_URL; do
   eval "val=\${$v:-}"
   if [ -n "$val" ]; then
     echo "baking $v=$val"
@@ -21,10 +21,10 @@ for v in DASEIN_DEFAULT_BRAIN_URL DASEIN_DEFAULT_PLATFORM_URL; do
 done
 # No cargo features remain: the ONNX embedder moved server-side on
 # 2026-07-20 (docs/server-side-embedding.md), taking ort/tokenizers with it.
-cargo build --release --bin dasein
-DEST=packages/plugin/bin/darwin-arm64/dasein
-cp target/release/dasein "$DEST.tmp"
+cargo build --release --bin parsec
+DEST=packages/plugin/bin/darwin-arm64/parsec
+cp target/release/parsec "$DEST.tmp"
 codesign --force --sign - "$DEST.tmp" 2>/dev/null || true   # no-op on linux
 mv -f "$DEST.tmp" "$DEST"
-echo '{"hook_event_name":"SessionStart"}' | packages/plugin/bin/dasein hook SessionStart >/dev/null \
+echo '{"hook_event_name":"SessionStart"}' | packages/plugin/bin/parsec hook SessionStart >/dev/null \
   && echo "refreshed + hook smoke OK: $DEST"

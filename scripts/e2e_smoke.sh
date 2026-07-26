@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local end-to-end smoke of the real-scorer path — NO cloud deploy involved:
-#   Claude-Code-shaped traffic → dasein proxy → local brain (curator_v4_prod)
+#   Claude-Code-shaped traffic → parsec proxy → local brain (curator_v4_prod)
 #   → trimmed request → mock upstream, with the savings ledger written.
 #
 # Usage:
@@ -9,12 +9,12 @@
 #                                     #   kubectl port-forward svc/dasein-embed
 #
 # Requires: the brain venv (packages/brain/.venv), the checkpoint at
-# ~/.dasein/brain/curator_v4_prod.pt, cargo.
+# ~/.parsec/brain/curator_v4_prod.pt, cargo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODE="${1:-hash}"
-CKPT="${DASEIN_CKPT:-$HOME/.dasein/brain/curator_v4_prod.pt}"
+CKPT="${PARSEC_CKPT:-$HOME/.parsec/brain/curator_v4_prod.pt}"
 BRAIN_PORT=8090 UPSTREAM_PORT=8091 PROXY_PORT=8092
 TMP="$(mktemp -d)"
 LEDGER="$TMP/ledger.jsonl"
@@ -23,10 +23,10 @@ PIDS=()
 cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
 trap cleanup EXIT
 
-[ -f "$CKPT" ] || { echo "checkpoint missing: $CKPT (gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt \$HOME/.dasein/brain/)"; exit 1; }
+[ -f "$CKPT" ] || { echo "checkpoint missing: $CKPT (gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt \$HOME/.parsec/brain/)"; exit 1; }
 
 echo "── building proxy"
-cargo build -q --bin dasein
+cargo build -q --bin parsec
 
 echo "── mock upstream :$UPSTREAM_PORT (spool $SPOOL)"
 python3 scripts/mock_upstream.py --port $UPSTREAM_PORT --spool "$SPOOL" & PIDS+=($!)
@@ -35,19 +35,19 @@ echo "── brain :$BRAIN_PORT (embed=$MODE)"
 if [ "$MODE" = "real-embed" ]; then
   kubectl port-forward svc/dasein-embed 18080:80 >/dev/null 2>&1 & PIDS+=($!)
   sleep 2
-  EMBED_ENV=(DASEIN_EMBED_URL=http://127.0.0.1:18080/embed)
+  EMBED_ENV=(PARSEC_EMBED_URL=http://127.0.0.1:18080/embed)
 else
-  EMBED_ENV=(DASEIN_EMBED_BACKEND=hash)
+  EMBED_ENV=(PARSEC_EMBED_BACKEND=hash)
 fi
-# DASEIN_SERVE_TAU forces the cut so the smoke is deterministic regardless of
+# PARSEC_SERVE_TAU forces the cut so the smoke is deterministic regardless of
 # what the model thinks of this synthetic conversation — the smoke proves the
 # MACHINERY (parse parity, forward, quantize, splice, fold, ledger), not the
 # operating point. Export SMOKE_TAU="" to serve the calibrated tau instead.
 SMOKE_TAU="${SMOKE_TAU-0.999}"
 TAU_ENV=()
-[ -n "$SMOKE_TAU" ] && TAU_ENV=(DASEIN_SERVE_TAU="$SMOKE_TAU")
-( cd packages/brain && env "${EMBED_ENV[@]}" "${TAU_ENV[@]}" DASEIN_CKPT="$CKPT" \
-    .venv/bin/python -m uvicorn --factory dasein_brain.app:create_app --host 127.0.0.1 \
+[ -n "$SMOKE_TAU" ] && TAU_ENV=(PARSEC_SERVE_TAU="$SMOKE_TAU")
+( cd packages/brain && env "${EMBED_ENV[@]}" "${TAU_ENV[@]}" PARSEC_CKPT="$CKPT" \
+    .venv/bin/python -m uvicorn --factory parsec_brain.app:create_app --host 127.0.0.1 \
     --port $BRAIN_PORT --log-level warning ) & PIDS+=($!)
 for i in $(seq 1 60); do
   curl -sf "http://127.0.0.1:$BRAIN_PORT/health" >/dev/null && break
@@ -57,9 +57,9 @@ done
 curl -s "http://127.0.0.1:$BRAIN_PORT/v1/bundle" | python3 -m json.tool | sed 's/^/   /' | head -15
 
 echo "── proxy :$PROXY_PORT"
-env DASEIN_PROXY_PORT=$PROXY_PORT DASEIN_UPSTREAM="http://127.0.0.1:$UPSTREAM_PORT" \
-    DASEIN_BRAIN_URL="http://127.0.0.1:$BRAIN_PORT" DASEIN_BRAIN_DEV_RAW=1 \
-    HOME="$TMP" ./target/debug/dasein proxy & PIDS+=($!)
+env PARSEC_PROXY_PORT=$PROXY_PORT PARSEC_UPSTREAM="http://127.0.0.1:$UPSTREAM_PORT" \
+    PARSEC_BRAIN_URL="http://127.0.0.1:$BRAIN_PORT" PARSEC_BRAIN_DEV_RAW=1 \
+    HOME="$TMP" ./target/debug/parsec proxy & PIDS+=($!)
 sleep 1
 
 # ── drive a CC-shaped conversation ──────────────────────────────────────────
@@ -89,7 +89,7 @@ echo "── turn 1"; turn "$MSGS1"
 echo "── turn 2"; turn "$MSGS2"
 
 # ── assertions ──────────────────────────────────────────────────────────────
-python3 - "$SPOOL" "$TMP/.dasein/ledger.jsonl" <<'EOF'
+python3 - "$SPOOL" "$TMP/.parsec/ledger.jsonl" <<'EOF'
 import json, pathlib, sys
 spool, ledger = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 reqs = sorted(spool.glob("req_*.json"))

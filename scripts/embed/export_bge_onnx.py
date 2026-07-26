@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export BAAI/bge-large-en-v1.5 to ONNX for the client-side embedder.
 
-Produces ~/.dasein/models/bge-large-onnx/ containing model.onnx (fp32,
+Produces ~/.parsec/models/bge-large-onnx/ containing model.onnx (fp32,
 ~1.3GB) + tokenizer.json, the layout engine::embed::OnnxEmbedder loads.
 Optionally also model.int8.onnx (dynamic quantization, ~330MB) — a
 download-UX candidate that must NOT ship until it passes the parity gate
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 MODEL_ID = "BAAI/bge-large-en-v1.5"
-DEFAULT_OUT = Path.home() / ".dasein" / "models" / "bge-large-onnx"
+DEFAULT_OUT = Path.home() / ".parsec" / "models" / "bge-large-onnx"
 
 
 def main() -> int:

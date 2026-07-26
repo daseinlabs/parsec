@@ -1,5 +1,5 @@
-# dasein frontend — Cloud Run image (server-rendered Next 16, standalone output).
-# Build from packages/frontend:  docker build -t dasein-frontend packages/frontend
+# parsec frontend — Cloud Run image (server-rendered Next 16, standalone output).
+# Build from packages/frontend:  docker build -t parsec-frontend packages/frontend
 #
 # CRITICAL Next.js gotcha: NEXT_PUBLIC_* are INLINED into the client bundle at
 # `next build`, NOT read at runtime. So they arrive here as --build-arg and must

@@ -1,7 +1,7 @@
 # Learner — Product Direction
 
 **Status:** direction doc, 2026-07-08. This is the anchor for the `learner` monorepo — the
-productization of the Dasein A3S stack (`adaptive-context-clean`). Everything here was decided
+productization of the Parsec A3S stack (`adaptive-context-clean`). Everything here was decided
 against three reference architectures studied side by side: our own wire proxy, pxpipe
 (transparent local proxy, image re-encoding), and Woz (Claude Code plugin, tool replacement).
 
@@ -45,7 +45,7 @@ local install, centralized reporting). One codebase, two topologies.
 
 | Tier | What runs | Who pays for tokens | Revenue |
 |---|---|---|---|
-| **Free (plugin only)** | codescout exploration maps as a `dasein:explore` agent, no-reread PreToolUse hook, savings status line, `/dasein-savings` | user (their plan/key) | none — distribution + flywheel |
+| **Free (plugin only)** | codescout exploration maps as a `parsec:explore` agent, no-reread PreToolUse hook, savings status line, `/parsec:savings` | user (their plan/key) | none — distribution + flywheel |
 | **Pro (plugin + local proxy)** | full curator via hosted scoring API, tool-schema prune, governor, rule gate | user (their plan/key) | seat subscription for the brain API |
 | **Team (hosted BYOK gateway)** | same engine deployed in our cloud; customer API keys pass through | user (their key) | seat / metered on measured savings |
 | **Enterprise (self-host)** | licensed checkpoints + containerized stack + **on-prem fine-tuning** on their traces from our base checkpoint | them | license |
@@ -86,7 +86,7 @@ Key architecture decisions (each learned from a reference system):
 
 1. **Plugin as the integration surface** (from Woz). `/plugin install` beats "change your base
    URL"; agents/hooks/MCP give us map delivery, no-reread, and stop-governor seams natively.
-   Map delivery moves from the proxy's force-spawn trick to a sanctioned `dasein:explore`
+   Map delivery moves from the proxy's force-spawn trick to a sanctioned `parsec:explore`
    agent backed by codescout running locally — works on arbitrary repos, no wire surgery.
 2. **Cache stability by determinism, not state** (from pxpipe). Replace the in-process
    `served_folds` session dict with quantized, append-only freezing where served bytes are a
@@ -149,14 +149,14 @@ Training stays central (trainer + corpus + eval gates), fed by opt-in telemetry 
 **Consent UX:**
 - Ask **after the first savings report**, not at install — "help the model that just saved you
   $3.20 get better" converts; an install-time wall doesn't.
-- `/dasein-share --preview` dumps the exact featurized trace that would be uploaded, locally,
+- `/parsec:share --preview` dumps the exact featurized trace that would be uploaded, locally,
   human-readable. Show the bytes.
-- Persistent status-line indicator while sharing is on; `/dasein-share off` stops instantly;
-  `/dasein-share purge` files deletion.
+- Persistent status-line indicator while sharing is on; `/parsec:share off` stops instantly;
+  `/parsec:share purge` files deletion.
 - A tier or schema change **re-prompts** — consent never silently expands.
 
 **Pipeline:**
-1. Local spool (`~/.dasein/spool/`), delayed upload — inspectable/deletable before shipping.
+1. Local spool (`~/.parsec/spool/`), delayed upload — inspectable/deletable before shipping.
 2. Local scrubbing **before** featurization: secret scanning (keys, `.env` shapes,
    high-entropy strings → mask or drop the chunk), repo-relative paths hashed with a local salt.
 3. Provenance tagging (contributor ID + trace ID) so purge is honorable: deleted from corpus
@@ -179,14 +179,14 @@ Training stays central (trainer + corpus + eval gates), fed by opt-in telemetry 
 learner/
   DIRECTION.md            ← this doc
   packages/
-    plugin/               Claude Code plugin: agents (dasein:explore), hooks (no-reread,
-                          stop-governor seam, telemetry), skills (/dasein-savings, /dasein-share,
+    plugin/               Claude Code plugin: agents (parsec:explore), hooks (no-reread,
+                          stop-governor seam, telemetry), skills (/parsec:savings, /parsec:share,
                           login/settings), status line. Markdown + JSON + committed per-platform
-                          `dasein` binaries (see §7b) — no TypeScript.
+                          `parsec` binaries (see §7b) — no TypeScript.
     proxy/                the local data-plane proxy (also deployable as the Team cloud
                           gateway): Anthropic-wire /v1/messages, cache-safe splicing with
                           deterministic quantized freezing, tool-prune, governor, passthrough
-                          auth, count_tokens measurement. Rust (`dasein proxy`). Ported from
+                          auth, count_tokens measurement. Rust (`parsec proxy`). Ported from
                           adaptive-context-clean/service (absorbing the gateway's upstream
                           bridge as provider adapters: anthropic-passthrough | vertex | byok).
     engine/               the client-side deterministic core the proxy uses: chunking,
@@ -242,10 +242,10 @@ plugin-marketplaces, setup, statusline):
   update channel.
 
 The shape:
-- **One `dasein` binary, subcommands for every role**: `dasein mcp` (stdio MCP server —
-  codescout/Search), `dasein hook <event>` (no-reread gate, session, telemetry), `dasein proxy`
+- **One `parsec` binary, subcommands for every role**: `parsec mcp` (stdio MCP server —
+  codescout/Search), `parsec hook <event>` (no-reread gate, session, telemetry), `parsec proxy`
   (Pro data plane; same binary deploys as the Team gateway in a scratch container),
-  `dasein statusline`. Crates: axum/hyper + tokio (proxy, SSE), rmcp (MCP), tree-sitter,
+  `parsec statusline`. Crates: axum/hyper + tokio (proxy, SSE), rmcp (MCP), tree-sitter,
   serde_json with `preserve_order`.
 - **Plugin repo = markdown + JSON + committed per-platform binaries**
   (`bin/{darwin-arm64,darwin-x64,linux-x64,win-x64}/`) plus a two-line platform shim
@@ -330,7 +330,7 @@ ecosystems win and iteration speed matters more than anything Rust buys.
   no k8s) vs GKE (matches `docs/brain-serving-v0.md`, but no manifests exist in the repo yet).
 - Per-key throttling design — quota, concurrency cap, 429 + `Retry-After`, and proxy-side
   backoff. None of this exists today, and the brain is currently open by default when
-  `DASEIN_BRAIN_KEY` is unset.
+  `PARSEC_BRAIN_KEY` is unset.
 - Brain API scoring latency budget per turn at p95, and offline/degraded mode (proxy falls
   back to deterministic-only when the brain is unreachable — fail-open, measured).
 - Self-calibrating per-config τ design (handoff `CHAIN_HASHDUP_HANDOFF.md` direction) — needed

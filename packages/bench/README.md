@@ -1,25 +1,25 @@
-# dasein-bench
+# parsec-bench
 
 Port of the cc-bench harness (`adaptive-context-clean/bench`, ~4.4k lines) to
 the learner repo. One fixed agent — headless Claude Code — runs against task
 repos; only the compression layer (the "arm") differs between runs. The bench
 sits at the TOP of the dependency graph (`bench → proxy → engine`, CLAUDE.md):
-it drives the `dasein` proxy as a **black-box binary** and is imported by
+it drives the `parsec` proxy as a **black-box binary** and is imported by
 nothing.
 
 ```
 packages/bench/
-  src/dasein_bench/
+  src/parsec_bench/
     cc_runner.py      the runner (real `claude` CLI via the Claude Agent SDK)
     replay.py         REPLAY mode — recorded conversations, no credits
-    arm.py, arms/     arm contract + registry; baseline + dasein arms
+    arm.py, arms/     arm contract + registry; baseline + parsec arms
     usage_gateway.py  passthrough bottom bridge; per-run usage JSONL
     ledger.py         savings-ledger accounting (§8.4 counterfactual math)
     pricing.py        cache-aware price frames (reference table, as-is)
     schema.py         RunRecord / CallUsage / AggResult
     grader.py         official SWE-bench grading seam (Docker harness)
     prepare_repos.py  per-instance worktrees + isolated test envs
-    proxy_bin.py      locate/spawn the dasein binary
+    proxy_bin.py      locate/spawn the parsec binary
     mock_upstream.py  in-process Anthropic-shaped mock (replay + tests)
   tests/              pytest suite (venv: .venv, python 3.12)
 ```
@@ -32,24 +32,24 @@ production serving, but **any benchmark number produced with it is
 contaminated and invalid** (rulehead `PRODUCTION_SERVING_HANDOFF.md`).
 Benchmarks must point the brain at the **eval-excluded twin `curator_v4.pt`**
 (or `curator_v3.pt`): `gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4.pt …`
-and start `packages/brain` with `DASEIN_CKPT` set to it.
+and start `packages/brain` with `PARSEC_CKPT` set to it.
 
 Guard rails in this harness:
-* the dasein arm records the brain's `checkpoint_id` (sha256 of the `.pt`)
+* the parsec arm records the brain's `checkpoint_id` (sha256 of the `.pt`)
   from `/v1/bundle` into every `RunRecord`, so contamination is auditable;
-* set `DASEIN_BENCH_CKPT_SHA256=<sha256 of curator_v4.pt>` and the arm's
+* set `PARSEC_BENCH_CKPT_SHA256=<sha256 of curator_v4.pt>` and the arm's
   `ready()` REFUSES to run against any other bundle.
 
 ## Measurement honesty (§8.4)
 
 Savings numbers come **only** from the proxy's per-request `count_tokens`
 counterfactual (the `savings-ledger/v0` rows the proxy writes to
-`$HOME/.dasein/ledger.jsonl`): per probed request,
+`$HOME/.parsec/ledger.jsonl`): per probed request,
 `counterfactual_input_tokens − (billed_input + cache_read + cache_write)`.
 Rows whose probe failed (`counterfactual_input_tokens: null`) are **excluded**
-from `tokens_saved` — never estimated (`dasein_bench.ledger`). The
+from `tokens_saved` — never estimated (`parsec_bench.ledger`). The
 `freeze_cut_tokens` field is a chars/4 diagnostic, never a savings claim.
-Dollar frames (`dasein_bench.pricing`) price what was *billed* and are never a
+Dollar frames (`parsec_bench.pricing`) price what was *billed* and are never a
 savings baseline.
 
 ## Replay mode — savings estimate without Anthropic credits
@@ -64,11 +64,11 @@ numbers are clearly labeled estimates, not billed tokens.
 
 ```bash
 # passthrough machinery (no brain): deltas ≈ 0 by design
-.venv/bin/python -m dasein_bench.replay --fixture tests/fixtures/replay_2turn.json
+.venv/bin/python -m parsec_bench.replay --fixture tests/fixtures/replay_2turn.json
 
 # the real thing: brain-scored trimming + tool pruning (start packages/brain
 # first — see scripts/e2e_smoke.sh for the local brain recipe)
-.venv/bin/python -m dasein_bench.replay \
+.venv/bin/python -m parsec_bench.replay \
     --fixture ../proxy/parity/fixtures/golden_conversation.json \
     --brain-url http://127.0.0.1:8090 --json report.json
 ```
@@ -92,28 +92,28 @@ uv pip install --python .venv/bin/python -e '.[test,run]'
 1. **Provision task repos + per-instance test envs** (one-time, slow):
 
    ```bash
-   AC_REPO_ROOT=~/task_repos .venv/bin/python -m dasein_bench.prepare_repos \
-       --tasks tasks.json            # add --arms baseline,dasein for per-arm trees
+   AC_REPO_ROOT=~/task_repos .venv/bin/python -m parsec_bench.prepare_repos \
+       --tasks tasks.json            # add --arms baseline,parsec for per-arm trees
    ```
 
 2. **Start the brain** with the eval-excluded checkpoint (see the warning
-   above) and export `DASEIN_BRAIN_URL` (+ optionally
-   `DASEIN_BENCH_CKPT_SHA256`). The dasein arm spawns `dasein proxy` per solve
-   (env `DASEIN_BIN` or `target/{release,debug}/dasein`) with its upstream
+   above) and export `PARSEC_BRAIN_URL` (+ optionally
+   `PARSEC_BENCH_CKPT_SHA256`). The parsec arm spawns `parsec proxy` per solve
+   (env `PARSEC_BIN` or `target/{release,debug}/parsec`) with its upstream
    pointed at the run's usage gateway; chain per arm:
 
    ```
    baseline: Claude Code → gateway → api.anthropic.com
-   dasein  : Claude Code → dasein proxy (curates; writes the savings ledger)
+   parsec  : Claude Code → parsec proxy (curates; writes the savings ledger)
                          → gateway → api.anthropic.com
    ```
 
 3. **Run** (real spend — start with `--limit 1`):
 
    ```bash
-   .venv/bin/python -m dasein_bench.cc_runner --list-arms   # readiness check
-   .venv/bin/python -m dasein_bench.cc_runner \
-       --tasks tasks.json --arms baseline,dasein \
+   .venv/bin/python -m parsec_bench.cc_runner --list-arms   # readiness check
+   .venv/bin/python -m parsec_bench.cc_runner \
+       --tasks tasks.json --arms baseline,parsec \
        --repo-root ~/task_repos --out runs --limit 1
    ```
 

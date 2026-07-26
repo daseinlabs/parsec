@@ -31,8 +31,8 @@ the exact vendored reference code. This is the same data-plane exception
 STATUS.md already blesses for the dev embed fallback, extended to the scorer:
 **fine for our own machines, never for real users.**
 
-- Proxy side: the raw-text scorer only activates when `DASEIN_BRAIN_URL` is
-  set AND `DASEIN_BRAIN_DEV_RAW=1` — nothing flows without the explicit flag.
+- Proxy side: the raw-text scorer only activates when `PARSEC_BRAIN_URL` is
+  set AND `PARSEC_BRAIN_DEV_RAW=1` — nothing flows without the explicit flag.
 - Contract split: `contracts/schemas/brain-api.schema.json` (v1 target,
   vectors+features, no raw text representable) is the commitment;
   `brain-api-dev.schema.json` (v0, what's implemented) is marked dev-only.
@@ -87,7 +87,7 @@ filtered out (reference behavior, known Glob-drop bug). Added guard: a request
 whose `tool_choice` forces a specific tool is served the full roster for that
 call (the reference could 400 upstream; only its force-spawn path guarded).
 
-Added vs the reference — **stubs, not silence** (`DASEIN_TOOL_STUB`, default
+Added vs the reference — **stubs, not silence** (`PARSEC_TOOL_STUB`, default
 on): a pruned custom tool is served as a minimal stub — name, description
 truncated to 200 chars, a note that the tool is still available and one call
 brings its full schema back, and an accept-anything object schema — instead
@@ -114,23 +114,23 @@ it into the ledger row (capture seam).
 
 ## Config surface
 
-Proxy: `DASEIN_BRAIN_URL` (release builds bake a production default via
-`DASEIN_DEFAULT_BRAIN_URL` at compile time — runtime env overrides, empty
+Proxy: `PARSEC_BRAIN_URL` (release builds bake a production default via
+`PARSEC_DEFAULT_BRAIN_URL` at compile time — runtime env overrides, empty
 disables, and the baked default implies contract v1 + stays inert on the
-hash embed backend), `DASEIN_BRAIN_CONTRACT` (dev | v1; default dev),
-`DASEIN_BRAIN_DEV_RAW=1` (explicit raw-text opt-in — dev contract only; v1
-sends no raw text and needs none), `DASEIN_BRAIN_KEY` (bearer, optional),
-`DASEIN_BRAIN_TIMEOUT_MS` (default 10000), `DASEIN_TARGET_COV` (default
-0.70), `DASEIN_TOOL_PRUNE` (default on when brain configured),
-`DASEIN_TOOL_CUT` (default 0.70), `DASEIN_TOOL_STUB` (default on; "off"
-restores the reference hard-drop of pruned tools), `DASEIN_FREEZE=off`
+hash embed backend), `PARSEC_BRAIN_CONTRACT` (dev | v1; default dev),
+`PARSEC_BRAIN_DEV_RAW=1` (explicit raw-text opt-in — dev contract only; v1
+sends no raw text and needs none), `PARSEC_BRAIN_KEY` (bearer, optional),
+`PARSEC_BRAIN_TIMEOUT_MS` (default 10000), `PARSEC_TARGET_COV` (default
+0.70), `PARSEC_TOOL_PRUNE` (default on when brain configured),
+`PARSEC_TOOL_CUT` (default 0.70), `PARSEC_TOOL_STUB` (default on; "off"
+restores the reference hard-drop of pruned tools), `PARSEC_FREEZE=off`
 escape hatch. v1
-client embedder: `DASEIN_EMBED_BACKEND=hash|remote|onnx` (default hash —
-test vectors, warns), `DASEIN_EMBED_URL` (remote), `DASEIN_ONNX_DIR` (onnx;
+client embedder: `PARSEC_EMBED_BACKEND=hash|remote|onnx` (default hash —
+test vectors, warns), `PARSEC_EMBED_URL` (remote), `PARSEC_ONNX_DIR` (onnx;
 needs the `onnx` cargo feature).
-Brain: `DASEIN_CKPT`, `DASEIN_RULES_JSON`, `DASEIN_EMBED_URL` (in-cluster
-dasein-embed /embed; JSON path), `DASEIN_EMBED_BACKEND=hash` for hermetic
-tests, `DASEIN_TARGET_COV`, `DASEIN_BRAIN_KEY` (optional bearer check).
+Brain: `PARSEC_CKPT`, `PARSEC_RULES_JSON`, `PARSEC_EMBED_URL` (in-cluster
+dasein-embed /embed; JSON path), `PARSEC_EMBED_BACKEND=hash` for hermetic
+tests, `PARSEC_TARGET_COV`, `PARSEC_BRAIN_KEY` (optional bearer check).
 
 ## Deploy
 
@@ -172,9 +172,9 @@ retrofit; the telemetry pipeline itself stays unbuilt (§6 consent UX first).
 
 ### Cross-contract E2E gate — dev == v1 on served bytes (2026-07-10): PASS
 
-The proxy now speaks both contracts (`DASEIN_BRAIN_CONTRACT=dev|v1`, default
+The proxy now speaks both contracts (`PARSEC_BRAIN_CONTRACT=dev|v1`, default
 dev). In v1 mode the client featurizes where the text lives
-(`proxy/src/featurize.rs`: local embedder from `DASEIN_EMBED_BACKEND=
+(`proxy/src/featurize.rs`: local embedder from `PARSEC_EMBED_BACKEND=
 hash|remote|onnx`, engine `node_struct_with_type`/`decided_struct`/
 `supersession_edges`, salted 16-hex ids, the committed changeprone sidecar)
 and handshakes `GET /v1/bundle` once per conversation for the checkpoint_id
@@ -182,7 +182,7 @@ and handshakes `GET /v1/bundle` once per conversation for the checkpoint_id
 opt-in is needed on v1 — the wire cannot represent text.
 
 `scripts/parity_v1.sh` (hermetic; ONE local brain, hash embed both sides,
-`DASEIN_SERVE_TAU` forced like golden_replay.sh) replays the committed
+`PARSEC_SERVE_TAU` forced like golden_replay.sh) replays the committed
 21-turn golden fixture through fresh proxies on each contract into separate
 mock-upstream spools:
 

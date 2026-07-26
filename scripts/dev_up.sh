@@ -7,21 +7,21 @@
 # container we could accidentally ship or log from (DIRECTION.md §2).
 #
 #   make dev                       # demo: hash embeds + forced tau (visible trims)
-#   EMBED=dasein DASEIN_SERVE_TAU= make dev
+#   EMBED=dasein PARSEC_SERVE_TAU= make dev
 #                                  # real scores; needs the cluster embedder:
 #                                  #   kubectl port-forward svc/dasein-embed 18080:80
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CKPT="${DASEIN_CKPT:-$HOME/.dasein/brain/curator_v4_prod.pt}"
-BRAIN_URL="${DASEIN_BRAIN_URL:-http://127.0.0.1:8090}"
+CKPT="${PARSEC_CKPT:-$HOME/.parsec/brain/curator_v4_prod.pt}"
+BRAIN_URL="${PARSEC_BRAIN_URL:-http://127.0.0.1:8090}"
 
 if [ ! -f "$CKPT" ]; then
   cat >&2 <<EOF
 checkpoint missing: $CKPT
 
-  mkdir -p ~/.dasein/brain
-  gcloud storage cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.dasein/brain/
+  mkdir -p ~/.parsec/brain
+  gcloud storage cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.parsec/brain/
 
 The brain self-validates the bundle at startup, so without it the container
 never goes healthy.

@@ -1,4 +1,4 @@
-//! The unified API-key gate — the ONE place that answers "is dasein entitled
+//! The unified API-key gate — the ONE place that answers "is parsec entitled
 //! to run?" and renders the "get a key" messaging.
 //!
 //! Everything a missing key turns off checks [`enabled`] / [`resolve_key`]
@@ -14,7 +14,7 @@
 
 use crate::credentials;
 
-/// Where the user mints their per-account `dsn_` key.
+/// Where the user mints their per-account `psc_` key.
 pub const SIGNUP_URL: &str = "app.getparsec.ai";
 
 /// First non-empty (trimmed) candidate — the shared precedence primitive.
@@ -27,33 +27,33 @@ fn first_key(cands: &[Option<&str>]) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The per-account `dsn_` key from the dashboard: `DASEIN_API_KEY` env →
-/// `~/.dasein/credentials.json`. This is the entitlement + attribution key — it
+/// The per-account `psc_` key from the dashboard: `PARSEC_API_KEY` env →
+/// `~/.parsec/credentials.json`. This is the entitlement + attribution key — it
 /// authenticates to the platform brain AND rides savings-ledger rows. It is NOT
-/// the self-host shared `DASEIN_BRAIN_KEY`, which must never reach the platform.
+/// the self-host shared `PARSEC_BRAIN_KEY`, which must never reach the platform.
 pub fn account_key() -> Option<String> {
     let creds = credentials::load();
     first_key(&[
-        std::env::var("DASEIN_API_KEY").ok().as_deref(),
+        std::env::var("PARSEC_API_KEY").ok().as_deref(),
         creds.api_key.as_deref(),
     ])
 }
 
 /// The bearer the proxy authenticates to the brain with: an explicit shared
-/// `DASEIN_BRAIN_KEY` (dev/self-host) wins, else the per-account key. Read fresh
-/// each call so `dasein key set` applies without a proxy restart.
+/// `PARSEC_BRAIN_KEY` (dev/self-host) wins, else the per-account key. Read fresh
+/// each call so `parsec key set` applies without a proxy restart.
 pub fn resolve_key() -> Option<String> {
     let creds = credentials::load();
     first_key(&[
-        std::env::var("DASEIN_BRAIN_KEY").ok().as_deref(),
-        std::env::var("DASEIN_API_KEY").ok().as_deref(),
+        std::env::var("PARSEC_BRAIN_KEY").ok().as_deref(),
+        std::env::var("PARSEC_API_KEY").ok().as_deref(),
         creds.api_key.as_deref(),
     ])
 }
 
-/// THE gate. `false` ⇒ dasein saves NOTHING: the hook does not gate re-reads or
+/// THE gate. `false` ⇒ parsec saves NOTHING: the hook does not gate re-reads or
 /// loops, the backend is never called, and the proxy is pure passthrough. A key
-/// of EITHER kind (self-host `DASEIN_BRAIN_KEY` or the account key) enables it.
+/// of EITHER kind (self-host `PARSEC_BRAIN_KEY` or the account key) enables it.
 pub fn enabled() -> bool {
     resolve_key().is_some()
 }
@@ -62,11 +62,11 @@ pub fn enabled() -> bool {
 /// testable; [`gate_banner`] supplies the live `enabled`/`muted` inputs.
 fn banner_text() -> String {
     format!(
-        "⚠️  dasein: NO API KEY — savings are OFF.\n\
-         Claude Code runs normally, but dasein will not curate context or block \
+        "⚠️  parsec: NO API KEY — savings are OFF.\n\
+         Claude Code runs normally, but parsec will not curate context or block \
          re-reads/loops until you add a key.\n\
-         → Get your key at {SIGNUP_URL}, then run:  dasein key set <dsn_…>\n\
-         (silence this reminder with DASEIN_API_KEY_NOTE=0)"
+         → Get your key at {SIGNUP_URL}, then run:  parsec key set <psc_…>\n\
+         (silence this reminder with PARSEC_API_KEY_NOTE=0)"
     )
 }
 
@@ -77,11 +77,11 @@ fn banner_for(enabled: bool, muted: bool) -> Option<String> {
 }
 
 /// Live gate banner: `Some` iff unentitled and not muted via
-/// `DASEIN_API_KEY_NOTE=0`.
+/// `PARSEC_API_KEY_NOTE=0`.
 pub fn gate_banner() -> Option<String> {
     banner_for(
         enabled(),
-        std::env::var("DASEIN_API_KEY_NOTE").ok().as_deref() == Some("0"),
+        std::env::var("PARSEC_API_KEY_NOTE").ok().as_deref() == Some("0"),
     )
 }
 
@@ -98,8 +98,8 @@ mod tests {
         );
         // Falls through empties to the account key.
         assert_eq!(
-            first_key(&[Some("  "), None, Some("dsn_file")]).as_deref(),
-            Some("dsn_file")
+            first_key(&[Some("  "), None, Some("psc_file")]).as_deref(),
+            Some("psc_file")
         );
         // All empty/absent -> no key -> gate closed.
         assert_eq!(first_key(&[None, Some(""), Some("   ")]), None);
@@ -110,7 +110,7 @@ mod tests {
         // Unentitled and not muted -> banner, and it points at the signup URL.
         let b = banner_for(false, false).expect("banner when unentitled");
         assert!(b.contains(SIGNUP_URL));
-        assert!(b.contains("dasein key set"));
+        assert!(b.contains("parsec key set"));
         // Entitled -> never.
         assert_eq!(banner_for(true, false), None);
         // Muted -> suppressed even when unentitled.

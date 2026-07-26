@@ -5,8 +5,8 @@
 //! the same single rounding). Regenerate fixtures with:
 //!   ../brain/.venv/bin/python parity/gen_feature_fixtures.py
 
-use dasein_engine::chunking::Chunk;
-use dasein_engine::features::{
+use parsec_engine::chunking::Chunk;
+use parsec_engine::features::{
     markers, node_struct_with_type, spans, struct_features, struct_features_causal,
     struct_type_features, supersession_edges,
 };

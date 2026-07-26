@@ -27,7 +27,7 @@ substitutions:
   # Secret Manager refs (name:version). _DB_URL_SECRET is REQUIRED — the deploy
   # step fails loudly if it is empty (an unset DB URL would silently fall back
   # to ephemeral SQLite, which is wrong on multi-instance Cloud Run).
-  _DB_URL_SECRET: ''            # -> DASEIN_PLATFORM_DB_URL (Supavisor pooler URL)
+  _DB_URL_SECRET: ''            # -> PARSEC_PLATFORM_DB_URL (Supavisor pooler URL)
   # Supabase JWT verification — provide ONE. JWKS wins when both are set
   # (auth.py). JWKS URL is public, so it is a plain substitution; the legacy
   # HS256 shared secret is a credential, so it goes through Secret Manager.
@@ -48,8 +48,8 @@ substitutions:
   _MAX_INSTANCES: '10'
   _TIMEOUT: '60'
   # Ingress: 'all' because the platform has genuinely public, untrusted clients —
-  # the dasein binary POSTs /ledger from users' machines (ledger_ship.rs) and
-  # Stripe POSTs /webhooks/stripe. App-layer auth (Supabase JWT / dsn_ key /
+  # the parsec binary POSTs /ledger from users' machines (ledger_ship.rs) and
+  # Stripe POSTs /webhooks/stripe. App-layer auth (Supabase JWT / psc_ key /
   # Stripe signature) is the boundary; there is no network path that makes those
   # two endpoints private. Set 'internal-and-cloud-load-balancing' only if you
   # front the service with an external HTTPS LB (the public edge for /ledger +
@@ -93,10 +93,10 @@ steps:
           exit 1
         fi
 
-        ENV_PARTS=("DASEIN_AUTO_ENTITLE=$_AUTO_ENTITLE")
+        ENV_PARTS=("PARSEC_AUTO_ENTITLE=$_AUTO_ENTITLE")
         [ -n "$_SUPABASE_JWKS_URL" ] && ENV_PARTS+=("SUPABASE_JWKS_URL=$_SUPABASE_JWKS_URL")
 
-        SECRET_PARTS=("DASEIN_PLATFORM_DB_URL=$_DB_URL_SECRET")
+        SECRET_PARTS=("PARSEC_PLATFORM_DB_URL=$_DB_URL_SECRET")
         [ -n "$_JWT_SECRET_SECRET" ]     && SECRET_PARTS+=("SUPABASE_JWT_SECRET=$_JWT_SECRET_SECRET")
         [ -n "$_STRIPE_WEBHOOK_SECRET" ] && SECRET_PARTS+=("STRIPE_WEBHOOK_SECRET=$_STRIPE_WEBHOOK_SECRET")
 
@@ -115,7 +115,7 @@ steps:
           --timeout "$_TIMEOUT"
           --ingress "$_INGRESS"
           --set-secrets "$$(join "$${SECRET_PARTS[@]}")"
-          # In-app auth (JWT / dsn_ key) gates every real endpoint, and Stripe
+          # In-app auth (JWT / psc_ key) gates every real endpoint, and Stripe
           # must be able to POST the (signature-verified) webhook — so the
           # service itself is unauthenticated, like the brain.
           --allow-unauthenticated

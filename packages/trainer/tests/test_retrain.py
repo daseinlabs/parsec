@@ -7,7 +7,7 @@ import logging
 
 import pytest
 
-from dasein_trainer.retrain import collect, eval_gate, promote, retrain
+from parsec_trainer.retrain import collect, eval_gate, promote, retrain
 
 
 def test_identity_retrain_end_to_end(base_ckpt, tmp_path):
@@ -23,7 +23,7 @@ def test_identity_retrain_end_to_end(base_ckpt, tmp_path):
 
     # The loop closure: the brain loads the PROMOTED artifact (its own rules/
     # changeprone copies) and reproduces the gate's exact quantized scores.
-    from dasein_trainer.retrain import _score
+    from parsec_trainer.retrain import _score
 
     served = _score(result.bundle_dir / "curator.pt")
     assert served["scores_q"] == m["eval"]["scores_q"]
@@ -49,7 +49,7 @@ def test_retrain_stage_logging(base_ckpt, tmp_path, caplog, capsys):
     """The orchestrator narrates every stage (start/done + wall-ms) plus per-stage detail
     (collect rows, identity banner, eval verdict with max |Δ|, promote artifacts) — via
     logging, never print (caplog is the capture seam)."""
-    with caplog.at_level(logging.INFO, logger="dasein_trainer"):
+    with caplog.at_level(logging.INFO, logger="parsec_trainer"):
         retrain(base_ckpt, tmp_path / "bundles", version="log-smoke")
     msgs = [r.getMessage() for r in caplog.records]
     blob = "\n".join(msgs)

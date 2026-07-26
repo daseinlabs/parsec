@@ -22,7 +22,7 @@ set -euo pipefail
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-dasein-brain}"
-DOMAIN="${DOMAIN:-brain.dasein.rocks}"     # DNS you'll point at the LB IP
+DOMAIN="${DOMAIN:-brain.getparsec.ai}"     # DNS you'll point at the LB IP
 POLICY="${POLICY:-dasein-edge}"
 NEG="${SERVICE}-neg"
 BACKEND="${SERVICE}-backend"

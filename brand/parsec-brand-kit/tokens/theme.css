@@ -1,0 +1,128 @@
+/* parsec — theme.css
+   Retro-terminal design tokens as CSS custom properties.
+   Dark is the default; [data-theme="light"] overrides for light surfaces.
+   Import once at the root of your app. */
+
+:root {
+  /* brand */
+  --parsec-phosphor:        #4AF626;
+  --parsec-phosphor-hover:  #64F846;
+  --parsec-phosphor-press:  #38C41B;
+  --parsec-on-phosphor:     #06210B;
+  --parsec-mint:            #7CFFB2;
+  --parsec-dim:             #2E7D46;
+
+  /* backgrounds */
+  --parsec-bg:              #0A0E0C;
+  --parsec-surface:         #0F1512;
+  --parsec-elevated:        #131B17;
+  --parsec-overlay:         #16201B;
+
+  /* borders */
+  --parsec-border:          #1D2A22;
+  --parsec-border-strong:   #2E7D46;
+
+  /* text */
+  --parsec-text:            #D7FBE4;
+  --parsec-text-muted:      #8CA897;
+  --parsec-text-faint:      #556D60;
+  --parsec-text-inverse:    #0A0E0C;
+
+  /* status */
+  --parsec-success:         #4AF626;
+  --parsec-warning:         #FFB84D;
+  --parsec-error:           #FF5C57;
+  --parsec-info:            #4AD0E0;
+  --parsec-link:            #4AD0E0;
+  --parsec-magenta:         #FF5FD2;
+
+  /* type */
+  --parsec-font-mono: 'JetBrains Mono', ui-monospace, 'IBM Plex Mono', SFMono-Regular, Menlo, monospace;
+  --parsec-font-sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --parsec-fw-regular: 400;
+  --parsec-fw-medium: 500;
+  --parsec-fw-bold: 700;
+  --parsec-fw-extrabold: 800;
+
+  --parsec-fs-xs: 0.75rem;
+  --parsec-fs-sm: 0.8125rem;
+  --parsec-fs-base: 0.9375rem;
+  --parsec-fs-md: 1rem;
+  --parsec-fs-lg: 1.25rem;
+  --parsec-fs-xl: 1.75rem;
+  --parsec-fs-2xl: 2.5rem;
+  --parsec-fs-3xl: 3.5rem;
+
+  --parsec-lh-tight: 1.15;
+  --parsec-lh-snug: 1.35;
+  --parsec-lh-normal: 1.6;
+  --parsec-ls-display: -0.01em;
+  --parsec-ls-caps: 0.12em;
+
+  /* space */
+  --parsec-space-1: 4px;  --parsec-space-2: 8px;  --parsec-space-3: 12px;
+  --parsec-space-4: 16px; --parsec-space-5: 24px; --parsec-space-6: 32px;
+  --parsec-space-7: 48px; --parsec-space-8: 64px; --parsec-space-9: 96px;
+
+  /* radius */
+  --parsec-radius-sm: 4px;  --parsec-radius-md: 8px;  --parsec-radius-lg: 12px;
+  --parsec-radius-xl: 20px; --parsec-radius-pill: 999px;
+
+  /* elevation */
+  --parsec-shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --parsec-shadow-md: 0 8px 24px rgba(0,0,0,.45);
+  --parsec-shadow-lg: 0 24px 60px rgba(0,0,0,.55);
+  --parsec-glow: 0 0 6px rgba(74,246,38,.55), 0 0 22px rgba(74,246,38,.20);
+  --parsec-glow-strong: 0 0 8px rgba(74,246,38,.9), 0 0 26px rgba(74,246,38,.35);
+
+  /* motion */
+  --parsec-motion-fast: 120ms;
+  --parsec-motion-base: 180ms;
+  --parsec-motion-slow: 280ms;
+  --parsec-ease: cubic-bezier(.2,.6,.2,1);
+}
+
+[data-theme="light"] {
+  --parsec-phosphor:      #2FA317;
+  --parsec-phosphor-hover:#268C14;
+  --parsec-on-phosphor:   #FFFFFF;
+  --parsec-bg:            #F4F7F4;
+  --parsec-surface:       #FFFFFF;
+  --parsec-elevated:      #FFFFFF;
+  --parsec-overlay:       #FFFFFF;
+  --parsec-border:        #D5E0D8;
+  --parsec-border-strong: #2FA317;
+  --parsec-text:          #0A0E0C;
+  --parsec-text-muted:    #5B6E63;
+  --parsec-text-faint:    #8A9990;
+  --parsec-glow:          none;
+  --parsec-glow-strong:   none;
+}
+
+/* ---- optional base + helpers ---- */
+.parsec-root {
+  background: var(--parsec-bg);
+  color: var(--parsec-text);
+  font-family: var(--parsec-font-mono);
+  font-size: var(--parsec-fs-base);
+  line-height: var(--parsec-lh-normal);
+}
+.parsec-accent { color: var(--parsec-phosphor); text-shadow: var(--parsec-glow); }
+.parsec-btn {
+  font-family: var(--parsec-font-mono); font-weight: var(--parsec-fw-medium);
+  background: var(--parsec-phosphor); color: var(--parsec-on-phosphor);
+  border: 0; border-radius: var(--parsec-radius-md);
+  padding: var(--parsec-space-2) var(--parsec-space-4); cursor: pointer;
+  transition: background var(--parsec-motion-fast) var(--parsec-ease);
+}
+.parsec-btn:hover { background: var(--parsec-phosphor-hover); }
+.parsec-btn:active { background: var(--parsec-phosphor-press); }
+.parsec-btn--ghost {
+  background: transparent; color: var(--parsec-phosphor);
+  border: 1px solid var(--parsec-border-strong);
+}
+.parsec-card {
+  background: var(--parsec-surface); border: 1px solid var(--parsec-border);
+  border-radius: var(--parsec-radius-lg); box-shadow: var(--parsec-shadow-md);
+}
+:focus-visible { outline: 2px solid var(--parsec-phosphor); outline-offset: 2px; }

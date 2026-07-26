@@ -1,4 +1,4 @@
-"""In-process bge-large embedder (DASEIN_EMBED_BACKEND=local).
+"""In-process bge-large embedder (PARSEC_EMBED_BACKEND=local).
 
 Skipped unless `transformers` + the bge weights are available (they are not a
 core dep — only the deploy/`local` path needs them). This asserts the RECIPE
@@ -16,7 +16,7 @@ pytest.importorskip("transformers", reason="embed extra not installed")
 @pytest.fixture(scope="module")
 def client():
     try:
-        from dasein_brain.vendored.local_embed import LocalEmbedClient
+        from parsec_brain.vendored.local_embed import LocalEmbedClient
 
         return LocalEmbedClient()
     except Exception as e:  # weights not cached / offline

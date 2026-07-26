@@ -10,10 +10,10 @@
 # brain owns the embedder for every contract. Until the in-process GPU embedder
 # lands, REAL vectors still come from the port-forwarded cluster service:
 #   kubectl port-forward svc/dasein-embed 18080:80
-#   EMBED=dasein DASEIN_SERVE_TAU= docker compose up -d brain
+#   EMBED=dasein PARSEC_SERVE_TAU= docker compose up -d brain
 #
-# Requires the checkpoint at ~/.dasein/brain/curator_v4_prod.pt
-# (gcloud storage cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.dasein/brain/).
+# Requires the checkpoint at ~/.parsec/brain/curator_v4_prod.pt
+# (gcloud storage cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.parsec/brain/).
 services:
   brain:
     build: ./packages/brain
@@ -21,9 +21,9 @@ services:
     ports:
       - "8090:8080"
     volumes:
-      - ${HOME}/.dasein/brain:/bundle:ro
+      - ${HOME}/.parsec/brain:/bundle:ro
     environment:
-      # demo (default): deterministic hash embeddings + DASEIN_SERVE_TAU=0.999
+      # demo (default): deterministic hash embeddings + PARSEC_SERVE_TAU=0.999
       # so the machinery visibly trims regardless of what the model thinks of
       # your conversation. real: un-forced calibrated tau (0.70 cov) + bge
       # vectors from the port-forwarded in-cluster embedder — honest scores.
@@ -31,23 +31,23 @@ services:
       # NOTE: hash vectors are NOT the trained bge embeddings. They exercise
       # the wiring end to end; they say nothing about whether the curator is
       # making good decisions. Use EMBED=dasein for anything score-related.
-      DASEIN_EMBED_BACKEND: ${EMBED:-hash}          # hash | dasein
-      DASEIN_EMBED_URL: http://host.docker.internal:18080/embed
-      DASEIN_SERVE_TAU: ${DASEIN_SERVE_TAU-0.999}   # export DASEIN_SERVE_TAU= for calibrated
-      DASEIN_TARGET_COV: ${DASEIN_TARGET_COV:-0.70}
-      DASEIN_BRAIN_KEY: ${DASEIN_BRAIN_KEY:-}
+      PARSEC_EMBED_BACKEND: ${EMBED:-hash}          # hash | dasein
+      PARSEC_EMBED_URL: http://host.docker.internal:18080/embed
+      PARSEC_SERVE_TAU: ${PARSEC_SERVE_TAU-0.999}   # export PARSEC_SERVE_TAU= for calibrated
+      PARSEC_TARGET_COV: ${PARSEC_TARGET_COV:-0.70}
+      PARSEC_BRAIN_KEY: ${PARSEC_BRAIN_KEY:-}
       # Per-user entitlement gate (keyauth.py): when set, the bearer on every
-      # scoring request is the caller's dsn_ key, validated against the platform
+      # scoring request is the caller's psc_ key, validated against the platform
       # and required to be entitled — the DIRECTION §7 seam. Points at the
       # `platform` service, so it only resolves under `--profile platform`;
       # brain-only (`make dev`) leaves the platform unreachable and every request
       # fail-opens-and-counts (visible as fail_opens on /health). Set it EMPTY
-      # (`DASEIN_PLATFORM_URL= make dev`) to fall back to the DASEIN_BRAIN_KEY
+      # (`PARSEC_PLATFORM_URL= make dev`) to fall back to the PARSEC_BRAIN_KEY
       # shared-secret gate instead.
-      DASEIN_PLATFORM_URL: ${DASEIN_PLATFORM_URL-http://platform:8080}
+      PARSEC_PLATFORM_URL: ${PARSEC_PLATFORM_URL-http://platform:8080}
       # DEBUG adds per-request detail incl. the full GNN score vectors
-      DASEIN_BRAIN_LOG: ${DASEIN_BRAIN_LOG:-INFO}
-      DASEIN_BRAIN_LOG_JSON: ${DASEIN_BRAIN_LOG_JSON:-}
+      PARSEC_BRAIN_LOG: ${PARSEC_BRAIN_LOG:-INFO}
+      PARSEC_BRAIN_LOG_JSON: ${PARSEC_BRAIN_LOG_JSON:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # linux docker parity; no-op on Docker Desktop
     restart: unless-stopped
@@ -68,17 +68,17 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: dasein
+      POSTGRES_USER: parsec
       POSTGRES_PASSWORD: dev
-      POSTGRES_DB: dasein
+      POSTGRES_DB: parsec
     volumes:
       # Postgres runs *.sql here in lexical order, but ONLY on first init of an
       # empty volume. A new migration means `down -v` (or psql it by hand) —
       # the service itself never runs DDL (pgstore.py).
       - ./packages/platform/migrations:/docker-entrypoint-initdb.d:ro
-      - dasein-pgdata:/var/lib/postgresql/data
+      - parsec-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dasein -d dasein"]
+      test: ["CMD-SHELL", "pg_isready -U parsec -d parsec"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -94,18 +94,18 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      # Your knobs: SUPABASE_JWKS_URL, DASEIN_AUTO_ENTITLE, STRIPE_WEBHOOK_SECRET.
+      # Your knobs: SUPABASE_JWKS_URL, PARSEC_AUTO_ENTITLE, STRIPE_WEBHOOK_SECRET.
       # Optional so `docker compose up -d brain` still works without it.
       - path: .env.local
         required: false
     environment:
       # Overrides whatever .env.local says: that value is host-oriented
       # (127.0.0.1:5432, for `uv run uvicorn`), and in-container the DB is `db`.
-      DASEIN_PLATFORM_DB_URL: postgresql://dasein:dev@db:5432/dasein
+      PARSEC_PLATFORM_DB_URL: postgresql://parsec:dev@db:5432/parsec
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  dasein-pgdata:
+  parsec-pgdata:

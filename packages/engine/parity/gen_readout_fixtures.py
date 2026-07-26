@@ -2,7 +2,7 @@
 """Generate READOUT parity fixtures (the 49-col decided_struct) from the
 VENDORED brain modules — the serving truth for curator_v4_prod.pt.
 
-Reference: dasein_brain.scorer.TraceScorer._het_readout (the vendored mirror
+Reference: parsec_brain.scorer.TraceScorer._het_readout (the vendored mirror
 of curator._het_readout, incl. the always-emit changeprone/scout patches),
 driven over diverse internal-view conversations parsed by the scorer's own
 parse_internal — exactly the serve pipeline. tests/parity_readout.rs replays
@@ -41,11 +41,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "fixtures", "readout.json")
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, os.path.join(REPO, "packages", "brain", "src"))
-os.environ.setdefault("DASEIN_EMBED_BACKEND", "hash")
+os.environ.setdefault("PARSEC_EMBED_BACKEND", "hash")
 
 import numpy as np  # noqa: E402
 
-import dasein_brain  # noqa: E402,F401  _flags pins (ISSUEMATCH/SCOUTFEAT/...) before vendored imports
+import parsec_brain  # noqa: E402,F401  _flags pins (ISSUEMATCH/SCOUTFEAT/...) before vendored imports
 
 # ---- tree-sitter shim (see module doc) -------------------------------------
 import tree_sitter_language_pack as _tlp  # noqa: E402
@@ -106,8 +106,8 @@ except Exception:
 
     _tlp.get_parser = _get_parser
 
-from dasein_brain.scorer import TraceScorer, parse_internal  # noqa: E402
-from dasein_brain.vendored.symbol_graph import _py_defs_refs  # noqa: E402
+from parsec_brain.scorer import TraceScorer, parse_internal  # noqa: E402
+from parsec_brain.vendored.symbol_graph import _py_defs_refs  # noqa: E402
 
 # shim sanity: the vendored parse path must actually produce symbols
 _d, _r = _py_defs_refs("def alpha(x):\n    return beta(x)\n")

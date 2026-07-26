@@ -11,12 +11,12 @@
 //! The `served_folds` session dict of the reference is reproduced here only
 //! as the FoldMap argument to [`apply_curation`] so parity fixtures can
 //! exercise the reference semantics; the deterministic replacement that makes
-//! the map recomputable lives in dasein-engine's `freeze` module.
+//! the map recomputable lives in parsec-engine's `freeze` module.
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use dasein_engine::pystr::{py_json_dumps_opts, py_strip};
+use parsec_engine::pystr::{py_json_dumps_opts, py_strip};
 
 /// anthropic_shapes._system_to_text: Anthropic `system` is a str OR a list of
 /// text blocks; flatten to one string.

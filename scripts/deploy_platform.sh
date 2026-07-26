@@ -90,7 +90,7 @@ cat <<EOF
 
 ── done. next steps:
    1. Bake the URL into released binaries (fixes ledger shipping):
-        gh variable set DASEIN_DEFAULT_PLATFORM_URL --body "${URL:-<platform-url>}"
+        gh variable set PARSEC_DEFAULT_PLATFORM_URL --body "${URL:-<platform-url>}"
    2. Point the frontend at it: set PLATFORM_URL=${URL:-<platform-url>} in its host env.
    3. Register the Stripe webhook endpoint: ${URL:-<platform-url>}/webhooks/stripe
 EOF

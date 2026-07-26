@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import urllib.request
 
-from dasein_bench.mock_upstream import MockUpstream
-from dasein_bench.usage_gateway import (
+from parsec_bench.mock_upstream import MockUpstream
+from parsec_bench.usage_gateway import (
     RUN_ID_HEADER,
     UsageGateway,
     extract_usage,

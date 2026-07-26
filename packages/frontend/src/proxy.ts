@@ -32,5 +32,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/account/:path*", "/api/:path*"],
+  // "/" is the dashboard, so it needs session refresh like any other
+  // authenticated route — matching only sub-paths would leave the app's own
+  // home page running on a stale access token.
+  matcher: ["/", "/account/:path*", "/api/:path*"],
 };

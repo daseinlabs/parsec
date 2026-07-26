@@ -10,7 +10,7 @@ otherwise stand up with nginx. No sticky sessions, no shared state.
 
 One image (`packages/brain/Dockerfile`) for both `make dev` and Cloud Run:
 
-- **Local**: `docker compose` mounts `~/.dasein/brain` over `/bundle`.
+- **Local**: `docker compose` mounts `~/.parsec/brain` over `/bundle`.
 - **Cloud Run**: Cloud Build fetches the checkpoint from GCS into the build
   context and the image **bakes** it, so the image digest pins the exact bundle
   version (determinism-honest — a redeploy can't silently swap the checkpoint).
@@ -62,11 +62,11 @@ and the weights into the image, and deploys with `--gpu 1 --gpu-type nvidia-l4
 |------|-------|--------|
 | `--concurrency` | `1` | The scorer is single-threaded (GIL + one CPU/GPU forward under a lock). Scale **horizontally** on request count, not in-process — this is the "add multithreading later" seam. |
 | `--min-instances` | `1` | The proxy path is latency-sensitive; keep one instance warm so no request eats a cold start. Scale-to-zero is fine for dev/staging. |
-| `DASEIN_SERVE_TAU` | *unset* | Serve at the checkpoint's **calibrated** tau, not a forced demo tau. |
+| `PARSEC_SERVE_TAU` | *unset* | Serve at the checkpoint's **calibrated** tau, not a forced demo tau. |
 
 ## The embedder: in-process bge (`local`)
 
-`DASEIN_EMBED_BACKEND=local` (`vendored/local_embed.py`) loads bge-large-en-v1.5
+`PARSEC_EMBED_BACKEND=local` (`vendored/local_embed.py`) loads bge-large-en-v1.5
 into the brain process, so there is no external embed hop — this is what makes
 the Cloud Run GPU deploy a true single round trip. Recipe pinned to bge's
 reference usage so the vectors match the cluster encoder the checkpoint was
@@ -76,9 +76,9 @@ container; see `tests/test_local_embed.py`.
 
 Two things to keep true:
 
-- **Parity vs the cluster.** `local` and `dasein` load the *same* model, so
+- **Parity vs the cluster.** `local` and `parsec` load the *same* model, so
   they match by construction on CPU. Before trusting `local` for production
-  scores, still run a one-off comparison against the `dasein` endpoint on a
+  scores, still run a one-off comparison against the `parsec` endpoint on a
   batch of real chunks (cosine ≈ 1.0 per row) to catch any tokenizer/precision
   drift.
 - **GPU determinism vs round-robin-safety.** CUDA kernels aren't strictly
@@ -117,5 +117,5 @@ noted here so they're not a surprise next time:
 Rate-limit and per-key quota state is per-user and mutable; putting it in a
 replica would break statelessness/round-robin-safety. Put API-key auth + quotas
 in front of Cloud Run (API Gateway / Cloud Armor / Apigee) and keep the brain a
-pure scorer. The in-app `DASEIN_BRAIN_KEY` bearer gate (optional
+pure scorer. The in-app `PARSEC_BRAIN_KEY` bearer gate (optional
 `BRAIN_KEY_SECRET`) is a coarse backstop, not the throttling layer.

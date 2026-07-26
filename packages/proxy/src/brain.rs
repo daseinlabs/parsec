@@ -2,11 +2,11 @@
 //! `ChunkScorer` seam, plus the tool-schema keep-set machinery
 //! (docs/brain-serving-v0.md; contracts brain-api-dev/v0 + brain-api/v1).
 //!
-//! Three contracts, selected by `DASEIN_BRAIN_CONTRACT` (default `dev` for an
+//! Three contracts, selected by `PARSEC_BRAIN_CONTRACT` (default `dev` for an
 //! explicit URL; a release-BAKED url defaults to `v2`):
 //! - **dev** (brain-api-dev/v0): the request carries the INTERNAL MESSAGE
 //!   VIEW (raw text) to OUR cluster, so this path additionally requires the
-//!   explicit `DASEIN_BRAIN_DEV_RAW=1` opt-in — the same data-plane exception
+//!   explicit `PARSEC_BRAIN_DEV_RAW=1` opt-in — the same data-plane exception
 //!   STATUS.md blesses for the dev embed fallback, never for real users.
 //!   The server RE-CHUNKS and 409s on `chunk_checksum` drift; it has no
 //!   checkpoint_id guard.
@@ -41,12 +41,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use dasein_engine::freeze::{BirthQuery, ChunkScorer, ScoreError, ScoreResult};
-use dasein_engine::pystr::char_prefix;
+use parsec_engine::freeze::{BirthQuery, ChunkScorer, ScoreError, ScoreResult};
+use parsec_engine::pystr::char_prefix;
 
 use crate::featurize;
 
-/// Which wire contract the scorer speaks (DASEIN_BRAIN_CONTRACT).
+/// Which wire contract the scorer speaks (PARSEC_BRAIN_CONTRACT).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BrainContract {
     /// brain-api-dev/v0 — raw internal view, dev machines only.
@@ -59,7 +59,7 @@ pub enum BrainContract {
 }
 
 impl BrainContract {
-    /// `DASEIN_BRAIN_CONTRACT` parsing: the exact strings "v1"/"v2" select
+    /// `PARSEC_BRAIN_CONTRACT` parsing: the exact strings "v1"/"v2" select
     /// those contracts; anything else (unset, "dev", typos) stays dev — the
     /// conservative default for an explicitly-configured URL.
     pub fn from_env_value(v: Option<&str>) -> BrainContract {
@@ -86,27 +86,27 @@ pub struct BrainConfig {
     pub target_cov: String,
     /// AC_TOOL_CUT equivalent; reference default 0.70.
     pub tool_cut: f64,
-    /// DASEIN_TOOL_PRUNE — defaults on when the brain is configured.
+    /// PARSEC_TOOL_PRUNE — defaults on when the brain is configured.
     pub tool_prune: bool,
-    /// DASEIN_TOOL_STUB — serve pruned tools as name+note stubs instead of
+    /// PARSEC_TOOL_STUB — serve pruned tools as name+note stubs instead of
     /// dropping them (default on); "off" restores the reference hard-drop.
     pub tool_stub: bool,
-    /// DASEIN_BRAIN_CONTRACT: dev (default) | v1 | v2.
+    /// PARSEC_BRAIN_CONTRACT: dev (default) | v1 | v2.
     pub contract: BrainContract,
 }
 
-/// Release-baked default brain URL: `DASEIN_DEFAULT_BRAIN_URL` at BUILD time
+/// Release-baked default brain URL: `PARSEC_DEFAULT_BRAIN_URL` at BUILD time
 /// (release.yml stamps the production Cloud Run URL so a published plugin
 /// reaches the brain with zero configuration). Dev/CI builds bake nothing.
-/// Runtime `DASEIN_BRAIN_URL` always wins, and setting it to an EMPTY string
+/// Runtime `PARSEC_BRAIN_URL` always wins, and setting it to an EMPTY string
 /// is the off switch even when a default is baked.
-const BAKED_BRAIN_URL: Option<&str> = option_env!("DASEIN_DEFAULT_BRAIN_URL");
+const BAKED_BRAIN_URL: Option<&str> = option_env!("PARSEC_DEFAULT_BRAIN_URL");
 
 /// URL + contract resolution, pure for testability. Env URL beats baked.
 /// A BAKED url defaults the contract to **v2** (revised 2026-07-20): released
 /// binaries ship no embedder, so v1 is not a topology they can speak. An
 /// env-supplied URL keeps the conservative dev default. An explicit
-/// `DASEIN_BRAIN_CONTRACT` always wins. Returns (url, contract, baked).
+/// `PARSEC_BRAIN_CONTRACT` always wins. Returns (url, contract, baked).
 fn resolve_url_contract(
     env_url: Option<&str>,
     baked_url: Option<&str>,
@@ -128,28 +128,34 @@ fn resolve_url_contract(
 }
 
 impl BrainConfig {
-    /// None unless a brain URL is configured — `DASEIN_BRAIN_URL`, or the
-    /// release-baked [`BAKED_BRAIN_URL`] fallback — and `DASEIN_FREEZE` isn't
+    /// None unless a brain URL is configured — `PARSEC_BRAIN_URL`, or the
+    /// release-baked [`BAKED_BRAIN_URL`] fallback — and `PARSEC_FREEZE` isn't
     /// "off". The DEV contract additionally requires the explicit raw-text
-    /// opt-in `DASEIN_BRAIN_DEV_RAW=1`; the v1 contract sends no raw text and
+    /// opt-in `PARSEC_BRAIN_DEV_RAW=1`; the v1 contract sends no raw text and
     /// needs no opt-in.
     pub fn from_env() -> Option<BrainConfig> {
-        let env_url = std::env::var("DASEIN_BRAIN_URL").ok();
-        let env_contract = std::env::var("DASEIN_BRAIN_CONTRACT").ok();
-        let (url, contract, baked) =
-            resolve_url_contract(env_url.as_deref(), BAKED_BRAIN_URL, env_contract.as_deref())?;
+        let env_url = std::env::var("PARSEC_BRAIN_URL").ok();
+        let env_contract = std::env::var("PARSEC_BRAIN_CONTRACT").ok();
+        // An unset `vars.PARSEC_DEFAULT_BRAIN_URL` in the release workflow bakes
+        // `Some("")`, not `None` — treat it as absent so a missing repo variable
+        // degrades to Dev rather than pointing every request at a hostless URL.
+        let (url, contract, baked) = resolve_url_contract(
+            env_url.as_deref(),
+            BAKED_BRAIN_URL.filter(|u| !u.is_empty()),
+            env_contract.as_deref(),
+        )?;
         if contract == BrainContract::Dev
-            && std::env::var("DASEIN_BRAIN_DEV_RAW").ok().as_deref() != Some("1")
+            && std::env::var("PARSEC_BRAIN_DEV_RAW").ok().as_deref() != Some("1")
         {
             tracing::warn!(
-                "DASEIN_BRAIN_URL is set but DASEIN_BRAIN_DEV_RAW=1 is not — the v0 \
+                "PARSEC_BRAIN_URL is set but PARSEC_BRAIN_DEV_RAW=1 is not — the v0 \
                  contract sends raw text to the brain; refusing without the explicit \
                  opt-in (passthrough curation stays active). Set \
-                 DASEIN_BRAIN_CONTRACT=v1 for the data-plane-clean contract."
+                 PARSEC_BRAIN_CONTRACT=v1 for the data-plane-clean contract."
             );
             return None;
         }
-        if std::env::var("DASEIN_FREEZE").ok().as_deref() == Some("off") {
+        if std::env::var("PARSEC_FREEZE").ok().as_deref() == Some("off") {
             return None;
         }
         // Entitlement gate (DIRECTION §7): the backend authenticates every
@@ -161,12 +167,12 @@ impl BrainConfig {
             tracing::warn!(
                 "a brain backend is configured but no API key is set — NOT sending \
                  requests to the backend; curation stays in local passthrough. Get a \
-                 key from the dashboard and run `dasein key set <dsn_…>` (or set \
-                 DASEIN_API_KEY)."
+                 key from the dashboard and run `parsec key set <psc_…>` (or set \
+                 PARSEC_API_KEY)."
             );
             return None;
         };
-        let timeout_ms: u64 = std::env::var("DASEIN_BRAIN_TIMEOUT_MS")
+        let timeout_ms: u64 = std::env::var("PARSEC_BRAIN_TIMEOUT_MS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000);
@@ -175,13 +181,13 @@ impl BrainConfig {
             url,
             key: Some(key),
             timeout: Duration::from_millis(timeout_ms),
-            target_cov: std::env::var("DASEIN_TARGET_COV").unwrap_or_else(|_| "0.70".into()),
-            tool_cut: std::env::var("DASEIN_TOOL_CUT")
+            target_cov: std::env::var("PARSEC_TARGET_COV").unwrap_or_else(|_| "0.70".into()),
+            tool_cut: std::env::var("PARSEC_TOOL_CUT")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.70),
-            tool_prune: std::env::var("DASEIN_TOOL_PRUNE").ok().as_deref() != Some("off"),
-            tool_stub: std::env::var("DASEIN_TOOL_STUB").ok().as_deref() != Some("off"),
+            tool_prune: std::env::var("PARSEC_TOOL_PRUNE").ok().as_deref() != Some("off"),
+            tool_stub: std::env::var("PARSEC_TOOL_STUB").ok().as_deref() != Some("off"),
             contract,
         })
     }
@@ -297,7 +303,7 @@ pub struct BrainScorer {
     cache: ScoreCache,
     pub stats: BrainStats,
     /// Attach the governor's 4-float `gf` (loop_feats) to score/trace bodies
-    /// — set by the server when `DASEIN_GOVERNOR != off`; false = today's
+    /// — set by the server when `PARSEC_GOVERNOR != off`; false = today's
     /// wire, byte-identical (doom head not scored).
     pub attach_gf: bool,
     // ── v1-contract state (unused in dev mode) ─────────────────────────────
@@ -1025,7 +1031,7 @@ mod tests {
             resolve_url_contract(None, Some("https://baked.example"), Some("dev")),
             Some(("https://baked.example".into(), BrainContract::Dev, true))
         );
-        // Explicitly EMPTY DASEIN_BRAIN_URL is the off switch even when a
+        // Explicitly EMPTY PARSEC_BRAIN_URL is the off switch even when a
         // default is baked in.
         assert_eq!(
             resolve_url_contract(Some(""), Some("https://baked.example"), None),

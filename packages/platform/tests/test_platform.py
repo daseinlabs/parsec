@@ -18,10 +18,11 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from dasein_platform import create_app
-from dasein_platform.models import LedgerRow
-from dasein_platform.store import SQLiteStore
-from dasein_platform.stripe_webhook import sign_payload
+from parsec_platform import create_app
+from parsec_platform.auth import hash_key
+from parsec_platform.models import LedgerRow
+from parsec_platform.store import SQLiteStore
+from parsec_platform.stripe_webhook import sign_payload
 
 JWT_SECRET = "test-supabase-jwt-secret-0123456789abcdef"
 STRIPE_SECRET = "whsec_test_secret"
@@ -91,7 +92,7 @@ def test_401_with_bad_jwt(client: TestClient) -> None:
 def test_jwt_roundtrip(client: TestClient) -> None:
     resp = client.post("/keys", headers=auth(mint_jwt()))
     assert resp.status_code == 201
-    assert resp.json()["key"].startswith("dsn_")
+    assert resp.json()["key"].startswith("psc_")
 
 
 def test_stripe_webhook_rejects_bad_signature(client: TestClient) -> None:
@@ -176,15 +177,15 @@ def test_stripe_subscription_event_for_unknown_customer_is_flagged(
 
 
 def test_validate_unknown_key(client: TestClient) -> None:
-    resp = client.get("/keys/validate/dsn_definitely-not-minted")
+    resp = client.get("/keys/validate/psc_definitely-not-minted")
     assert resp.json() == {"valid": False, "entitled": False}
 
 
 def test_auto_entitle_on_mint(monkeypatch: pytest.MonkeyPatch) -> None:
-    """DASEIN_AUTO_ENTITLE=1 (pre-billing) entitles an account the moment it
+    """PARSEC_AUTO_ENTITLE=1 (pre-billing) entitles an account the moment it
     mints a key — no Stripe event needed."""
     monkeypatch.setenv("SUPABASE_JWT_SECRET", JWT_SECRET)
-    monkeypatch.setenv("DASEIN_AUTO_ENTITLE", "1")
+    monkeypatch.setenv("PARSEC_AUTO_ENTITLE", "1")
     client = TestClient(create_app(store=SQLiteStore(":memory:")))
     key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
     assert client.get(f"/keys/validate/{key}").json() == {"valid": True, "entitled": True}
@@ -230,21 +231,21 @@ def test_ledger_ingest_to_summary(client: TestClient) -> None:
         fail_open=True,
     )
     for row in (example, row2):
-        resp = client.post("/ledger", json=row, headers={"X-Dasein-Key": key})
+        resp = client.post("/ledger", json=row, headers={"X-Parsec-Key": key})
         assert resp.status_code == 201, resp.text
 
     # No key / unknown key -> 401.
     assert client.post("/ledger", json=example).status_code == 401
     assert (
         client.post(
-            "/ledger", json=example, headers={"X-Dasein-Key": "dsn_unknown"}
+            "/ledger", json=example, headers={"X-Parsec-Key": "psc_unknown"}
         ).status_code
         == 401
     )
     # Extra fields are unrepresentable (additionalProperties: false mirror).
     bad = dict(example, prompt_text="sneaky")
     assert (
-        client.post("/ledger", json=bad, headers={"X-Dasein-Key": key}).status_code
+        client.post("/ledger", json=bad, headers={"X-Parsec-Key": key}).status_code
         == 422
     )
 
@@ -252,14 +253,92 @@ def test_ledger_ingest_to_summary(client: TestClient) -> None:
     assert summary["rows_count"] == 2
     assert summary["counterfactual_input_tokens"] == example["counterfactual_input_tokens"] + 1000
     assert summary["billed_input_tokens"] == example["billed_input_tokens"] + 400
+    # Saved subtracts ALL billed input-side tokens, cache read/write included —
+    # they are billed input, so treating them as free would overstate savings.
+    # Valid to derive from the summary sums here because both rows are measured.
     assert summary["tokens_saved"] == (
-        summary["counterfactual_input_tokens"] - summary["billed_input_tokens"]
+        summary["counterfactual_input_tokens"]
+        - summary["billed_input_tokens"]
+        - summary["billed_cache_read_tokens"]
+        - summary["billed_cache_write_tokens"]
     )
     assert summary["fail_open_count"] == 1
 
     # Another account sees an empty ledger.
     other = client.get("/ledger/summary", headers=auth(mint_jwt("acct-other"))).json()
     assert other["rows_count"] == 0
+
+
+def test_cache_tokens_are_not_free_savings(client: TestClient) -> None:
+    """Cache reads/writes are BILLED input and must reduce reported savings.
+
+    The regression this pins: summing `counterfactual − billed_input_tokens`
+    alone treats every cache-served token as free. A warm Claude Code session
+    bills almost all of its input as cache reads, so that formula reported
+    ~2.2x the real figure on a 406-row production ledger, and disagreed with
+    what `parsec savings` printed locally from the very same rows.
+    """
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    # Warm-session shape: tiny uncached input, almost all of it cache reads.
+    row = dict(
+        example,
+        request_id="req_" + "a" * 32,
+        model="claude-sonnet-5",  # the contracts example omits it; by_model needs it
+        counterfactual_input_tokens=100_000,
+        billed_input_tokens=500,
+        billed_cache_read_tokens=60_000,
+        billed_cache_write_tokens=9_500,
+    )
+    assert (
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+        == 201
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    assert summary["tokens_saved"] == 30_000  # 100000 − (500 + 60000 + 9500)
+    # The naive formula would have claimed 99,500 — 3.3x the truth.
+    assert summary["tokens_saved"] != (
+        row["counterfactual_input_tokens"] - row["billed_input_tokens"]
+    )
+    # Same definition must hold in the per-model and per-day breakdowns, which
+    # are separate queries and so can drift independently.
+    by_model = {m["model"]: m for m in summary["by_model"]}
+    assert by_model[row["model"]]["tokens_saved"] == 30_000
+    usage = client.get("/ledger/usage", headers=auth(mint_jwt())).json()
+    assert sum(d["tokens_saved"] for d in usage["days"]) == 30_000
+
+
+def test_ledger_accepts_pre_rename_key_and_header(client: TestClient) -> None:
+    """Binaries shipped before the dasein→parsec rename send `X-Dasein-Key`
+    with a `dsn_` key. Keys are stored SHA-256-only so they cannot be rewritten
+    server-side — both legacy forms must keep authenticating."""
+    legacy = "dsn_" + "a" * 32
+    client.app.state.store.add_key(hash_key(legacy), ACCOUNT)
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+
+    assert (
+        client.post(
+            "/ledger", json=example, headers={"X-Dasein-Key": legacy}
+        ).status_code
+        == 201
+    )
+    # The new header with a legacy key, and vice versa, both resolve too.
+    row2 = dict(example, request_id="req_" + "e" * 32)
+    assert (
+        client.post("/ledger", json=row2, headers={"X-Parsec-Key": legacy}).status_code
+        == 201
+    )
+    # A dsn_-shaped key that was never minted is still rejected.
+    assert (
+        client.post(
+            "/ledger", json=example, headers={"X-Dasein-Key": "dsn_unknown"}
+        ).status_code
+        == 401
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    assert summary["rows_count"] == 2
 
 
 def test_ledger_per_model_cost(client: TestClient) -> None:
@@ -269,7 +348,7 @@ def test_ledger_per_model_cost(client: TestClient) -> None:
     key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
     row = json.loads(CONTRACTS_GOVERNOR_EXAMPLE.read_text())  # model=claude-sonnet-5
     assert (
-        client.post("/ledger", json=row, headers={"X-Dasein-Key": key}).status_code
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
         == 201
     )
 
@@ -278,9 +357,13 @@ def test_ledger_per_model_cost(client: TestClient) -> None:
     assert "claude-sonnet-5" in by_model, summary["by_model"]
     m = by_model["claude-sonnet-5"]
 
-    # tokens_saved is §8.4-honest per model (counterfactual − billed_input).
+    # tokens_saved is §8.4-honest per model: counterfactual − all billed
+    # input-side tokens (uncached + cache read + cache write).
     assert m["tokens_saved"] == (
-        row["counterfactual_input_tokens"] - row["billed_input_tokens"]
+        row["counterfactual_input_tokens"]
+        - row["billed_input_tokens"]
+        - row["billed_cache_read_tokens"]
+        - row["billed_cache_write_tokens"]
     )
     # cost = Σ(tokens × per-MTok price) / 1e6 at seeded Sonnet-5 rates
     # (3 / 15 / 0.3 / 3.75) — computed at report time, not stored.
@@ -300,7 +383,7 @@ def test_ledger_usage_series(client: TestClient) -> None:
     key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
     row = json.loads(CONTRACTS_GOVERNOR_EXAMPLE.read_text())  # ts 2026-07-10
     assert (
-        client.post("/ledger", json=row, headers={"X-Dasein-Key": key}).status_code
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
         == 201
     )
 
@@ -313,7 +396,10 @@ def test_ledger_usage_series(client: TestClient) -> None:
     assert bucket["date"] == "2026-07-10"
     assert bucket["rows_count"] == 1
     assert bucket["tokens_saved"] == (
-        row["counterfactual_input_tokens"] - row["billed_input_tokens"]
+        row["counterfactual_input_tokens"]
+        - row["billed_input_tokens"]
+        - row["billed_cache_read_tokens"]
+        - row["billed_cache_write_tokens"]
     )
     assert bucket["cost_usd"] > 0
 
@@ -332,7 +418,7 @@ def test_jwks_verification(monkeypatch: pytest.MonkeyPatch) -> None:
     JWKS client is stubbed — no network in tests."""
     ec = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ec")
 
-    from dasein_platform import auth as auth_mod
+    from parsec_platform import auth as auth_mod
 
     private_key = ec.generate_private_key(ec.SECP256R1())
 
@@ -370,7 +456,7 @@ def test_jwks_verification(monkeypatch: pytest.MonkeyPatch) -> None:
     reason="needs TEST_POSTGRES_URL (see comment above)",
 )
 def test_postgres_store_roundtrip() -> None:
-    from dasein_platform.pgstore import PostgresStore
+    from parsec_platform.pgstore import PostgresStore
 
     store = PostgresStore(os.environ["TEST_POSTGRES_URL"])
     migration = (
@@ -413,8 +499,13 @@ def test_postgres_store_roundtrip() -> None:
         assert s["rows_count"] == 2
         assert s["measured_rows"] == 1
         assert s["fail_open_count"] == 1
+        # Only the example row is measured (measured_rows == 1), so the
+        # expectation is that row's counterfactual minus its billed input side.
         assert s["tokens_saved"] == (
-            example["counterfactual_input_tokens"] - example["billed_input_tokens"]
+            example["counterfactual_input_tokens"]
+            - example["billed_input_tokens"]
+            - example["billed_cache_read_tokens"]
+            - example["billed_cache_write_tokens"]
         )
     finally:
         with store._pool.connection() as conn:

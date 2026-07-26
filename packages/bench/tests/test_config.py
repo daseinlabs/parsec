@@ -6,10 +6,10 @@ import json
 
 import pytest
 
-import dasein_bench.arms  # noqa: F401 — registers the dasein arm
-from dasein_bench.arm import ArmKind, available_arms, get_arm
-from dasein_bench.cc_runner import _resolve_run_id, load_tasks
-from dasein_bench.replay import load_fixture
+import parsec_bench.arms  # noqa: F401 — registers the parsec arm
+from parsec_bench.arm import ArmKind, available_arms, get_arm
+from parsec_bench.cc_runner import _resolve_run_id, load_tasks
+from parsec_bench.replay import load_fixture
 
 
 # ── task-set parsing ──────────────────────────────────────────────────────────
@@ -38,19 +38,19 @@ def test_run_id_explicit_wins():
 
 
 def test_run_id_deterministic_and_arm_order_independent():
-    a = _resolve_run_id("tasks_smoke.json", ["dasein", "baseline"], None)
-    b = _resolve_run_id("tasks_smoke.json", ["baseline", "dasein"], None)
+    a = _resolve_run_id("tasks_smoke.json", ["parsec", "baseline"], None)
+    b = _resolve_run_id("tasks_smoke.json", ["baseline", "parsec"], None)
     assert a == b
-    assert a.startswith("tasks_smoke__baseline-dasein__")
+    assert a.startswith("tasks_smoke__baseline-parsec__")
     # different arm set -> different slug+hash
     c = _resolve_run_id("tasks_smoke.json", ["baseline"], None)
     assert c != a
 
 
 # ── arm registry ──────────────────────────────────────────────────────────────
-def test_registry_has_baseline_and_dasein():
+def test_registry_has_baseline_and_parsec():
     names = available_arms()
-    assert "baseline" in names and "dasein" in names
+    assert "baseline" in names and "parsec" in names
 
 
 def test_get_arm_unknown_raises():
@@ -66,18 +66,18 @@ def test_baseline_always_ready():
     assert arm.ledger_path() is None
 
 
-def test_dasein_not_ready_without_brain(monkeypatch):
-    monkeypatch.delenv("DASEIN_BRAIN_URL", raising=False)
-    arm = get_arm("dasein")
+def test_parsec_not_ready_without_brain(monkeypatch):
+    monkeypatch.delenv("PARSEC_BRAIN_URL", raising=False)
+    arm = get_arm("parsec")
     ok, reason = arm.ready()
     assert not ok
-    assert "DASEIN_BRAIN_URL" in reason
+    assert "PARSEC_BRAIN_URL" in reason
 
 
-def test_dasein_not_ready_when_brain_unreachable(monkeypatch):
+def test_parsec_not_ready_when_brain_unreachable(monkeypatch):
     # a closed port: /health cannot answer -> precise, actionable skip reason
-    monkeypatch.setenv("DASEIN_BRAIN_URL", "http://127.0.0.1:9")
-    arm = get_arm("dasein")
+    monkeypatch.setenv("PARSEC_BRAIN_URL", "http://127.0.0.1:9")
+    arm = get_arm("parsec")
     ok, reason = arm.ready()
     assert not ok
     assert "/health" in reason

@@ -2,8 +2,8 @@
 //! Regenerate fixtures with:
 //!   python3 parity/gen_internal_fixtures.py
 
-use dasein_engine::pystr::py_json_dumps;
-use dasein_proxy::internal::{bash_twin_command, derive_command, derive_query, to_internal};
+use parsec_engine::pystr::py_json_dumps;
+use parsec_proxy::internal::{bash_twin_command, derive_command, derive_query, to_internal};
 use serde_json::Value;
 
 fn fixtures() -> Value {

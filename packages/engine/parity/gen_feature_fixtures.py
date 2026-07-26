@@ -5,13 +5,13 @@ Runs adaptive-context-clean's torch_curator feature stack (struct_features,
 struct_features_causal, struct_type_features, node_struct_with_type), the
 trace_train role markers and attribution.spans over diverse chunk sets —
 including the brain golden conversation (packages/brain/tests/test_service.py
-MESSAGES, parsed by dasein_brain.scorer.parse_internal exactly as the serving
+MESSAGES, parsed by parsec_brain.scorer.parse_internal exactly as the serving
 path does) — and dumps chunks + expected float32 matrices as JSON.
 tests/parity_features.rs replays the chunks through the Rust port and asserts
 f32 bit-equality (the reference emits float32; Rust computes f64 and casts
 once — the same single rounding).
 
-numpy + torch are required (torch_curator imports torch) and dasein_brain must
+numpy + torch are required (torch_curator imports torch) and parsec_brain must
 be importable (golden-conversation parse), so run with the brain venv:
   packages/brain/.venv/bin/python parity/gen_feature_fixtures.py [out.json]
 """
@@ -36,7 +36,7 @@ import numpy as np  # noqa: E402
 from adaptive_context.optimizer import chunking as C  # noqa: E402
 from adaptive_context.optimizer import torch_curator as TC  # noqa: E402
 from adaptive_context.optimizer.attribution import spans  # noqa: E402
-from dasein_brain.scorer import parse_internal  # noqa: E402
+from parsec_brain.scorer import parse_internal  # noqa: E402
 
 
 def _golden_messages():

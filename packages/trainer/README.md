@@ -1,4 +1,4 @@
-# dasein-trainer
+# parsec-trainer
 
 **v0 is the IDENTITY retrain stub** (docs/brain-serving-v0.md inference-first
 decision): the pipeline shape — collect → train → eval gate → promote — runs
@@ -15,12 +15,12 @@ uv venv .venv && uv pip install --python .venv/bin/python \
 uv pip install --python .venv/bin/python "numpy<2" -e ../brain -e ".[test]"
 
 # "retrain" (identity) and promote a versioned bundle:
-.venv/bin/python -m dasein_trainer.retrain \
-  --base-ckpt ~/.dasein/brain/curator_v4_prod.pt --out /tmp/bundles
+.venv/bin/python -m parsec_trainer.retrain \
+  --base-ckpt ~/.parsec/brain/curator_v4_prod.pt --out /tmp/bundles
 
 # serve the promoted bundle:
-DASEIN_CKPT=/tmp/bundles/<version>/curator.pt \
-DASEIN_RULES_JSON=/tmp/bundles/<version>/rules.json ... (brain README)
+PARSEC_CKPT=/tmp/bundles/<version>/curator.pt \
+PARSEC_RULES_JSON=/tmp/bundles/<version>/rules.json ... (brain README)
 ```
 
 What is REAL in the stub: the eval gate loads candidates through the brain's

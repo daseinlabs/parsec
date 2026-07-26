@@ -21,10 +21,10 @@ use axum::routing::post;
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_engine::pystr::{char_len, py_json_dumps};
-use dasein_proxy::brain::BrainConfig;
-use dasein_proxy::server::{router, AppState};
-use dasein_proxy::splice::strip_cache_control;
+use parsec_engine::pystr::{char_len, py_json_dumps};
+use parsec_proxy::brain::BrainConfig;
+use parsec_proxy::server::{router, AppState};
+use parsec_proxy::splice::strip_cache_control;
 
 /// Grid tau the mock brain hands out (the real ckpt's 0.70-cov tau).
 const TAU_Q: i64 = 315_265;
@@ -161,7 +161,7 @@ async fn setup() -> Ctx {
     tokio::spawn(async move { axum::serve(bl, brain_router).await.unwrap() });
 
     let ledger = std::env::temp_dir().join(format!(
-        "dasein-golden-test-{}-{}.jsonl",
+        "parsec-golden-test-{}-{}.jsonl",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -174,7 +174,7 @@ async fn setup() -> Ctx {
         tool_cut: 0.70,
         tool_prune: true,
         tool_stub: true,
-        contract: dasein_proxy::brain::BrainContract::Dev,
+        contract: parsec_proxy::brain::BrainContract::Dev,
     };
     let state = Arc::new(AppState::with_brain(
         format!("http://{up_addr}"),
@@ -233,11 +233,11 @@ async fn golden_conversation_replay() {
     );
 
     // The record seam (§8.1 capture) is exercised by the same replay: with
-    // DASEIN_RECORD_DIR set, every inbound body must be dumped verbatim.
+    // PARSEC_RECORD_DIR set, every inbound body must be dumped verbatim.
     // This is the only test in this binary, so the process env is ours.
-    let rec_dir = std::env::temp_dir().join(format!("dasein-golden-rec-{}", std::process::id()));
+    let rec_dir = std::env::temp_dir().join(format!("parsec-golden-rec-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&rec_dir);
-    std::env::set_var("DASEIN_RECORD_DIR", &rec_dir);
+    std::env::set_var("PARSEC_RECORD_DIR", &rec_dir);
 
     for (k, b) in turns.iter().enumerate() {
         let resp = ctx
@@ -250,7 +250,7 @@ async fn golden_conversation_replay() {
             .unwrap();
         assert_eq!(resp.status(), 200, "turn {} not served", k + 1);
     }
-    std::env::remove_var("DASEIN_RECORD_DIR");
+    std::env::remove_var("PARSEC_RECORD_DIR");
 
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     assert_eq!(sent.len(), turns.len(), "not every turn reached upstream");

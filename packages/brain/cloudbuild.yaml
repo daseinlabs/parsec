@@ -19,7 +19,7 @@ substitutions:
   # Embedder backend:
   #   local  — in-process bge-large on GPU (single hop; the recommended deploy).
   #            Bakes the weights + builds CUDA torch + deploys with an L4 GPU.
-  #   dasein — real bge vectors via an external _EMBED_URL (needs a VPC connector
+  #   parsec — real bge vectors via an external _EMBED_URL (needs a VPC connector
   #            to reach the embed pod; CPU service).
   #   hash   — deterministic TEST vectors (validates the pipeline, NOT scores).
   _EMBED_BACKEND: local
@@ -42,10 +42,10 @@ substitutions:
   # Optional Secret Manager secret holding the bearer key (name:version), e.g.
   # dasein-brain-key:latest. Empty = no static-key gate (fine behind an authed edge).
   _BRAIN_KEY_SECRET: ''
-  # Per-user entitlement gate: the platform base URL the brain validates dsn_
+  # Per-user entitlement gate: the platform base URL the brain validates psc_
   # keys against (/keys/validate). Set = the brain requires valid+entitled keys;
   # empty = fall back to the static _BRAIN_KEY_SECRET gate (or open). The client
-  # sends the user's dsn_ key as the bearer, so this needs no secret.
+  # sends the user's psc_ key as the bearer, so this needs no secret.
   _PLATFORM_URL: ''
 
 steps:
@@ -109,7 +109,7 @@ steps:
     args: [push, --all-tags, $_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE]
 
   # 4. Deploy to Cloud Run. Env stays minimal — _flags.py setdefault-pins the
-  #    shape-critical knobs (AC_CHUNK_LINES etc.); DASEIN_SERVE_TAU is left
+  #    shape-critical knobs (AC_CHUNK_LINES etc.); PARSEC_SERVE_TAU is left
   #    UNSET so serving uses the checkpoint's calibrated tau, not a forced one.
   - id: deploy
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
@@ -127,11 +127,11 @@ steps:
           --min-instances "$_MIN_INSTANCES"
           --max-instances "$_MAX_INSTANCES"
           --timeout "$_TIMEOUT"
-          --set-env-vars "DASEIN_EMBED_BACKEND=$_EMBED_BACKEND"
+          --set-env-vars "PARSEC_EMBED_BACKEND=$_EMBED_BACKEND"
           --allow-unauthenticated
         )
         # Local backend loads the baked weights from /embed-model either way.
-        [ "$_EMBED_BACKEND" = "local" ] && FLAGS+=(--set-env-vars "DASEIN_EMBED_MODEL_DIR=/embed-model")
+        [ "$_EMBED_BACKEND" = "local" ] && FLAGS+=(--set-env-vars "PARSEC_EMBED_MODEL_DIR=/embed-model")
         if [ "$_GPU" = "true" ]; then
           # In-process bge on an L4: attach the GPU, disable CPU throttling so the
           # model stays resident. L4 requires >=4 CPU / 16 GiB, pinned here.
@@ -141,9 +141,9 @@ steps:
         else
           FLAGS+=(--cpu "$_CPU" --memory "$_MEMORY")
         fi
-        [ -n "$_EMBED_URL" ]         && FLAGS+=(--set-env-vars "DASEIN_EMBED_URL=$_EMBED_URL")
-        [ -n "$_PLATFORM_URL" ]      && FLAGS+=(--set-env-vars "DASEIN_PLATFORM_URL=$_PLATFORM_URL")
-        [ -n "$_BRAIN_KEY_SECRET" ]  && FLAGS+=(--set-secrets "DASEIN_BRAIN_KEY=$_BRAIN_KEY_SECRET")
+        [ -n "$_EMBED_URL" ]         && FLAGS+=(--set-env-vars "PARSEC_EMBED_URL=$_EMBED_URL")
+        [ -n "$_PLATFORM_URL" ]      && FLAGS+=(--set-env-vars "PARSEC_PLATFORM_URL=$_PLATFORM_URL")
+        [ -n "$_BRAIN_KEY_SECRET" ]  && FLAGS+=(--set-secrets "PARSEC_BRAIN_KEY=$_BRAIN_KEY_SECRET")
         gcloud run deploy "$_SERVICE" "$${FLAGS[@]}"
 
 images:

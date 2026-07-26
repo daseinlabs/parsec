@@ -1,4 +1,4 @@
-//! dasein-engine — the client-side deterministic core.
+//! parsec-engine — the client-side deterministic core.
 //!
 //! Ported from `adaptive-context-clean/adaptive_context/` minus the GNN.
 //! Everything here must be a pure function of (conversation prefix, checkpoint

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="getparsec app icon">
+  <defs>
+    <filter id="g" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="#0A0E0C"/>
+  <rect x="6" y="6" width="500" height="500" rx="106" fill="#0F1512" stroke="#4AF626" stroke-opacity="0.28" stroke-width="2"/>
+  <g filter="url(#g)">
+    <g fill="none" stroke="#4AF626" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="118" y1="192" x2="392" y2="256"/>
+      <line x1="118" y1="320" x2="392" y2="256"/>
+    </g>
+    <path d="M392 200 L410.7 235.3 L446 256 L410.7 276.7 L392 312 L373.3 276.7 L338 256 L373.3 235.3 Z" fill="#4AF626"/>
+  </g>
+</svg>

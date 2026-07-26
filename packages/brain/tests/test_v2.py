@@ -20,16 +20,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-os.environ.setdefault("DASEIN_EMBED_BACKEND", "hash")
+os.environ.setdefault("PARSEC_EMBED_BACKEND", "hash")
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from dasein_brain.app import create_app
-from dasein_brain.bundle import load_bundle
-from dasein_brain.scorer import TraceScorer, parse_internal
-from dasein_brain.vendored.pyg_model import edges
+from parsec_brain.app import create_app
+from parsec_brain.bundle import load_bundle
+from parsec_brain.scorer import TraceScorer, parse_internal
+from parsec_brain.vendored.pyg_model import edges
 from test_service import MESSAGES, TOOLS
 from test_v1 import (_dev_trace_payload, _f, _newborn_mask, _v1_nodes, _v1_trace_payload,
                      to_internal)
@@ -205,7 +205,7 @@ def test_v2_empty_cmd_head_are_zero_vectors(client, fz, ckpt_id):
 
 def test_v2_tools_parity(client, fz, ckpt_id):
     """Tool-schema head: v2 schema_text must score identically to v1's precomputed emb."""
-    from dasein_brain.vendored.trace_contract import tool_schema_chunks
+    from parsec_brain.vendored.trace_contract import tool_schema_chunks
     parsed = parse_internal(MESSAGES, 10)
     lc = parsed.chunks
     nodes, _ = _v1_nodes(fz, lc)

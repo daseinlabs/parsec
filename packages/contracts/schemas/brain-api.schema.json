@@ -96,7 +96,7 @@
     "conv_id": { "$ref": "#/$defs/ident" },
     "checkpoint_id": { "$ref": "#/$defs/checkpoint_id" },
     "cur_step": { "type": "integer", "minimum": 0 },
-    "target_cov": { "type": "string", "pattern": "^0\\.\\d{2}$", "description": "accepted for provenance; tau resolves at bundle load (DASEIN_TARGET_COV), not per request" },
+    "target_cov": { "type": "string", "pattern": "^0\\.\\d{2}$", "description": "accepted for provenance; tau resolves at bundle load (PARSEC_TARGET_COV), not per request" },
     "nodes": {
      "type": "array",
      "items": { "$ref": "#/$defs/node" },
@@ -235,7 +235,7 @@
      },
      "description": "the scored roster at the CURRENT step, aligned with scores_q; [] on the fail-open path"
     },
-    "tau_hint_q": { "$ref": "#/$defs/grid_q", "description": "ADVISORY ONLY — the firing tau MUST be bench-calibrated per checkpoint before any consumer fires on it (DASEIN_RULE_TAU on the proxy)" },
+    "tau_hint_q": { "$ref": "#/$defs/grid_q", "description": "ADVISORY ONLY — the firing tau MUST be bench-calibrated per checkpoint before any consumer fires on it (PARSEC_RULE_TAU on the proxy)" },
     "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "description": { "type": "string", "description": "restates the advisory-tau caveat on every response" }
    }
@@ -257,9 +257,9 @@
    "additionalProperties": false,
    "required": ["nbr_cost_median", "nbr_count", "neighbors_active", "checkpoint_id"],
    "properties": {
-    "nbr_cost_median": { "type": ["number", "null"], "description": "MEDIAN realized cost (cumulative billed input tokens) of the top-k (DASEIN_NEIGHBORS=16) nearest anchors carrying cost metadata; null when hoods are off or fewer than 4 costs were found — the runaway signal stays inert (reference semantics)" },
+    "nbr_cost_median": { "type": ["number", "null"], "description": "MEDIAN realized cost (cumulative billed input tokens) of the top-k (PARSEC_NEIGHBORS=16) nearest anchors carrying cost metadata; null when hoods are off or fewer than 4 costs were found — the runaway signal stays inert (reference semantics)" },
     "nbr_count": { "type": "integer", "minimum": 0, "description": "how many neighbor cost samples were found (0 when hoods are off / zero task vector / pre-cost artifact)" },
-    "neighbors_active": { "type": "boolean", "description": "the hoods artifact is mounted (DASEIN_HOODS_PKL) — mirrors /v1/bundle neighbors" },
+    "neighbors_active": { "type": "boolean", "description": "the hoods artifact is mounted (PARSEC_HOODS_PKL) — mirrors /v1/bundle neighbors" },
     "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
    }
   }

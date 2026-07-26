@@ -1,7 +1,7 @@
 //! Fold-back parity vs service/anthropic_shapes.py. Regenerate fixtures with:
 //!   python3 parity/gen_fold_fixtures.py
 
-use dasein_proxy::splice::{
+use parsec_proxy::splice::{
     apply_curation, content_text, orig_fingerprint, place_cache_breakpoint, rewrite_first_text,
     strip_cache_control, system_to_text, FoldMap,
 };

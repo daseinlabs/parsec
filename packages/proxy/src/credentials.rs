@@ -1,12 +1,12 @@
-//! Per-user platform credentials at `~/.dasein/credentials.json`.
+//! Per-user platform credentials at `~/.parsec/credentials.json`.
 //!
-//! Holds the account's `dsn_` API key (and optionally a platform URL) the proxy
+//! Holds the account's `psc_` API key (and optionally a platform URL) the proxy
 //! ships savings-ledger rows with — so a user configures it once from inside
-//! Claude (`dasein key set …` / the `/dasein-key` skill) instead of editing env
+//! Claude (`parsec key set …` / the `/parsec:key` skill) instead of editing env
 //! vars or settings.json. Written here, read by `ledger_ship::resolve` at ship
 //! time (no proxy restart needed — it re-reads the file per shipped row).
 //!
-//! Runtime env still wins: `DASEIN_API_KEY` / `DASEIN_PLATFORM_URL` override the
+//! Runtime env still wins: `PARSEC_API_KEY` / `PARSEC_PLATFORM_URL` override the
 //! file, so CI and self-host deployments keep the env path. The file is the
 //! end-user path.
 
@@ -26,7 +26,7 @@ pub struct Credentials {
 }
 
 pub fn path() -> PathBuf {
-    crate::setup::dasein_home().join("credentials.json")
+    crate::setup::parsec_home().join("credentials.json")
 }
 
 /// Best-effort load — a missing or malformed file yields empty credentials
@@ -63,7 +63,7 @@ pub fn clear() -> std::io::Result<()> {
     }
 }
 
-/// `dsn_ab…wxyz` — masked form for confirmations/logs (never the full key).
+/// `psc_ab…wxyz` — masked form for confirmations/logs (never the full key).
 pub fn mask(key: &str) -> String {
     let n = key.chars().count();
     if n <= 8 {

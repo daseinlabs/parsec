@@ -18,7 +18,7 @@ assistant message (plus optional polling via `refreshInterval`).
 
 - Plugins canNOT ship a `statusLine` key (verified 2026-07-18: plugin
   `settings.json` supports only `agent` and `subagentStatusLine`). Implemented
-  delivery: `dasein setup` merges a managed `statusLine` entry into the
+  delivery: `parsec setup` merges a managed `statusLine` entry into the
   user's `~/.claude/settings.json` — additive with the same ownership rules
   as the env merge (a user-authored statusLine is never overwritten; ours is
   repointed on version bumps by the SessionStart re-assert). Claude Code
@@ -31,20 +31,20 @@ assistant message (plus optional polling via `refreshInterval`).
   row with the optional `session_id` it extracts from the request's
   `metadata.user_id` (a JSON-encoded object carrying the Claude Code session
   uuid — verified live against CC 2.1.214); the statusline filters
-  `~/.dasein/ledger.jsonl` to the current session. If the ledger outgrows the
+  `~/.parsec/ledger.jsonl` to the current session. If the ledger outgrows the
   render budget, switch to a pre-aggregated per-session state file.
-- Example: `dasein ▸ saved 12.5k tokens ($0.06) this session`
+- Example: `parsec ▸ saved 12.5k tokens ($0.06) this session`
 - Caveat: runs on every refresh — keep the read path cheap (pre-aggregated
   file, never a live computation).
 
 Ref: https://code.claude.com/docs/en/statusline.md
 
-### 2. On-demand skill: `/dasein:savings` — the detailed report
+### 2. On-demand skill: `/parsec:savings` — the detailed report
 
 `skills/savings/SKILL.md` with:
 
 - `disable-model-invocation: true` — only the user triggers it.
-- A `` !`${CLAUDE_PLUGIN_ROOT}/bin/dasein savings` `` shell injection that
+- A `` !`${CLAUDE_PLUGIN_ROOT}/bin/parsec savings` `` shell injection that
   pulls the numbers from the binary.
 
 This is where the rich report lives: session vs. month-to-date, compression
@@ -60,7 +60,7 @@ Hooks can return `systemMessage`, which renders as a prominent notice bar
 directly to the user (distinct from `additionalContext`, which is injected
 into Claude's context instead). A SessionStart hook with matcher `startup`:
 
-> dasein active — cumulative savings: 1.2M tokens. `/dasein:savings` for details.
+> parsec active — cumulative savings: 1.2M tokens. `/parsec:savings` for details.
 
 Once per session; not naggy.
 
@@ -97,16 +97,65 @@ Ref: https://code.claude.com/docs/en/hooks.md
 ## Recommended combination
 
 1. **Statusline** — ambient, every turn.
-2. **`/dasein:savings` skill** — detailed on-demand report + methodology.
+2. **`/parsec:savings` skill** — detailed on-demand report + methodology.
 3. **SessionStart `systemMessage`** — one-time cumulative stat + pointer to
    the skill (discoverability).
 4. **README/manifest** — install-time trust story.
+5. **Brand surfaces** (§5 below) — agent name, subagent line, spinner verbs.
 
 All four read the same local state file written by the Rust proxy. This keeps
 the **data-plane-local** invariant: savings numbers never need to leave the
 machine to be displayed. Savings figures shown anywhere must come from the
 per-request `count_tokens` counterfactual (measurement honesty — see
 CLAUDE.md / DIRECTION.md).
+
+## 5. Brand surfaces — where the NAME appears
+
+Everything above answers "where do we show a savings number?". A separate
+question is "where does the user see that parsec is here at all?", and it has
+different answers. Surveyed against CC 2.1.220 (2026-07-25) by reading the
+shipped binary's settings schema; cross-checked against `wozcode-plugin`,
+which leans on all of these.
+
+| Surface | Key | Ships in plugin? | Status |
+|---|---|---|---|
+| Main-thread agent | `agent` in plugin `settings.json` | **Yes** | `parsec:code` (`agents/code.md`) |
+| Per-subagent line | `subagentStatusLine` | Yes, but see below | `parsec subagent-statusline` |
+| Spinner verbs | `spinnerVerbs` | No | appended by `parsec setup` |
+| Commit/PR trailer | `attribution.commit` / `.pr` | No | **not done** — see below |
+| Tool namespace | MCP server key in `.mcp.json` | Yes | `mcp__plugin_parsec_scout__*` |
+
+Notes that cost time to establish:
+
+- **Plugin `settings.json` is auto-discovered** from the plugin root (no
+  `plugin.json` key points at it) and accepts only `agent` and
+  `subagentStatusLine`. Confirmed again on 2.1.220.
+- **`${CLAUDE_PLUGIN_ROOT}` does NOT expand in `settings.json`** — only in
+  hooks declared in `hooks/hooks.json`. The binary itself says so:
+  *"This variable is only available in hooks defined in a plugin's
+  hooks/hooks.json file, not in settings.json."* So although a plugin *may*
+  ship `subagentStatusLine`, it cannot name our binary there. Ours therefore
+  rides the `parsec setup` managed-settings merge with the absolute exe path,
+  exactly like `statusLine`.
+- **`subagentStatusLine` protocol**: stdin gets
+  `{columns, tasks: [{id, name, type, status, description, label, startTime,
+  model, effort, contextWindowSize, tokenCount, tokenSamples, cwd}], …}`;
+  stdout is JSON Lines, one `{"id", "content"}` per task, and any
+  unparseable line is dropped. Polled every 5s with a 5s timeout — keep it a
+  pure format of the payload, no disk or network.
+- **`spinnerVerbs`** is `{mode: "append" | "replace", verbs: string[]}`. We
+  use `append`: the stock verbs are part of the harness's personality and we
+  are a guest in it. Ownership is marked by the sentinel verb `Parsecing`
+  rather than an exact list match, so a later version can change the list and
+  still recognise (and clean up) its own block.
+- **`attribution`** is `{commit, pr, sessionUrl}`, free-form strings. This
+  writes our name into the user's git history, so it must stay opt-in behind
+  an explicit toggle — not something `setup` does silently. Deliberately not
+  implemented yet.
+
+All three managed keys follow the same ownership discipline as the env merge:
+absent → written; ours → refreshed; **user-authored → never touched, and
+never removed by `parsec disable`**.
 
 # Part 2 — Install flow: distribution, setup, and onboarding
 
@@ -121,7 +170,7 @@ CLI equivalents:
 
 ```bash
 claude plugin marketplace add daseinlabs/claude-plugins   # GitHub shorthand; also git URLs, local paths, raw marketplace.json URLs, @tag pinning
-claude plugin install dasein@dasein-marketplace --scope user|project|local
+claude plugin install parsec@parsec-marketplace --scope user|project|local
 claude plugin list / enable / disable / uninstall / update / details
 /reload-plugins                                            # activate in current session
 ```
@@ -138,12 +187,12 @@ A git repo with `.claude-plugin/marketplace.json` cataloging plugins:
 
 ```json
 {
-  "name": "dasein-marketplace",
-  "owner": { "name": "Dasein Labs", "email": "support@dasein.rocks" },
+  "name": "parsec-marketplace",
+  "owner": { "name": "Dasein Labs", "email": "support@getparsec.ai" },
   "plugins": [
     {
-      "name": "dasein",
-      "source": "./plugins/dasein",
+      "name": "parsec",
+      "source": "./plugins/parsec",
       "description": "Measured token savings via local compression proxy",
       "version": "1.0.0",
       "category": "productivity",
@@ -201,9 +250,9 @@ NOT on interactive install or first session. Documented pieces we can
 combine:
 
 1. **`bin/` directory** — plugins can ship executables in `bin/`; it is added
-   to `PATH` for the session. So: ship **pre-built** `dasein` binaries per
+   to `PATH` for the session. So: ship **pre-built** `parsec` binaries per
    platform (macos-arm64/x86_64, linux-x86_64; sign + notarize macOS). No
-   build step on install. Referenced as `${CLAUDE_PLUGIN_ROOT}/bin/dasein`
+   build step on install. Referenced as `${CLAUDE_PLUGIN_ROOT}/bin/parsec`
    in hooks/MCP config.
 2. **`userConfig` in plugin.json** (v2.1.154+) — typed setup prompts shown at
    enable time (string/boolean fields, `sensitive: true` for secrets →
@@ -217,8 +266,8 @@ combine:
    documented mechanism for the transparent proxy wiring.
 4. **SessionStart hook as health check** — every session, verify the proxy is
    reachable; on failure emit `systemMessage`
-   ("dasein proxy not running — start with `dasein proxy`") and fail open.
-5. **`/dasein:setup` skill** — interactive fallback wizard for anything that
+   ("parsec proxy not running — start with `parsec proxy`") and fail open.
+5. **`/parsec:setup` skill** — interactive fallback wizard for anything that
    can't happen automatically (first proxy launch, login, building from
    source).
 
@@ -241,13 +290,13 @@ Ref: https://code.claude.com/docs/en/settings.md#workspace-trust
 ## Recommended onboarding flow
 
 1. User: `claude plugin marketplace add daseinlabs/claude-plugins` (one time).
-2. `claude plugin install dasein@dasein-marketplace` (or via `/plugin` UI).
+2. `claude plugin install parsec@parsec-marketplace` (or via `/plugin` UI).
 3. Enable-time `userConfig` prompts: proxy port/endpoint, BYOK key (optional,
    `sensitive: true`).
 4. Plugin `settings.json` `env` sets `ANTHROPIC_BASE_URL` → local proxy.
 5. SessionStart hook health-checks the proxy; `systemMessage` with the fix
    command if down (fail open — never block the session).
-6. Statusline + `/dasein:savings` take over from there (see Part 1).
+6. Statusline + `/parsec:savings` take over from there (see Part 1).
 
 Open items to verify against a live Claude Code version before building:
 `userConfig` field semantics, `bin/`-on-PATH behavior, and whether plugin

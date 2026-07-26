@@ -1,4 +1,4 @@
-//! `dasein setup` — one-shot Pro activation: download the local bge-large
+//! `parsec setup` — one-shot Pro activation: download the local bge-large
 //! ONNX export, write the Claude Code routing env, start the proxy warm.
 //!
 //! Spawned detached by the SessionStart hook on first run (`--auto`), and
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 pub const STATE_CONTRACT: &str = "setup-state/v0";
 
-/// `~/.dasein/setup_state.json` — the single source of truth for where
+/// `~/.parsec/setup_state.json` — the single source of truth for where
 /// first-run setup stands. Phases:
 /// - `spawned`: the SessionStart hook claimed the slot and spawned
 ///   `setup --auto` (the claim closes the two-sessions-start-at-once race);
@@ -29,9 +29,9 @@ pub const STATE_CONTRACT: &str = "setup-state/v0";
 /// - `downloading`: a setup process owns the download (freshness of
 ///   `updated_unix` distinguishes live from crashed — see [`stale`]).
 /// - `ready`: model verified; env written unless `base_url_conflict`.
-/// - `failed`: retryable error (`dasein setup` runs again).
+/// - `failed`: retryable error (`parsec setup` runs again).
 /// - `unsupported`: this binary has no `onnx` feature — terminal, silent.
-/// - `disabled`: user ran `dasein disable` — autosetup never re-runs.
+/// - `disabled`: user ran `parsec disable` — autosetup never re-runs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct SetupState {
     pub contract_version: String,
@@ -82,12 +82,12 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/tmp"))
 }
 
-pub fn dasein_home() -> PathBuf {
-    home_dir().join(".dasein")
+pub fn parsec_home() -> PathBuf {
+    home_dir().join(".parsec")
 }
 
 pub fn state_path() -> PathBuf {
-    dasein_home().join("setup_state.json")
+    parsec_home().join("setup_state.json")
 }
 
 pub fn load_state() -> Option<SetupState> {
@@ -108,7 +108,7 @@ pub fn save_state(st: &SetupState) -> std::io::Result<()> {
 }
 
 pub fn default_port() -> u16 {
-    std::env::var("DASEIN_PROXY_PORT")
+    std::env::var("PARSEC_PROXY_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8082)
@@ -122,19 +122,19 @@ fn port_bindable(port: u16) -> bool {
 /// moment we may freely pick (Claude Code has not yet read routing). Prefer
 /// `preferred`; if a FOREIGN process squats it, scan upward for a free port so
 /// routing never lands on someone else's server (bug: "fall back to a random
-/// port when the proxy port is already in use"). A dasein proxy already on
+/// port when the proxy port is already in use"). A parsec proxy already on
 /// `preferred` is reused as-is — re-running setup must not strand it.
 pub fn choose_free_port(preferred: u16) -> u16 {
     if port_bindable(preferred) {
         return preferred;
     }
-    if proxy_request(preferred, "GET", "/health").is_some_and(|h| h.contains("dasein-proxy")) {
+    if proxy_request(preferred, "GET", "/health").is_some_and(|h| h.contains("parsec-proxy")) {
         return preferred; // our own supervisor — keep the port it owns
     }
     for p in (preferred.saturating_add(1))..=(preferred.saturating_add(64)) {
         if port_bindable(p) {
             tracing::warn!(
-                "port {preferred} is held by a non-dasein process — routing to {p} instead"
+                "port {preferred} is held by a non-parsec process — routing to {p} instead"
             );
             return p;
         }
@@ -183,16 +183,16 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
 
     match (&st.base_url_conflict, st.env_written) {
         (Some(url), _) => println!(
-            "routing NOT written: ANTHROPIC_BASE_URL is already {url} — dasein will not \
+            "routing NOT written: ANTHROPIC_BASE_URL is already {url} — parsec will not \
              overwrite it. Point it at http://127.0.0.1:{} yourself to enable curation.",
             st.port
         ),
         (None, true) => println!(
             "routing written to Claude Code settings (127.0.0.1:{}) — restart Claude Code \
-             to activate curation. Undo anytime: dasein disable",
+             to activate curation. Undo anytime: parsec disable",
             st.port
         ),
-        (None, false) => println!("routing already pointed at a local dasein proxy — kept as-is"),
+        (None, false) => println!("routing already pointed at a local parsec proxy — kept as-is"),
     }
     if let Some(e) = spawn_err {
         println!("proxy pre-warm failed ({e}) — the SessionStart hook will start it next session");
@@ -200,7 +200,7 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `dasein up` — bring the proxy back on the routed port. The manual twin of
+/// `parsec up` — bring the proxy back on the routed port. The manual twin of
 /// the SessionStart hook's autostart, for the rare case the supervisor itself
 /// died MID-session: routing env is read at Claude Code launch and cannot
 /// change, so revival means putting a supervisor back on the same port.
@@ -209,7 +209,7 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
 /// a live proxy (ours or the user's own) is never double-spawned.
 pub fn up() -> anyhow::Result<()> {
     let port = routed_port();
-    let log = dasein_home().join("proxy.log");
+    let log = parsec_home().join("proxy.log");
     if crate::hook::port_listening(port) {
         println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
         return Ok(());
@@ -260,7 +260,7 @@ fn routed_port() -> u16 {
     default_port()
 }
 
-/// `dasein disable` — remove exactly (and only) what setup wrote.
+/// `parsec disable` — remove exactly (and only) what setup wrote.
 fn strip_managed_settings() -> anyhow::Result<()> {
     let path = settings_path();
     match std::fs::read_to_string(&path) {
@@ -269,7 +269,7 @@ fn strip_managed_settings() -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("cannot parse {}: {e}", path.display()))?;
             let (root, removed) = remove_managed_env(root);
             if removed.is_empty() {
-                println!("no dasein-managed env keys found in {}", path.display());
+                println!("no parsec-managed env keys found in {}", path.display());
             } else {
                 write_settings_file(&path, &root)?;
                 println!(
@@ -295,7 +295,7 @@ pub fn disable() -> anyhow::Result<()> {
     let mut st = SetupState::new("disabled");
     st.port = default_port();
     save_state(&st)?;
-    println!("auto-setup is now off. Re-enable with: dasein setup");
+    println!("auto-setup is now off. Re-enable with: parsec setup");
     Ok(())
 }
 
@@ -329,7 +329,7 @@ fn stop_proxy(port: u16) -> String {
         return format!("no proxy listening on 127.0.0.1:{port}");
     }
     match proxy_request(port, "GET", "/health") {
-        Some(h) if h.contains("dasein-proxy") => {
+        Some(h) if h.contains("parsec-proxy") => {
             let _ = proxy_request(port, "POST", "/shutdown");
             for _ in 0..20 {
                 if !crate::hook::port_listening(port) {
@@ -343,13 +343,13 @@ fn stop_proxy(port: u16) -> String {
             )
         }
         Some(_) => {
-            format!("port {port} is serving something that is not the dasein proxy — left alone")
+            format!("port {port} is serving something that is not the parsec proxy — left alone")
         }
         None => format!("listener on port {port} did not answer a health probe — left alone"),
     }
 }
 
-/// Delete every dasein-owned data file under `home` EXCEPT the state file
+/// Delete every parsec-owned data file under `home` EXCEPT the state file
 /// (setup_state.json): the "disabled" marker there must survive until the
 /// plugin itself is uninstalled, or a
 /// still-open session's auto-setup hook would immediately redownload models.
@@ -378,7 +378,7 @@ fn purge_data_files(home: &Path) -> (Vec<String>, Vec<String>) {
     (removed, failed)
 }
 
-/// `dasein uninstall` — full local cleanup, run BEFORE `claude plugin
+/// `parsec uninstall` — full local cleanup, run BEFORE `claude plugin
 /// uninstall` (afterwards this binary is gone). Order matters: mark disabled
 /// first so still-open sessions' auto-setup hooks won't restart anything,
 /// resolve the routed port BEFORE stripping settings (routed_port reads
@@ -390,7 +390,7 @@ pub fn uninstall() -> anyhow::Result<()> {
     let port = routed_port();
     strip_managed_settings()?;
     println!("{}", stop_proxy(port));
-    let home = dasein_home();
+    let home = parsec_home();
     let (removed, failed) = purge_data_files(&home);
     if !removed.is_empty() {
         println!("removed from {}: {}", home.display(), removed.join(", "));
@@ -399,7 +399,7 @@ pub fn uninstall() -> anyhow::Result<()> {
         eprintln!("could not remove {f} — delete by hand");
     }
     println!(
-        "local cleanup done. To finish:\n  1. claude plugin uninstall dasein\n  \
+        "local cleanup done. To finish:\n  1. claude plugin uninstall parsec@parsec-marketplace\n  \
          2. (optional) rm -rf {} — removes the last marker file",
         home.display()
     );
@@ -420,7 +420,7 @@ pub fn settings_path() -> PathBuf {
 
 #[derive(Debug, PartialEq)]
 pub struct MergeOutcome {
-    /// ANTHROPIC_BASE_URL now points at a local dasein proxy (whether we
+    /// ANTHROPIC_BASE_URL now points at a local parsec proxy (whether we
     /// wrote it just now or it was already there).
     pub routed: bool,
     pub conflict: Option<String>,
@@ -463,7 +463,7 @@ fn merge_settings(mut root: Value, port: u16) -> anyhow::Result<(Value, MergeOut
     }
     // No embedder env is written any more: the brain embeds
     // (docs/server-side-embedding.md). Previously this planted
-    // DASEIN_EMBED_BACKEND=onnx + DASEIN_ONNX_DIR.
+    // PARSEC_EMBED_BACKEND=onnx + PARSEC_ONNX_DIR.
     Ok((root, out))
 }
 
@@ -474,11 +474,17 @@ fn statusline_cmd(exe: &str) -> String {
 }
 
 /// A statusLine value setup wrote (under any past binary path) — a
-/// user-authored command never matches and is never touched.
+/// user-authored command never matches and is never touched. The
+/// `subagent-statusline` exclusion matters: that command also ends in
+/// "statusline", so without it our own subagent entry would read as a
+/// managed statusLine.
 fn is_managed_statusline(v: &Value) -> bool {
     v.pointer("/command")
         .and_then(Value::as_str)
-        .map(|c| c.contains("dasein") && c.trim_end().ends_with("statusline"))
+        .map(|c| {
+            let c = c.trim_end();
+            c.contains("parsec") && c.ends_with("statusline") && !c.ends_with("subagent-statusline")
+        })
         .unwrap_or(false)
 }
 
@@ -511,31 +517,133 @@ fn merge_statusline(mut root: Value, exe: &str) -> anyhow::Result<(Value, bool)>
     Ok((root, changed))
 }
 
+/// The managed subagentStatusLine command for `exe`. Quoted for the same
+/// reason as `statusline_cmd`.
+fn subagent_statusline_cmd(exe: &str) -> String {
+    format!("\"{exe}\" subagent-statusline")
+}
+
+/// A subagentStatusLine value setup wrote (under any past binary path).
+fn is_managed_subagent_statusline(v: &Value) -> bool {
+    v.pointer("/command")
+        .and_then(Value::as_str)
+        .map(|c| c.contains("parsec") && c.trim_end().ends_with("subagent-statusline"))
+        .unwrap_or(false)
+}
+
+/// Merge the managed subagentStatusLine into a settings root. A plugin's own
+/// settings.json CAN carry this key, but its value is read verbatim —
+/// `${CLAUDE_PLUGIN_ROOT}` is only expanded for hooks declared in
+/// hooks/hooks.json (verified against CC 2.1.220), so a plugin-shipped entry
+/// could not name our binary. Hence the same user-settings merge as
+/// statusLine, with identical ownership rules. Pure for tests.
+fn merge_subagent_statusline(mut root: Value, exe: &str) -> anyhow::Result<(Value, bool)> {
+    if root.is_null() {
+        root = serde_json::json!({});
+    }
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings root is not a JSON object"))?;
+    let want = serde_json::json!({"type": "command", "command": subagent_statusline_cmd(exe)});
+    let changed = match obj.get("subagentStatusLine") {
+        None => {
+            obj.insert("subagentStatusLine".into(), want);
+            true
+        }
+        Some(v) if is_managed_subagent_statusline(v) && *v != want => {
+            obj.insert("subagentStatusLine".into(), want);
+            true
+        }
+        Some(_) => false,
+    };
+    Ok((root, changed))
+}
+
+/// The sentinel verb that marks a spinnerVerbs block as ours. Present in
+/// every set we have ever written, so ownership survives verb-list edits
+/// across versions the way the binary path does for statusLine.
+const SPINNER_SENTINEL: &str = "Parsecing";
+
+/// Parsec-flavoured spinner verbs, appended to Claude Code's defaults. Append
+/// (not replace) on purpose: the stock verbs are part of the harness's
+/// personality and we are a guest in it.
+const SPINNER_VERBS: &[&str] = &[
+    SPINNER_SENTINEL,
+    "Compacting",
+    "Condensing",
+    "Deduping",
+    "Distilling",
+    "Eliding",
+    "Pruning",
+    "Tightening",
+    "Traversing",
+    "Trimming",
+];
+
+/// A spinnerVerbs value setup wrote — identified by our sentinel verb, not by
+/// an exact list match, so a version that ships different verbs still
+/// recognises (and updates) its own block. A user-authored list never
+/// contains the sentinel and is never touched.
+fn is_managed_spinner_verbs(v: &Value) -> bool {
+    v.pointer("/verbs")
+        .and_then(Value::as_array)
+        .map(|verbs| verbs.iter().any(|x| x.as_str() == Some(SPINNER_SENTINEL)))
+        .unwrap_or(false)
+}
+
+/// Merge the managed spinnerVerbs into a settings root. Not a key plugins can
+/// ship (plugin settings.json supports only agent / subagentStatusLine), so
+/// it rides the same managed-settings write with the same ownership rules.
+/// Pure for tests.
+fn merge_spinner_verbs(mut root: Value) -> anyhow::Result<(Value, bool)> {
+    if root.is_null() {
+        root = serde_json::json!({});
+    }
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings root is not a JSON object"))?;
+    let want = serde_json::json!({"mode": "append", "verbs": SPINNER_VERBS});
+    let changed = match obj.get("spinnerVerbs") {
+        None => {
+            obj.insert("spinnerVerbs".into(), want);
+            true
+        }
+        Some(v) if is_managed_spinner_verbs(v) && *v != want => {
+            obj.insert("spinnerVerbs".into(), want);
+            true
+        }
+        Some(_) => false,
+    };
+    Ok((root, changed))
+}
+
 /// Strip managed keys, but only when they still hold values setup would have
 /// written — a user-customized value is theirs, not ours to delete.
 fn remove_managed_env(mut root: Value) -> (Value, Vec<String>) {
     let mut removed = Vec::new();
-    if root
-        .get("statusLine")
-        .map(is_managed_statusline)
-        .unwrap_or(false)
-    {
-        if let Some(obj) = root.as_object_mut() {
-            obj.remove("statusLine");
-            removed.push("statusLine".to_string());
+    for (key, ours) in [
+        ("statusLine", is_managed_statusline as fn(&Value) -> bool),
+        ("subagentStatusLine", is_managed_subagent_statusline),
+        ("spinnerVerbs", is_managed_spinner_verbs),
+    ] {
+        if root.get(key).map(ours).unwrap_or(false) {
+            if let Some(obj) = root.as_object_mut() {
+                obj.remove(key);
+                removed.push(key.to_string());
+            }
         }
     }
     if let Some(env) = root.get_mut("env").and_then(Value::as_object_mut) {
         let ours = |k: &str, v: &Value| match (k, v.as_str()) {
             ("ANTHROPIC_BASE_URL", Some(s)) => crate::hook::local_proxy_port(s).is_some(),
-            ("DASEIN_EMBED_BACKEND", Some(s)) => s == "onnx",
-            ("DASEIN_ONNX_DIR", Some(_)) => true,
+            ("PARSEC_EMBED_BACKEND", Some(s)) => s == "onnx",
+            ("PARSEC_ONNX_DIR", Some(_)) => true,
             _ => false,
         };
         for k in [
             "ANTHROPIC_BASE_URL",
-            "DASEIN_EMBED_BACKEND",
-            "DASEIN_ONNX_DIR",
+            "PARSEC_EMBED_BACKEND",
+            "PARSEC_ONNX_DIR",
         ] {
             if env.get(k).map(|v| ours(k, v)).unwrap_or(false) {
                 env.remove(k);
@@ -553,7 +661,7 @@ fn write_settings_env(port: u16) -> anyhow::Result<MergeOutcome> {
             // Refusing beats clobbering: a settings file we can't parse is
             // one we must not rewrite.
             anyhow::anyhow!(
-                "cannot parse {}: {e} — fix it, then run `dasein setup`",
+                "cannot parse {}: {e} — fix it, then run `parsec setup`",
                 path.display()
             )
         })?,
@@ -561,17 +669,23 @@ fn write_settings_env(port: u16) -> anyhow::Result<MergeOutcome> {
         Err(e) => return Err(e.into()),
     };
     let (root, mut outcome) = merge_settings(root, port)?;
-    // The statusline rides the same managed-settings write (delivery
-    // mechanism of docs/plugin-user-messaging.md Part 1 §1 — plugins cannot
-    // ship the key themselves).
+    // The brand surfaces ride the same managed-settings write (delivery
+    // mechanism of docs/plugin-user-messaging.md Part 1 §1 and §6 — plugins
+    // cannot ship these keys themselves, or cannot resolve our binary path
+    // in the one case where they can).
     let root = match std::env::current_exe() {
         Ok(exe) => {
-            let (root, changed) = merge_statusline(root, &exe.to_string_lossy())?;
+            let exe = exe.to_string_lossy().into_owned();
+            let (root, changed) = merge_statusline(root, &exe)?;
+            outcome.changed |= changed;
+            let (root, changed) = merge_subagent_statusline(root, &exe)?;
             outcome.changed |= changed;
             root
         }
         Err(_) => root,
     };
+    let (root, changed) = merge_spinner_verbs(root)?;
+    outcome.changed |= changed;
     if outcome.changed {
         write_settings_file(&path, &root)?;
     }
@@ -582,7 +696,7 @@ fn write_settings_file(path: &Path, root: &Value) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension("json.dasein-tmp");
+    let tmp = path.with_extension("json.parsec-tmp");
     std::fs::write(&tmp, format!("{}\n", serde_json::to_string_pretty(root)?))?;
     std::fs::rename(&tmp, path)?;
     Ok(())
@@ -597,19 +711,19 @@ pub fn ensure_routing(port: u16) -> anyhow::Result<MergeOutcome> {
     write_settings_env(port)
 }
 
-// ── per-account API key (`dasein key …`) ────────────────────────────────────
+// ── per-account API key (`parsec key …`) ────────────────────────────────────
 
-/// `dasein key set <dsn_…> [--platform-url URL]` — store the account's API key
-/// (and optional platform URL) in ~/.dasein/credentials.json. The proxy reads
+/// `parsec key set <psc_…> [--platform-url URL]` — store the account's API key
+/// (and optional platform URL) in ~/.parsec/credentials.json. The proxy reads
 /// it live per shipped row, so this takes effect on the NEXT request — no
-/// restart. `DASEIN_API_KEY` in the env still overrides the file if set.
+/// restart. `PARSEC_API_KEY` in the env still overrides the file if set.
 pub fn key_set(key: String, platform_url: Option<String>) -> anyhow::Result<()> {
     let key = key.trim().to_string();
     if key.is_empty() {
-        anyhow::bail!("empty key — pass the dsn_ key minted in the dashboard");
+        anyhow::bail!("empty key — pass the psc_ key minted in the dashboard");
     }
-    if !key.starts_with("dsn_") {
-        println!("warning: key does not start with 'dsn_' — storing it anyway");
+    if !key.starts_with("psc_") {
+        println!("warning: key does not start with 'psc_' — storing it anyway");
     }
     let mut creds = crate::credentials::load();
     creds.api_key = Some(key.clone());
@@ -624,24 +738,24 @@ pub fn key_set(key: String, platform_url: Option<String>) -> anyhow::Result<()> 
         crate::credentials::mask(&key),
         crate::credentials::path().display()
     );
-    if std::env::var("DASEIN_API_KEY").is_ok_and(|v| !v.is_empty()) {
+    if std::env::var("PARSEC_API_KEY").is_ok_and(|v| !v.is_empty()) {
         println!(
-            "note: DASEIN_API_KEY is set in the environment and OVERRIDES this file — \
+            "note: PARSEC_API_KEY is set in the environment and OVERRIDES this file — \
              unset it to use the stored key."
         );
     }
     Ok(())
 }
 
-/// `dasein key show` — the configured key (masked) and where it resolves from.
+/// `parsec key show` — the configured key (masked) and where it resolves from.
 pub fn key_show() -> anyhow::Result<()> {
-    let env_key = std::env::var("DASEIN_API_KEY")
+    let env_key = std::env::var("PARSEC_API_KEY")
         .ok()
         .filter(|k| !k.is_empty());
     let creds = crate::credentials::load();
     match (&env_key, &creds.api_key) {
         (Some(k), _) => println!(
-            "API key: {} (from DASEIN_API_KEY env)",
+            "API key: {} (from PARSEC_API_KEY env)",
             crate::credentials::mask(k)
         ),
         (None, Some(k)) => println!(
@@ -649,48 +763,48 @@ pub fn key_show() -> anyhow::Result<()> {
             crate::credentials::mask(k),
             crate::credentials::path().display()
         ),
-        (None, None) => println!("API key: not set — run `dasein key set <dsn_…>`"),
+        (None, None) => println!("API key: not set — run `parsec key set <psc_…>`"),
     }
     match crate::ledger_ship::resolve() {
         Some(_) => println!("shipping: active (key + platform URL both resolved)"),
         None => println!(
             "shipping: inactive — need both an API key and a platform URL (baked in \
-             release builds; set DASEIN_PLATFORM_URL or `--platform-url` on a dev build)"
+             release builds; set PARSEC_PLATFORM_URL or `--platform-url` on a dev build)"
         ),
     }
     Ok(())
 }
 
-/// `dasein key clear` — remove the stored key (stops dashboard reporting).
+/// `parsec key clear` — remove the stored key (stops dashboard reporting).
 pub fn key_clear() -> anyhow::Result<()> {
     crate::credentials::clear()?;
     println!(
         "cleared stored API key ({})",
         crate::credentials::path().display()
     );
-    if std::env::var("DASEIN_API_KEY").is_ok_and(|v| !v.is_empty()) {
-        println!("note: DASEIN_API_KEY is still set in the environment — unset it to fully stop reporting.");
+    if std::env::var("PARSEC_API_KEY").is_ok_and(|v| !v.is_empty()) {
+        println!("note: PARSEC_API_KEY is still set in the environment — unset it to fully stop reporting.");
     }
     Ok(())
 }
 
 // ── detached spawns (shared with the SessionStart hook) ─────────────────────
 
-/// Spawn `dasein proxy` (the SUPERVISOR) on `port`, detached, logging to
-/// ~/.dasein/proxy.log. The supervisor owns the port for its whole life and
+/// Spawn `parsec proxy` (the SUPERVISOR) on `port`, detached, logging to
+/// ~/.parsec/proxy.log. The supervisor owns the port for its whole life and
 /// spawns/restarts the curating worker itself — there is no idle self-exit
 /// any more (removed 2026-07-21: it wedged still-active sessions that went
 /// briefly idle, and a self-killing worker would just be respawned).
 pub fn spawn_proxy_detached(port: u16, extra_env: &[(String, String)]) -> anyhow::Result<()> {
     let mut cmd = std::process::Command::new(std::env::current_exe()?);
-    cmd.arg("proxy").env("DASEIN_PROXY_PORT", port.to_string());
+    cmd.arg("proxy").env("PARSEC_PROXY_PORT", port.to_string());
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
     spawn_detached(cmd, "proxy.log")
 }
 
-/// Spawn `dasein setup --auto` detached, logging to ~/.dasein/setup.log.
+/// Spawn `parsec setup --auto` detached, logging to ~/.parsec/setup.log.
 pub fn spawn_setup_detached() -> anyhow::Result<()> {
     let mut cmd = std::process::Command::new(std::env::current_exe()?);
     cmd.arg("setup").arg("--auto");
@@ -698,7 +812,7 @@ pub fn spawn_setup_detached() -> anyhow::Result<()> {
 }
 
 fn spawn_detached(mut cmd: std::process::Command, log_name: &str) -> anyhow::Result<()> {
-    let log_dir = dasein_home();
+    let log_dir = parsec_home();
     std::fs::create_dir_all(&log_dir)?;
     let log = std::fs::OpenOptions::new()
         .create(true)
@@ -740,8 +854,8 @@ mod tests {
         assert!(out.routed && out.changed && out.conflict.is_none());
         assert_eq!(root["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:8082");
         // routing is the ONLY managed env key now — no embedder to configure
-        assert!(root["env"]["DASEIN_EMBED_BACKEND"].is_null());
-        assert!(root["env"]["DASEIN_ONNX_DIR"].is_null());
+        assert!(root["env"]["PARSEC_EMBED_BACKEND"].is_null());
+        assert!(root["env"]["PARSEC_ONNX_DIR"].is_null());
     }
 
     #[test]
@@ -750,15 +864,15 @@ mod tests {
             "model": "opus",
             "env": {
                 "ANTHROPIC_BASE_URL": "http://127.0.0.1:9999",
-                "DASEIN_EMBED_BACKEND": "remote",
+                "PARSEC_EMBED_BACKEND": "remote",
                 "FOO": "bar"
             }
         });
         let (root, out) = merge_settings(existing, 8082).unwrap();
-        assert!(out.routed); // 9999 is still a local dasein-shaped proxy
+        assert!(out.routed); // 9999 is still a local parsec-shaped proxy
         assert_eq!(out.conflict, None);
         assert_eq!(root["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:9999");
-        assert_eq!(root["env"]["DASEIN_EMBED_BACKEND"], "remote"); // user's key untouched
+        assert_eq!(root["env"]["PARSEC_EMBED_BACKEND"], "remote"); // user's key untouched
         assert_eq!(root["env"]["FOO"], "bar");
         assert_eq!(root["model"], "opus");
         assert!(!out.changed); // nothing to add: routing was already ours
@@ -790,30 +904,30 @@ mod tests {
     #[test]
     fn statusline_merge_writes_repoints_ours_never_users() {
         // Absent → written.
-        let (root, changed) = merge_statusline(Value::Null, "/cache/v1/bin/dasein").unwrap();
+        let (root, changed) = merge_statusline(Value::Null, "/cache/v1/bin/parsec").unwrap();
         assert!(changed);
         assert_eq!(root["statusLine"]["type"], "command");
         assert_eq!(
             root["statusLine"]["command"],
-            "\"/cache/v1/bin/dasein\" statusline"
+            "\"/cache/v1/bin/parsec\" statusline"
         );
 
         // Ours under an old binary path → repointed (plugin version bump).
-        let (root, changed) = merge_statusline(root, "/cache/v2/bin/dasein").unwrap();
+        let (root, changed) = merge_statusline(root, "/cache/v2/bin/parsec").unwrap();
         assert!(changed);
         assert_eq!(
             root["statusLine"]["command"],
-            "\"/cache/v2/bin/dasein\" statusline"
+            "\"/cache/v2/bin/parsec\" statusline"
         );
 
         // Idempotent at the same path.
-        let (root, changed) = merge_statusline(root, "/cache/v2/bin/dasein").unwrap();
+        let (root, changed) = merge_statusline(root, "/cache/v2/bin/parsec").unwrap();
         assert!(!changed);
 
         // User-authored statusLine: never touched, and never removed.
         let mut user = root;
         user["statusLine"] = json!({"type": "command", "command": "~/bin/my-status.sh"});
-        let (user, changed) = merge_statusline(user, "/cache/v3/bin/dasein").unwrap();
+        let (user, changed) = merge_statusline(user, "/cache/v3/bin/parsec").unwrap();
         assert!(!changed);
         assert_eq!(user["statusLine"]["command"], "~/bin/my-status.sh");
         let (user, removed) = remove_managed_env(user);
@@ -822,9 +936,95 @@ mod tests {
     }
 
     #[test]
+    fn subagent_statusline_merge_writes_repoints_ours_never_users() {
+        let (root, changed) =
+            merge_subagent_statusline(Value::Null, "/cache/v1/bin/parsec").unwrap();
+        assert!(changed);
+        assert_eq!(root["subagentStatusLine"]["type"], "command");
+        assert_eq!(
+            root["subagentStatusLine"]["command"],
+            "\"/cache/v1/bin/parsec\" subagent-statusline"
+        );
+
+        // Ours under an old binary path → repointed; idempotent at the same one.
+        let (root, changed) = merge_subagent_statusline(root, "/cache/v2/bin/parsec").unwrap();
+        assert!(changed);
+        let (root, changed) = merge_subagent_statusline(root, "/cache/v2/bin/parsec").unwrap();
+        assert!(!changed);
+
+        // A managed statusLine must NOT be mistaken for a managed
+        // subagentStatusLine: "…parsec\" statusline" does not end in
+        // "subagent-statusline".
+        let (root, _) = merge_statusline(root, "/cache/v2/bin/parsec").unwrap();
+        assert!(!is_managed_subagent_statusline(&root["statusLine"]));
+        assert!(!is_managed_statusline(&root["subagentStatusLine"]));
+
+        // User-authored: never touched, never removed.
+        let mut user = root;
+        user["subagentStatusLine"] = json!({"type": "command", "command": "~/bin/mine.sh"});
+        let (user, changed) = merge_subagent_statusline(user, "/cache/v3/bin/parsec").unwrap();
+        assert!(!changed);
+        let (user, removed) = remove_managed_env(user);
+        assert!(!removed.contains(&"subagentStatusLine".to_string()));
+        assert_eq!(user["subagentStatusLine"]["command"], "~/bin/mine.sh");
+    }
+
+    #[test]
+    fn spinner_verbs_merge_writes_updates_ours_never_users() {
+        let (root, changed) = merge_spinner_verbs(Value::Null).unwrap();
+        assert!(changed);
+        assert_eq!(root["spinnerVerbs"]["mode"], "append");
+        assert_eq!(root["spinnerVerbs"]["verbs"][0], SPINNER_SENTINEL);
+
+        // Idempotent.
+        let (root, changed) = merge_spinner_verbs(root).unwrap();
+        assert!(!changed);
+
+        // An older set of ours (sentinel present, verbs differ) → refreshed.
+        let mut stale = root;
+        stale["spinnerVerbs"] = json!({"mode": "append", "verbs": [SPINNER_SENTINEL, "Warping"]});
+        let (refreshed, changed) = merge_spinner_verbs(stale).unwrap();
+        assert!(changed);
+        assert_eq!(
+            refreshed["spinnerVerbs"]["verbs"].as_array().unwrap().len(),
+            SPINNER_VERBS.len()
+        );
+
+        // User-authored (no sentinel): never touched, never removed.
+        let mut user = refreshed;
+        user["spinnerVerbs"] = json!({"mode": "replace", "verbs": ["Vibing"]});
+        let (user, changed) = merge_spinner_verbs(user).unwrap();
+        assert!(!changed);
+        let (user, removed) = remove_managed_env(user);
+        assert!(!removed.contains(&"spinnerVerbs".to_string()));
+        assert_eq!(user["spinnerVerbs"]["verbs"][0], "Vibing");
+    }
+
+    #[test]
+    fn disable_removes_all_managed_brand_surfaces() {
+        let root = json!({
+            "statusLine": {"type": "command", "command": "\"/cache/v1/bin/parsec\" statusline"},
+            "subagentStatusLine": {
+                "type": "command",
+                "command": "\"/cache/v1/bin/parsec\" subagent-statusline"
+            },
+            "spinnerVerbs": {"mode": "append", "verbs": [SPINNER_SENTINEL, "Trimming"]},
+            "env": {"FOO": "bar"}
+        });
+        let (root, removed) = remove_managed_env(root);
+        assert_eq!(
+            removed,
+            vec!["statusLine", "subagentStatusLine", "spinnerVerbs"]
+        );
+        assert!(root.get("subagentStatusLine").is_none());
+        assert!(root.get("spinnerVerbs").is_none());
+        assert_eq!(root["env"]["FOO"], "bar");
+    }
+
+    #[test]
     fn disable_removes_managed_statusline() {
         let root = json!({
-            "statusLine": {"type": "command", "command": "\"/cache/v1/bin/dasein\" statusline"},
+            "statusLine": {"type": "command", "command": "\"/cache/v1/bin/parsec\" statusline"},
             "env": {"FOO": "bar"}
         });
         let (root, removed) = remove_managed_env(root);
@@ -838,8 +1038,8 @@ mod tests {
         let root = json!({
             "env": {
                 "ANTHROPIC_BASE_URL": "http://127.0.0.1:8082",
-                "DASEIN_EMBED_BACKEND": "onnx",
-                "DASEIN_ONNX_DIR": "/home/u/.dasein/models/bge-large-onnx",
+                "PARSEC_EMBED_BACKEND": "onnx",
+                "PARSEC_ONNX_DIR": "/home/u/.parsec/models/bge-large-onnx",
                 "FOO": "bar"
             }
         });
@@ -848,8 +1048,8 @@ mod tests {
             removed,
             vec![
                 "ANTHROPIC_BASE_URL",
-                "DASEIN_EMBED_BACKEND",
-                "DASEIN_ONNX_DIR"
+                "PARSEC_EMBED_BACKEND",
+                "PARSEC_ONNX_DIR"
             ]
         );
         assert_eq!(root["env"]["FOO"], "bar");
@@ -859,7 +1059,7 @@ mod tests {
         let root = json!({
             "env": {
                 "ANTHROPIC_BASE_URL": "https://my-gateway.corp",
-                "DASEIN_EMBED_BACKEND": "remote"
+                "PARSEC_EMBED_BACKEND": "remote"
             }
         });
         let (root, removed) = remove_managed_env(root);
@@ -869,7 +1069,7 @@ mod tests {
 
     #[test]
     fn purge_keeps_only_the_disabled_marker() {
-        let dir = std::env::temp_dir().join(format!("dasein-purge-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("parsec-purge-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("models")).unwrap();
         std::fs::write(dir.join("models/embedder.onnx"), b"x").unwrap();

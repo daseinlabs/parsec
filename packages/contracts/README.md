@@ -16,12 +16,12 @@ Single source of truth for every cross-package, cross-language schema:
   cross-contract parity gate), and scripts/parity_v1.sh proves the full
   proxy-side v1 client (Rust featurization + local embedding) forwards
   byte-identical requests to the dev path on the recorded golden
-  conversation. The proxy speaks either: `DASEIN_BRAIN_CONTRACT=v1`
+  conversation. The proxy speaks either: `PARSEC_BRAIN_CONTRACT=v1`
   (no raw text leaves the machine) or the default dev contract (which
-  still requires the explicit `DASEIN_BRAIN_DEV_RAW=1` opt-in).
+  still requires the explicit `PARSEC_BRAIN_DEV_RAW=1` opt-in).
 - `schemas/brain-api-dev.schema.json` — the **v0 dev contract the proxy
   speaks today** (docs/brain-serving-v0.md): internal message view in (RAW
-  TEXT — our own machines only, gated by `DASEIN_BRAIN_DEV_RAW=1`),
+  TEXT — our own machines only, gated by `PARSEC_BRAIN_DEV_RAW=1`),
   grid-integer scores + calibrated tau out, with a per-request cross-language
   chunker-parity checksum. Dies when the client featurization port lands.
 

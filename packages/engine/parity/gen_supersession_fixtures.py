@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate rel-4 SUPERSESSION parity fixtures from the VENDORED reference.
 
-Runs dasein_brain.vendored.pyg_model.edges (causal=True) over diverse chunk
+Runs parsec_brain.vendored.pyg_model.edges (causal=True) over diverse chunk
 sets — synthetic branch probes plus chunk sets parsed from realistic
-conversations by dasein_brain.scorer.parse_internal — and dumps chunks +
+conversations by parsec_brain.scorer.parse_internal — and dumps chunks +
 the emitted rel-4 (src, dst) pairs IN EMISSION ORDER (i asc, j asc; order is
 load-bearing: the brain's v1 path sorts the client pairs back into exactly
 this order, so the client must produce the same set).
@@ -26,10 +26,10 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "fixtures", "supe
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, os.path.join(REPO, "packages", "brain", "src"))
 
-from dasein_brain import _flags  # noqa: F401,E402  parity pins before vendored imports
-from dasein_brain.scorer import parse_internal  # noqa: E402
-from dasein_brain.vendored.chunking import Chunk  # noqa: E402
-from dasein_brain.vendored.pyg_model import edges  # noqa: E402
+from parsec_brain import _flags  # noqa: F401,E402  parity pins before vendored imports
+from parsec_brain.scorer import parse_internal  # noqa: E402
+from parsec_brain.vendored.chunking import Chunk  # noqa: E402
+from parsec_brain.vendored.pyg_model import edges  # noqa: E402
 
 
 def rel4(chunks):

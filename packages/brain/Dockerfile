@@ -1,13 +1,13 @@
 # dasein-brain — one image for BOTH local testing and Cloud Run.
 # The 36MB R-GCN runs on CPU; the in-process bge-large embedder
-# (DASEIN_EMBED_BACKEND=local) runs on GPU when the torch wheels are CUDA and a
+# (PARSEC_EMBED_BACKEND=local) runs on GPU when the torch wheels are CUDA and a
 # GPU is present. Default build is CPU (works on arm64 + x86_64); Cloud Run GPU
 # builds pass --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu121.
 #
 # Two things are baked from the build context when present, so the image digest
 # PINS them (determinism-honest deploy); both are empty placeholders locally,
 # where the runtime volume / HF cache supplies them instead:
-#   bundle/       -> /bundle       (the checkpoint; compose mounts ~/.dasein/brain)
+#   bundle/       -> /bundle       (the checkpoint; compose mounts ~/.parsec/brain)
 #   embed-model/  -> /embed-model  (the bge weights; local uses the HF hub/cache)
 FROM python:3.12-slim
 
@@ -15,7 +15,7 @@ FROM python:3.12-slim
 # the CUDA runtime as pip deps, so python:slim + a GPU host driver is enough.
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
 # Install the embed extras (transformers + safetensors) only when building the
-# 'local' backend image; empty skips them (smaller image for dasein/hash).
+# 'local' backend image; empty skips them (smaller image for parsec/hash).
 ARG EMBED_EXTRAS="transformers>=4.40,<5 safetensors"
 RUN pip install --no-cache-dir \
       --index-url ${TORCH_INDEX} \
@@ -34,15 +34,15 @@ COPY models ./models
 RUN pip install --no-cache-dir --no-deps -e .
 
 # Bake the bundle + embed model when the build context carries them (Cloud
-# Run); harmless empty dirs otherwise (compose mounts ~/.dasein/brain over
+# Run); harmless empty dirs otherwise (compose mounts ~/.parsec/brain over
 # /bundle; the local backend falls back to the HF hub/cache for the weights).
 COPY bundle/ /bundle/
 COPY embed-model/ /embed-model/
 
-ENV DASEIN_CKPT=/bundle/curator_v4_prod.pt \
-    DASEIN_RULES_JSON=/app/models/rules.json \
+ENV PARSEC_CKPT=/bundle/curator_v4_prod.pt \
+    PARSEC_RULES_JSON=/app/models/rules.json \
     AC_CHANGEPRONE_PKL=/app/models/changeprone.pkl
-# DASEIN_EMBED_MODEL_DIR is set at DEPLOY time (to /embed-model) only when the
+# PARSEC_EMBED_MODEL_DIR is set at DEPLOY time (to /embed-model) only when the
 # model was baked — not here, so a local/hash build never points at an empty dir.
 
 EXPOSE 8080
@@ -55,4 +55,4 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=90s --retries=5 \
 # Shell form so ${PORT} expands: Cloud Run injects PORT (8080 by default);
 # compose leaves it unset -> 8080. `exec` keeps uvicorn as PID 1 so Cloud
 # Run's SIGTERM reaches it for a graceful drain.
-CMD exec uvicorn --factory dasein_brain.app:create_app --host 0.0.0.0 --port ${PORT:-8080}
+CMD exec uvicorn --factory parsec_brain.app:create_app --host 0.0.0.0 --port ${PORT:-8080}

@@ -1,6 +1,6 @@
-# Dasein plugin marketplace
+# Parsec plugin marketplace
 
-Claude Code plugin marketplace for [Dasein](https://dasein.rocks). This repo is
+Claude Code plugin marketplace for [Parsec](https://getparsec.ai). This repo is
 assembled and force-pushed by CI on every release of the private monorepo — do
 not commit here by hand; history is intentionally squashed to keep clones small.
 
@@ -8,7 +8,7 @@ not commit here by hand; history is intentionally squashed to keep clones small.
 
 ```
 claude plugin marketplace add https://github.com/daseinlabs/claude-plugins
-claude plugin install dasein@dasein-marketplace
+claude plugin install parsec@parsec-marketplace
 ```
 
 Or interactively: `/plugin` → Marketplaces → add `daseinlabs/claude-plugins`.
@@ -17,7 +17,7 @@ over SSH, which fails for users without a GitHub SSH key.)
 
 ## What's inside
 
-`plugins/dasein` — markdown/JSON plugin surfaces plus prebuilt `dasein`
+`plugins/parsec` — markdown/JSON plugin surfaces plus prebuilt `parsec`
 binaries for darwin-arm64, linux-x64, and win-x64 (Intel macOS not yet
 supported). There is no
 build or postinstall step; the binaries ship ready to run. Savings numbers

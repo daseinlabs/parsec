@@ -1,4 +1,4 @@
-//! `dasein hook <event>` — Claude Code hook handler (free tier).
+//! `parsec hook <event>` — Claude Code hook handler (free tier).
 //!
 //! Protocol (code.claude.com/docs/en/hooks): JSON on stdin; to deny a
 //! PreToolUse call, print `hookSpecificOutput.permissionDecision: "deny"`
@@ -43,7 +43,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
 
     match event.as_str() {
         "PreToolUse" => {
-            // Entitlement gate (apikey): no key ⇒ dasein saves nothing, so the
+            // Entitlement gate (apikey): no key ⇒ parsec saves nothing, so the
             // no-reread / loop-breaker never fires and no state accrues.
             if !crate::apikey::enabled() {
                 return Ok(());
@@ -89,7 +89,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             let mut msgs = Vec::new();
             let is_startup = payload.get("source").and_then(Value::as_str) == Some("startup");
             // Top of the session (and the install flow — first run is a
-            // startup): if there is no API key, dasein saves nothing — show the
+            // startup): if there is no API key, parsec saves nothing — show the
             // prominent get-a-key banner. Fresh startups only (resume/clear/
             // compact must not re-nag). Single source: apikey::gate_banner.
             if is_startup {
@@ -114,7 +114,10 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             if !msgs.is_empty() {
                 println!(
                     "{}",
-                    json!({ "systemMessage": msgs.join("\n"), "suppressOutput": true })
+                    json!({
+                        "systemMessage": crate::brand::notice(&msgs),
+                        "suppressOutput": true
+                    })
                 );
             }
         }
@@ -137,25 +140,25 @@ pub fn run(event: &str) -> anyhow::Result<()> {
 }
 
 /// The continue directive fed back on a blocked stop — the reference steer
-/// (arms/dasein.py `_CONTINUE_STEER` + the DELIVER text) adapted to the
+/// (arms/parsec.py `_CONTINUE_STEER` + the DELIVER text) adapted to the
 /// "stopped with no submittable work product while looping" case.
 const STOP_BLOCK_REASON: &str = "Your work is not yet complete: there is no submittable edit on \
 disk and your recent actions were repeating without producing new information. Do not stop yet — \
 take a DIFFERENT concrete step toward the code change that resolves the task, make the edit, \
 verify it, then stop.";
 
-/// Stop-hook SUBMIT adjudicator (Track C). `DASEIN_ADJUDICATOR` =
+/// Stop-hook SUBMIT adjudicator (Track C). `PARSEC_ADJUDICATOR` =
 /// - `advise` (default): record a JSONL row, print NOTHING;
 /// - `block`: additionally print ONE `{"decision":"block"}` when the stop
 ///   looks premature (CONTINUE verdict, no submittable edit, mechanical
-///   stall) within the per-session `DASEIN_ADJ_MAX_BLOCKS` budget (default
+///   stall) within the per-session `PARSEC_ADJ_MAX_BLOCKS` budget (default
 ///   2 — the governor's validated coach+bank ceiling);
 /// - `off`: skip entirely (no row).
 ///
 /// Fail-open discipline: every internal error path returns silently (exit
 /// 0); stdout carries ONLY the block-decision JSON, never anything else.
 fn run_stop(payload: &Value, session_id: &str, cwd: &str) {
-    let mode_env = std::env::var("DASEIN_ADJUDICATOR").unwrap_or_default();
+    let mode_env = std::env::var("PARSEC_ADJUDICATOR").unwrap_or_default();
     let mode = match mode_env.trim() {
         "off" => return,
         "block" => "block",
@@ -174,7 +177,7 @@ fn run_stop(payload: &Value, session_id: &str, cwd: &str) {
     let probe = adjudicator::disk_probe(cwd);
     let mut blocked = false;
     if mode == "block" && adj.verdict == "CONTINUE" && !adj.has_edit && adj.mech_stalled {
-        let max_blocks: u32 = std::env::var("DASEIN_ADJ_MAX_BLOCKS")
+        let max_blocks: u32 = std::env::var("PARSEC_ADJ_MAX_BLOCKS")
             .ok()
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(2);
@@ -197,16 +200,16 @@ fn run_stop(payload: &Value, session_id: &str, cwd: &str) {
 
 /// First-run auto-setup (the "whole experience in one go" install flow): no
 /// setup state on disk means this plugin has never activated on this machine
-/// — spawn `dasein setup --auto` detached (download embedder → write routing
+/// — spawn `parsec setup --auto` detached (download embedder → write routing
 /// env → warm proxy) and tell the user plainly what is happening, including
 /// how to undo it. Later sessions surface progress / the restart nudge /
 /// failures from the state file. Deliberately LOUD: setup rewrites the
 /// user's API routing, and that must never happen silently.
 ///
-/// `DASEIN_AUTOSETUP=0` opts out of both the spawn and the messaging.
+/// `PARSEC_AUTOSETUP=0` opts out of both the spawn and the messaging.
 /// Terminal states (`disabled`, `unsupported`) are permanently silent.
 fn maybe_autosetup() -> Option<String> {
-    if std::env::var("DASEIN_AUTOSETUP").ok().as_deref() == Some("0") {
+    if std::env::var("PARSEC_AUTOSETUP").ok().as_deref() == Some("0") {
         return None;
     }
     let spawn_first_run = |verb: &str| -> String {
@@ -221,21 +224,21 @@ fn maybe_autosetup() -> Option<String> {
             ..Default::default()
         };
         if let Err(e) = crate::setup::save_state(&st) {
-            return format!("⌁ dasein: first-run setup could not record state ({e}) — skipped");
+            return format!("⌁ parsec: first-run setup could not record state ({e}) — skipped");
         }
         match crate::setup::spawn_setup_detached() {
             Ok(()) => format!(
-                "⌁ dasein: {verb} — downloading the local embedder (~1.3 GB) to \
-                 ~/.dasein/models in the background. When it finishes, Claude Code's \
-                 settings gain an env block routing API traffic through the local dasein \
+                "⌁ parsec: {verb} — downloading the local embedder (~1.3 GB) to \
+                 ~/.parsec/models in the background. When it finishes, Claude Code's \
+                 settings gain an env block routing API traffic through the local parsec \
                  proxy (127.0.0.1 only); curation activates on your next session. \
-                 Undo: `dasein disable` · opt out: DASEIN_AUTOSETUP=0 · log: ~/.dasein/setup.log"
+                 Undo: `parsec disable` · opt out: PARSEC_AUTOSETUP=0 · log: ~/.parsec/setup.log"
             ),
             Err(e) => {
                 st.phase = "failed".into();
                 st.error = Some(format!("spawn: {e}"));
                 let _ = crate::setup::save_state(&st);
-                format!("⌁ dasein: first-run setup failed to start ({e}) — run `dasein setup`")
+                format!("⌁ parsec: first-run setup failed to start ({e}) — run `parsec setup`")
             }
         }
     };
@@ -246,7 +249,7 @@ fn maybe_autosetup() -> Option<String> {
             "spawned" | "routing" => {
                 let pct = "starting".to_string();
                 Some(format!(
-                    "⌁ dasein: embedder download in progress ({pct}) — curation activates \
+                    "⌁ parsec: embedder download in progress ({pct}) — curation activates \
                      the session after it completes"
                 ))
             }
@@ -256,7 +259,7 @@ fn maybe_autosetup() -> Option<String> {
             // Claude Code rewrite it from memory). `env_written` only records
             // history, so verify against the file and re-assert the routing
             // (additive merge — a key the user set is never overwritten).
-            // `dasein disable` remains the supported off-switch.
+            // `parsec disable` remains the supported off-switch.
             "ready" if std::env::var("ANTHROPIC_BASE_URL").is_err() => {
                 match crate::setup::ensure_routing(st.port) {
                     Ok(out) => {
@@ -269,33 +272,33 @@ fn maybe_autosetup() -> Option<String> {
                         }
                         match (out.conflict, out.changed) {
                             (Some(url), _) => Some(format!(
-                                "⌁ dasein: setup complete, but ANTHROPIC_BASE_URL was already \
+                                "⌁ parsec: setup complete, but ANTHROPIC_BASE_URL was already \
                                  {url} — curation is NOT active. Remove it, then run \
-                                 `dasein setup` (undo: `dasein disable`)"
+                                 `parsec setup` (undo: `parsec disable`)"
                             )),
                             (None, true) => Some(
-                                "⌁ dasein: routing was missing from Claude Code settings (a \
+                                "⌁ parsec: routing was missing from Claude Code settings (a \
                                  plugin update can rewrite them) — restored. Restart Claude \
-                                 Code to activate curation (undo: `dasein disable`)"
+                                 Code to activate curation (undo: `parsec disable`)"
                                     .into(),
                             ),
                             (None, false) => Some(
-                                "⌁ dasein: setup complete — restart Claude Code to activate \
-                                 curation (undo: `dasein disable`)"
+                                "⌁ parsec: setup complete — restart Claude Code to activate \
+                                 curation (undo: `parsec disable`)"
                                     .into(),
                             ),
                         }
                     }
                     Err(e) => Some(format!(
-                        "⌁ dasein: curation routing is missing from Claude Code settings \
-                         and could not be restored ({e}) — run `dasein setup`"
+                        "⌁ parsec: curation routing is missing from Claude Code settings \
+                         and could not be restored ({e}) — run `parsec setup`"
                     )),
                 }
             }
             "ready" => None,
             "failed" => Some(format!(
-                "⌁ dasein: setup failed ({}) — retry with `dasein setup` \
-                 (log: ~/.dasein/setup.log)",
+                "⌁ parsec: setup failed ({}) — retry with `parsec setup` \
+                 (log: ~/.parsec/setup.log)",
                 st.error.as_deref().unwrap_or("unknown error")
             )),
             _ => None, // unsupported | disabled: terminal, silent
@@ -311,18 +314,18 @@ fn unix_now() -> u64 {
 }
 
 /// The Pro flip-on (DIRECTION.md §7: "plugin → proxy (manages)"): when this
-/// session is ROUTED through a local dasein proxy (ANTHROPIC_BASE_URL points
+/// session is ROUTED through a local parsec proxy (ANTHROPIC_BASE_URL points
 /// at a loopback port) and nothing is listening there yet, spawn
-/// `dasein proxy` detached so the session's first request doesn't hit a dead
-/// port. The hook inherits the session env, so DASEIN_BRAIN_URL /
-/// DASEIN_BRAIN_CONTRACT / DASEIN_EMBED_* configured in settings.json `env`
+/// `parsec proxy` detached so the session's first request doesn't hit a dead
+/// port. The hook inherits the session env, so PARSEC_BRAIN_URL /
+/// PARSEC_BRAIN_CONTRACT / PARSEC_EMBED_* configured in settings.json `env`
 /// flow into the spawned proxy. What a hook CANNOT do is set
 /// ANTHROPIC_BASE_URL itself — routing must exist at launch (settings env or
-/// shell). Opt out with DASEIN_PROXY_AUTOSTART=0. Returns a user-visible
+/// shell). Opt out with PARSEC_PROXY_AUTOSTART=0. Returns a user-visible
 /// message when it acted (or failed — a dead routed port breaks the session,
 /// which must never be silent).
 fn maybe_autostart_proxy() -> Option<String> {
-    if std::env::var("DASEIN_PROXY_AUTOSTART").ok().as_deref() == Some("0") {
+    if std::env::var("PARSEC_PROXY_AUTOSTART").ok().as_deref() == Some("0") {
         return None;
     }
     let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
@@ -330,8 +333,8 @@ fn maybe_autostart_proxy() -> Option<String> {
     if port_listening(port) {
         return None; // already up (ours or the user's own) — never double-spawn
     }
-    let log_path = crate::setup::dasein_home().join("proxy.log");
-    // Spawns the SUPERVISOR (`dasein proxy`), which owns the port and keeps a
+    let log_path = crate::setup::parsec_home().join("proxy.log");
+    // Spawns the SUPERVISOR (`parsec proxy`), which owns the port and keeps a
     // curating worker alive behind it. Own process group: it outlives this
     // hook AND the session — a local service, idle-cheap (~10MB per process),
     // reused by the next session. It no longer idle-exits, so this autostart
@@ -339,8 +342,8 @@ fn maybe_autostart_proxy() -> Option<String> {
     // routine revival path.
     if let Err(e) = crate::setup::spawn_proxy_detached(port, &[]) {
         return Some(format!(
-            "⌁ dasein: ANTHROPIC_BASE_URL routes through 127.0.0.1:{port} but the proxy \
-             FAILED to start ({e}) — API requests will fail until you run `dasein proxy` \
+            "⌁ parsec: ANTHROPIC_BASE_URL routes through 127.0.0.1:{port} but the proxy \
+             FAILED to start ({e}) — API requests will fail until you run `parsec proxy` \
              (log: {})",
             log_path.display()
         ));
@@ -348,19 +351,19 @@ fn maybe_autostart_proxy() -> Option<String> {
     for _ in 0..40 {
         if port_listening(port) {
             // Ask the SAME resolver the worker uses (env → release-baked URL,
-            // plus the key/contract gates) — reading DASEIN_BRAIN_URL directly
+            // plus the key/contract gates) — reading PARSEC_BRAIN_URL directly
             // reported "passthrough" on every baked build, which is every
             // shipped release: the worker curates, the banner denies it.
             let brain = crate::brain::BrainConfig::from_env().map(|c| c.url);
             return Some(match brain {
                 Some(b) => format!(
-                    "⌁ dasein proxy auto-started on 127.0.0.1:{port} (brain: {b}; \
+                    "⌁ parsec proxy auto-started on 127.0.0.1:{port} (brain: {b}; \
                      log: {})",
                     log_path.display()
                 ),
                 None => format!(
-                    "⌁ dasein proxy auto-started on 127.0.0.1:{port} in passthrough mode — \
-                     set DASEIN_BRAIN_URL to enable curation (log: {})",
+                    "⌁ parsec proxy auto-started on 127.0.0.1:{port} in passthrough mode — \
+                     set PARSEC_BRAIN_URL to enable curation (log: {})",
                     log_path.display()
                 ),
             });
@@ -368,13 +371,13 @@ fn maybe_autostart_proxy() -> Option<String> {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     Some(format!(
-        "⌁ dasein: proxy spawned for 127.0.0.1:{port} but never came up — API requests \
+        "⌁ parsec: proxy spawned for 127.0.0.1:{port} but never came up — API requests \
          will fail; check {}",
         log_path.display()
     ))
 }
 
-/// The port when `base` is a local dasein-proxy-shaped URL: plain http on
+/// The port when `base` is a local parsec-proxy-shaped URL: plain http on
 /// IPv4 loopback with an explicit port. Anything else (real API, remote
 /// gateways, https, IPv6 — the proxy binds 127.0.0.1 only) is not ours to
 /// manage.

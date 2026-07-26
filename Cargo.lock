@@ -301,63 +301,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dasein-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tracing",
- "tree-sitter",
- "tree-sitter-c",
- "tree-sitter-cpp",
- "tree-sitter-go",
- "tree-sitter-java",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
-]
-
-[[package]]
-name = "dasein-mapgen"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dasein-engine",
- "ignore",
- "regex",
- "serde",
- "serde_json",
- "tracing",
- "tree-sitter",
-]
-
-[[package]]
-name = "dasein-proxy"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "dasein-engine",
- "dasein-mapgen",
- "futures-util",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -883,6 +826,63 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "parsec-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tracing",
+ "tree-sitter",
+ "tree-sitter-c",
+ "tree-sitter-cpp",
+ "tree-sitter-go",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
+name = "parsec-mapgen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ignore",
+ "parsec-engine",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tree-sitter",
+]
+
+[[package]]
+name = "parsec-proxy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "futures-util",
+ "parsec-engine",
+ "parsec-mapgen",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "percent-encoding"

@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "scout": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/dasein",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/parsec",
       "args": ["mcp"]
     }
   }
