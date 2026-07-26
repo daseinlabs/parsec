@@ -22,16 +22,16 @@ from pathlib import Path
 
 # self-contained bootstrap (same pattern as test_service.py)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-os.environ.setdefault("DASEIN_EMBED_BACKEND", "hash")
+os.environ.setdefault("PARSEC_EMBED_BACKEND", "hash")
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from dasein_brain.app import create_app
-from dasein_brain.bundle import load_bundle
-from dasein_brain.scorer import TraceScorer, chunk_checksum, parse_internal
-from dasein_brain.vendored.pyg_model import edges
+from parsec_brain.app import create_app
+from parsec_brain.bundle import load_bundle
+from parsec_brain.scorer import TraceScorer, chunk_checksum, parse_internal
+from parsec_brain.vendored.pyg_model import edges
 from test_service import MESSAGES, TOOLS
 
 REPO = Path(__file__).resolve().parents[3]
@@ -73,7 +73,7 @@ def _f(a):
 def _v1_nodes(fz: TraceScorer, lc: list) -> tuple[list[dict], np.ndarray]:
     """(nodes, content-emb matrix) for a live chunk list — embeddings/struct exactly as
     TraceScorer._trace_scores derives them, ids replacing the raw strings."""
-    from dasein_brain.vendored.torch_curator import node_struct_with_type
+    from parsec_brain.vendored.torch_curator import node_struct_with_type
     emb = np.asarray(fz._embed([c.text[:2000] for c in lc]), np.float32)
     cmds = [getattr(c, "cmd", "") or "" for c in lc]
     heads = [(getattr(c, "head", "") or "")[:240] for c in lc]
@@ -333,7 +333,7 @@ def test_v1_trace_parity_supersession(client, fz, ckpt_id):
 
 # ---- tools parity -----------------------------------------------------------------------------
 def _v1_tools_payload(fz: TraceScorer, ckpt_id: str, internal, tools, conv_id="v1-parity"):
-    from dasein_brain.vendored.trace_graph import build_tool_spec
+    from parsec_brain.vendored.trace_graph import build_tool_spec
     spec = build_tool_spec(internal, tools, "serve")
     assert spec is not None and spec["tool_nodes"]
     nodes, _emb = _v1_nodes(fz, spec["chunks"])
@@ -421,7 +421,7 @@ def test_v1_no_raw_text_representable():
     pattern-constrained to a fixed-format id — free text has no slot, by construction."""
     import types
     from typing import Union, get_args, get_origin
-    from dasein_brain.app import (NeighborsV1Request, ScoreRulesV1Request,
+    from parsec_brain.app import (NeighborsV1Request, ScoreRulesV1Request,
                                   ScoreToolsV1Request, ScoreTraceV1Request, V1Node, V1Tool)
     checked = []
     for model in (V1Node, V1Tool, ScoreTraceV1Request, ScoreToolsV1Request,
@@ -473,7 +473,7 @@ def test_symbol_graph_parser_live_and_centrality_nonzero(fz):
     """A broken grammar used to fail-open to zero symbols: served centrality readout cols
     (37-41) were ZERO while the ckpt trained on real parsing. The vendored fallback must keep
     a python parser live and produce real centrality for a python read chunk."""
-    from dasein_brain.vendored.symbol_graph import _py_defs_refs, python_parser_backend
+    from parsec_brain.vendored.symbol_graph import _py_defs_refs, python_parser_backend
     assert python_parser_backend() != "none"
     d, r = _py_defs_refs("def alpha(x):\n    return beta(x)\n")
     assert d == {"alpha"} and r == ["beta"]

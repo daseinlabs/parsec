@@ -57,12 +57,12 @@ check: fmt clippy rust-test
 # default brain endpoint (brain.rs BAKED_BRAIN_URL); PLATFORM_URL bakes the
 # ledger sink (ledger_ship.rs BAKED_PLATFORM_URL). Same two knobs release.yml
 # stamps, so the plugin reaches both with zero runtime config; omit either for
-# a dev build that reads DASEIN_BRAIN_URL / DASEIN_PLATFORM_URL at runtime.
+# a dev build that reads PARSEC_BRAIN_URL / PARSEC_PLATFORM_URL at runtime.
 #   make plugin
 #   make plugin BRAIN_URL=http://127.0.0.1:8090 PLATFORM_URL=http://127.0.0.1:8080
 #   make plugin BRAIN_URL=https://dasein-brain-939340394421.us-central1.run.app
 plugin:
-	DASEIN_DEFAULT_BRAIN_URL="$(BRAIN_URL)" DASEIN_DEFAULT_PLATFORM_URL="$(PLATFORM_URL)" scripts/refresh_plugin_bin.sh
+	PARSEC_DEFAULT_BRAIN_URL="$(BRAIN_URL)" PARSEC_DEFAULT_PLATFORM_URL="$(PLATFORM_URL)" scripts/refresh_plugin_bin.sh
 
 test:
 	scripts/test_all.sh

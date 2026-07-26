@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use dasein_engine::cst::language_for;
+use parsec_engine::cst::language_for;
 use tree_sitter::{Node, Parser};
 
 /// Def-node classes for OUTLINES. Deliberately NOT engine::cst::kind_class:

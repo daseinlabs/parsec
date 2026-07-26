@@ -3,7 +3,7 @@
 The synthetic hoods artifact is generated DETERMINISTICALLY inline (hash-backend embeddings
 of fixed strings — no unseeded randomness, <100KB) so every invariant is reproducible:
 
-  - DASEIN_HOODS_PKL unset  -> bit-identical v0 serving (the committed goldens still hold);
+  - PARSEC_HOODS_PKL unset  -> bit-identical v0 serving (the committed goldens still hold);
   - set-but-missing/corrupt -> the bundle REFUSES TO START (train/serve-skew guard);
   - mounted                 -> /v1/neighbors serves the cost median (null under 4 samples),
                                blocks attach into the trace graph (scores move — sanity),
@@ -24,18 +24,18 @@ from pathlib import Path
 
 # self-contained bootstrap (same pattern as test_service.py)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-os.environ.setdefault("DASEIN_EMBED_BACKEND", "hash")
+os.environ.setdefault("PARSEC_EMBED_BACKEND", "hash")
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from dasein_brain._log import COUNTERS
-from dasein_brain.app import create_app
-from dasein_brain.bundle import BundleError, load_bundle
-from dasein_brain.scorer import TraceScorer, parse_internal
-from dasein_brain.vendored.embedding import EmbeddingClient
-from dasein_brain.vendored.pyg_model import edges
+from parsec_brain._log import COUNTERS
+from parsec_brain.app import create_app
+from parsec_brain.bundle import BundleError, load_bundle
+from parsec_brain.scorer import TraceScorer, parse_internal
+from parsec_brain.vendored.embedding import EmbeddingClient
+from parsec_brain.vendored.pyg_model import edges
 from test_service import (GOLDEN_MASK, GOLDEN_SCORES_Q, GOLDEN_TAU_Q, MESSAGES, TOOLS,
                           _trace_payload)
 from test_rules_gate import GOLDEN_ROSTER_SCORES_Q, LAST_STEP
@@ -81,11 +81,11 @@ def hoods_pkl(tmp_path_factory):
 @pytest.fixture(scope="module")
 def hoods_client(hoods_pkl):
     """An app whose bundle mounted the synthetic artifact (env scoped to construction)."""
-    os.environ["DASEIN_HOODS_PKL"] = str(hoods_pkl)
+    os.environ["PARSEC_HOODS_PKL"] = str(hoods_pkl)
     try:
         client = TestClient(create_app())
     finally:
-        del os.environ["DASEIN_HOODS_PKL"]
+        del os.environ["PARSEC_HOODS_PKL"]
     return client
 
 
@@ -106,17 +106,17 @@ def ckpt_id(fz):
 
 # ---- bundle guard: set-but-missing/corrupt hoods refuses to start ------------------------------
 def test_bundle_refuses_missing_or_corrupt_hoods(tmp_path, monkeypatch):
-    monkeypatch.setenv("DASEIN_HOODS_PKL", str(tmp_path / "nope.pkl"))
+    monkeypatch.setenv("PARSEC_HOODS_PKL", str(tmp_path / "nope.pkl"))
     with pytest.raises(BundleError, match="MISSING"):
         load_bundle()
     bad = tmp_path / "corrupt.pkl"
     bad.write_bytes(b"not a pickle")
-    monkeypatch.setenv("DASEIN_HOODS_PKL", str(bad))
+    monkeypatch.setenv("PARSEC_HOODS_PKL", str(bad))
     with pytest.raises(BundleError, match="unreadable"):
         load_bundle()
     shaped = tmp_path / "badshape.pkl"
     shaped.write_bytes(pickle.dumps({"task_embs": {"a": np.zeros(8, np.float32)}, "blocks": {}}))
-    monkeypatch.setenv("DASEIN_HOODS_PKL", str(shaped))
+    monkeypatch.setenv("PARSEC_HOODS_PKL", str(shaped))
     with pytest.raises(BundleError, match="shape"):
         load_bundle()
 
@@ -142,13 +142,13 @@ def test_bundle_refuses_malformed_block_edges(tmp_path, monkeypatch):
     for i, (block, msg) in enumerate(cases):
         p = tmp_path / f"bad{i}.pkl"
         p.write_bytes(pickle.dumps(_art(block)))
-        monkeypatch.setenv("DASEIN_HOODS_PKL", str(p))
+        monkeypatch.setenv("PARSEC_HOODS_PKL", str(p))
         with pytest.raises(BundleError, match=msg):
             load_bundle()
     # empty edge arrays are LEGAL (a single-node block has no internal edges)
     ok = tmp_path / "ok.pkl"
     ok.write_bytes(pickle.dumps(_art((bemb, extras, [], [], []))))
-    monkeypatch.setenv("DASEIN_HOODS_PKL", str(ok))
+    monkeypatch.setenv("PARSEC_HOODS_PKL", str(ok))
     b = load_bundle()
     assert b.hoods is not None and len(b.hoods._blocks) == 1
 
@@ -203,11 +203,11 @@ def test_neighbors_endpoint_v1(hoods_client, fz, ckpt_id):
 
 
 def test_neighbors_median_needs_four_costs(tmp_path):
-    os.environ["DASEIN_HOODS_PKL"] = str(_make_hoods(tmp_path / "h3.pkl", n_costs=3))
+    os.environ["PARSEC_HOODS_PKL"] = str(_make_hoods(tmp_path / "h3.pkl", n_costs=3))
     try:
         client3 = TestClient(create_app())
     finally:
-        del os.environ["DASEIN_HOODS_PKL"]
+        del os.environ["PARSEC_HOODS_PKL"]
     r = client3.post("/v1/neighbors", json={
         "contract": "brain-api-dev/v0", "conv_id": "nbr-3",
         "task_text": parse_internal(MESSAGES, 10).task_text})
@@ -280,7 +280,7 @@ def test_nf_on_dev_v1_parity(hoods_client, fz, ckpt_id):
 def _v1_rules_payload(fz, ckpt_id, internal, tools, step, conv_id="rules-v1"):
     """Featurize the TOOL-SPEC pipeline view (the same view the v1 tools request carries) —
     the dev rules path scores over build_tool_spec's chunks, not parse_internal's."""
-    from dasein_brain.vendored.trace_graph import build_tool_spec
+    from parsec_brain.vendored.trace_graph import build_tool_spec
     from test_v1 import _v1_nodes
     spec = build_tool_spec(internal, tools, "serve")
     assert spec is not None
@@ -346,7 +346,7 @@ def test_v1_rules_guards(client, fz, ckpt_id):
 
 # ---- logging -----------------------------------------------------------------------------------
 def test_request_log_lines_and_no_raw_text(client, caplog):
-    with caplog.at_level(logging.INFO, logger="dasein_brain"):
+    with caplog.at_level(logging.INFO, logger="parsec_brain"):
         client.post("/v1/score/trace", json=_trace_payload() | {"gf": GF})
         client.post("/v1/neighbors", json={
             "contract": "brain-api-dev/v0", "conv_id": "log-smoke",
@@ -367,7 +367,7 @@ def test_request_log_lines_and_no_raw_text(client, caplog):
 def test_fail_open_counted_on_health(client, monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("boom")
-    monkeypatch.setattr("dasein_brain.vendored.trace_graph.build_tool_spec", _boom)
+    monkeypatch.setattr("parsec_brain.vendored.trace_graph.build_tool_spec", _boom)
     before = COUNTERS["fail_opens"]
     r = client.post("/v1/score/tools", json={
         "contract": "brain-api-dev/v0", "conv_id": "fo", "messages": MESSAGES, "tools": TOOLS})

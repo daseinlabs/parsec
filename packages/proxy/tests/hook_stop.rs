@@ -4,10 +4,10 @@
 //! 1. Unit tests of the pure ports (transcript parse, views, has-edit
 //!    ladder, deterministic verdict) via the library crate — the same
 //!    fixture cases as the reference docstrings.
-//! 2. End-to-end hook runs through the REAL `dasein hook Stop` binary
-//!    (CARGO_BIN_EXE_dasein). Every run is its own subprocess with its own
-//!    HOME tempdir and env vars (the hook writes ~/.dasein/adjudicator.jsonl
-//!    and ~/.dasein/sessions/…), so parallel test execution never shares or
+//! 2. End-to-end hook runs through the REAL `parsec hook Stop` binary
+//!    (CARGO_BIN_EXE_parsec). Every run is its own subprocess with its own
+//!    HOME tempdir and env vars (the hook writes ~/.parsec/adjudicator.jsonl
+//!    and ~/.parsec/sessions/…), so parallel test execution never shares or
 //!    mutates this process's environment.
 
 use std::io::Write;
@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 
-use dasein_proxy::adjudicator::{
+use parsec_proxy::adjudicator::{
     adjudicate, build_views, edit_on_disk, find_diff, parse_transcript, struct_src_edit, MAX_MSGS,
     OBS_CAP,
 };
@@ -322,7 +322,7 @@ struct TempHome(PathBuf);
 impl TempHome {
     fn new(tag: &str) -> TempHome {
         let dir =
-            std::env::temp_dir().join(format!("dasein-hookstop-{tag}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("parsec-hookstop-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         TempHome(dir)
@@ -333,7 +333,7 @@ impl TempHome {
     }
 
     fn log_file(&self) -> PathBuf {
-        self.0.join(".dasein").join("adjudicator.jsonl")
+        self.0.join(".parsec").join("adjudicator.jsonl")
     }
 
     fn rows(&self) -> Vec<Value> {
@@ -347,7 +347,7 @@ impl TempHome {
     }
 
     fn session(&self, sid: &str) -> Option<Value> {
-        std::fs::read_to_string(self.0.join(format!(".dasein/sessions/{sid}.json")))
+        std::fs::read_to_string(self.0.join(format!(".parsec/sessions/{sid}.json")))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
     }
@@ -375,21 +375,21 @@ impl Drop for TempHome {
     }
 }
 
-/// Run `dasein hook Stop` in a child process with an isolated HOME + env —
+/// Run `parsec hook Stop` in a child process with an isolated HOME + env —
 /// env vars never touch the test process, so parallel tests are safe.
 fn run_stop_hook(home: &Path, payload: &Value, envs: &[(&str, &str)]) -> String {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_dasein"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsec"));
     cmd.args(["hook", "Stop"])
         .env("HOME", home)
-        .env_remove("DASEIN_ADJUDICATOR")
-        .env_remove("DASEIN_ADJ_MAX_BLOCKS")
+        .env_remove("PARSEC_ADJUDICATOR")
+        .env_remove("PARSEC_ADJ_MAX_BLOCKS")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     for (k, v) in envs {
         cmd.env(k, v);
     }
-    let mut child = cmd.spawn().expect("spawn dasein hook Stop");
+    let mut child = cmd.spawn().expect("spawn parsec hook Stop");
     child
         .stdin
         .take()
@@ -456,8 +456,8 @@ fn block_mode_fires_and_respects_budget() {
     let home = TempHome::new("block-budget");
     let tp = home.write_transcript(&no_edit_loop());
     let payload = home.stop_payload("sess-block", &tp, false);
-    let envs = [("DASEIN_ADJUDICATOR", "block")];
-    // 1st + 2nd stop: blocked (default budget DASEIN_ADJ_MAX_BLOCKS=2).
+    let envs = [("PARSEC_ADJUDICATOR", "block")];
+    // 1st + 2nd stop: blocked (default budget PARSEC_ADJ_MAX_BLOCKS=2).
     for expect_n in 1..=2u64 {
         let stdout = run_stop_hook(home.path(), &payload, &envs);
         let dec: Value = serde_json::from_str(stdout.trim()).expect("block decision JSON");
@@ -491,8 +491,8 @@ fn block_budget_env_dial() {
     let tp = home.write_transcript(&no_edit_loop());
     let payload = home.stop_payload("sess-dial", &tp, false);
     let envs = [
-        ("DASEIN_ADJUDICATOR", "block"),
-        ("DASEIN_ADJ_MAX_BLOCKS", "0"),
+        ("PARSEC_ADJUDICATOR", "block"),
+        ("PARSEC_ADJ_MAX_BLOCKS", "0"),
     ];
     let stdout = run_stop_hook(home.path(), &payload, &envs);
     assert!(stdout.is_empty(), "budget 0 must never block");
@@ -506,7 +506,7 @@ fn block_mode_never_blocks_a_bankable_stop() {
     let home = TempHome::new("block-submit");
     let tp = home.write_transcript(&dithering_with_edit());
     let payload = home.stop_payload("sess-bank", &tp, false);
-    let stdout = run_stop_hook(home.path(), &payload, &[("DASEIN_ADJUDICATOR", "block")]);
+    let stdout = run_stop_hook(home.path(), &payload, &[("PARSEC_ADJUDICATOR", "block")]);
     assert!(stdout.is_empty());
     let rows = home.rows();
     assert_eq!(rows[0]["verdict"], "SUBMIT");
@@ -539,7 +539,7 @@ fn stop_hook_active_exits_silently_no_row() {
     let tp = home.write_transcript(&no_edit_loop());
     let payload = home.stop_payload("sess-active", &tp, true);
     // Even in block mode: a forced continuation is never pinned again.
-    let stdout = run_stop_hook(home.path(), &payload, &[("DASEIN_ADJUDICATOR", "block")]);
+    let stdout = run_stop_hook(home.path(), &payload, &[("PARSEC_ADJUDICATOR", "block")]);
     assert!(stdout.is_empty());
     assert!(!home.log_file().exists(), "no row on stop_hook_active");
     assert!(home.session("sess-active").is_none());
@@ -550,7 +550,7 @@ fn off_mode_skips_entirely() {
     let home = TempHome::new("off");
     let tp = home.write_transcript(&dithering_with_edit());
     let payload = home.stop_payload("sess-off", &tp, false);
-    let stdout = run_stop_hook(home.path(), &payload, &[("DASEIN_ADJUDICATOR", "off")]);
+    let stdout = run_stop_hook(home.path(), &payload, &[("PARSEC_ADJUDICATOR", "off")]);
     assert!(stdout.is_empty());
     assert!(!home.log_file().exists(), "off mode must write no row");
 }
@@ -565,7 +565,7 @@ fn unreadable_transcript_fails_open() {
         "hook_event_name": "Stop",
         "stop_hook_active": false,
     });
-    let stdout = run_stop_hook(home.path(), &payload, &[("DASEIN_ADJUDICATOR", "block")]);
+    let stdout = run_stop_hook(home.path(), &payload, &[("PARSEC_ADJUDICATOR", "block")]);
     assert!(stdout.is_empty(), "unreadable transcript → allow silently");
     let rows = home.rows();
     assert_eq!(rows.len(), 1);

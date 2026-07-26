@@ -4,7 +4,7 @@
 //!
 //! Ports, in column order (references: adaptive-context-clean/adaptive_context/
 //! optimizer/ + the rulehead training drop; the serving truth is the vendored
-//! mirror `dasein_brain/scorer.py:_het_readout`, curator.py L563-636):
+//! mirror `parsec_brain/scorer.py:_het_readout`, curator.py L563-636):
 //!   0-15  `torch_curator.struct_features(alive, recent)` rows for decided
 //!   16    age (0.0 admission-at-birth, 1.0 next-call re-decision)
 //!   17-19 `torch_curator.decided_extra_feats` [rc0, task_overlap, dup_recency]

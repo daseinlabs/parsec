@@ -15,7 +15,7 @@
 
 use serde_json::{json, Map, Value};
 
-use dasein_engine::pystr::{
+use parsec_engine::pystr::{
     char_len, char_prefix, py_float_repr, py_json_dumps, py_json_dumps_opts, py_strip,
 };
 

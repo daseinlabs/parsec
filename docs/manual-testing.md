@@ -7,9 +7,9 @@ in a local container, the proxy is a host process, and your Anthropic
 credentials only ever pass through the host proxy to api.anthropic.com.
 
 ```
-Claude Code ──ANTHROPIC_BASE_URL──▶ dasein proxy (host :8082)
+Claude Code ──ANTHROPIC_BASE_URL──▶ parsec proxy (host :8082)
    + plugin (hooks/skills/mcp)          │ trims context, prunes tools,
-                                        │ writes ~/.dasein/ledger.jsonl
+                                        │ writes ~/.parsec/ledger.jsonl
                     scores (v1 vectors) │            │ your auth, curated body
                                         ▼            ▼
                           brain (docker :8090)   api.anthropic.com
@@ -19,10 +19,10 @@ Claude Code ──ANTHROPIC_BASE_URL──▶ dasein proxy (host :8082)
 
 ```sh
 # the checkpoint (36MB, not in the repo):
-mkdir -p ~/.dasein/brain
-gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.dasein/brain/
+mkdir -p ~/.parsec/brain
+gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt ~/.parsec/brain/
 
-cargo build --release --bin dasein     # the proxy/plugin binary
+cargo build --release --bin parsec     # the proxy/plugin binary
 ```
 
 ## 1. Bring up the backend
@@ -42,13 +42,13 @@ Two modes:
 ```sh
 # real mode (needs cluster access):
 kubectl port-forward svc/dasein-embed 18080:80 &
-EMBED=dasein DASEIN_SERVE_TAU= docker compose up -d brain
+EMBED=dasein PARSEC_SERVE_TAU= docker compose up -d brain
 ```
 
 ## 2. The local proxy — auto-started or manual
 
 **Auto-start (the plugin manages it):** the plugin's SessionStart hook spawns
-`dasein proxy` automatically whenever the session is routed through a local
+`parsec proxy` automatically whenever the session is routed through a local
 port that isn't listening yet. The one thing a plugin *cannot* do is set
 `ANTHROPIC_BASE_URL` itself — routing must exist when `claude` launches. Put
 it (plus the proxy's config, which the spawned process inherits) in the env
@@ -59,15 +59,15 @@ user `~/.claude/settings.json`:
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:8082",
-    "DASEIN_BRAIN_URL": "http://127.0.0.1:8090",
-    "DASEIN_BRAIN_CONTRACT": "v1",
-    "DASEIN_EMBED_BACKEND": "hash"
+    "PARSEC_BRAIN_URL": "http://127.0.0.1:8090",
+    "PARSEC_BRAIN_CONTRACT": "v1",
+    "PARSEC_EMBED_BACKEND": "hash"
   }
 }
 ```
 
 Then plain `claude --plugin-dir …/packages/plugin` shows
-`⌁ dasein proxy auto-started on 127.0.0.1:8082 …` at session start.
+`⌁ parsec proxy auto-started on 127.0.0.1:8082 …` at session start.
 
 The managed lifecycle is symmetric: **on** at session start (only when the
 routed port isn't already listening — it never double-spawns or clobbers a
@@ -76,10 +76,10 @@ manually-started proxy), **off** by itself after 30 minutes without traffic
 Conversation memos are TTL/cap-bounded in between (1h/512, the reference
 dials) — safe because they're pure caches: eviction or restart costs replay
 round trips and one provider-cache re-seed, never bytes. Logs at
-`~/.dasein/proxy.log` (`RUST_LOG` to tune). Dials:
-`DASEIN_PROXY_AUTOSTART=0` (never spawn), `DASEIN_PROXY_IDLE_EXIT_S`
-(override the 30 min; manual `dasein proxy` runs default to run-forever),
-`DASEIN_SESSION_TTL_S` / `DASEIN_SESSION_MAX`.
+`~/.parsec/proxy.log` (`RUST_LOG` to tune). Dials:
+`PARSEC_PROXY_AUTOSTART=0` (never spawn), `PARSEC_PROXY_IDLE_EXIT_S`
+(override the 30 min; manual `parsec proxy` runs default to run-forever),
+`PARSEC_SESSION_TTL_S` / `PARSEC_SESSION_MAX`.
 
 **Manual (separate terminal, logs visible):**
 
@@ -92,7 +92,7 @@ scripts/proxy_dev.sh dev-raw  # legacy raw-text contract (server-side embedding)
 Note demo/real use the **v1 contract**: only vectors + features + opaque ids
 reach the brain — you can verify no conversation text crosses by watching
 `docker compose logs -f brain` while you chat. Optional: export
-`DASEIN_RECORD_DIR=~/.dasein/recordings` first to capture the session's wire
+`PARSEC_RECORD_DIR=~/.parsec/recordings` first to capture the session's wire
 bodies (fixture material for `scripts/record_to_fixture.py`).
 
 ## 3. Open a Claude Code session with the plugin
@@ -111,18 +111,18 @@ re-read; the insist valve serves narrow re-reads of trimmed ranges in full).
 
 ## 4. Inspect the savings
 
-**In-session:** `/dasein-savings` (skill), and the status line if configured
+**In-session:** `/parsec:savings` (skill), and the status line if configured
 (`packages/plugin/bin/README.md` has the settings.json line — plugins can't
 set the status line themselves).
 
 **From another terminal:**
 
 ```sh
-tail -f ~/.dasein/proxy.log              # LIVE per-request line:
+tail -f ~/.parsec/proxy.log              # LIVE per-request line:
 #   INFO … request served — ~245 input tok avoided conv=… model="…"
 #          counterfactual_in=465 billed_in=163 cache_read=50 cache_write=7 …
-./target/release/dasein savings          # aggregate roll-up, per-model breakdown
-tail -f ~/.dasein/ledger.jsonl           # the raw §8.4 rows (now incl. model)
+./target/release/parsec savings          # aggregate roll-up, per-model breakdown
+tail -f ~/.parsec/ledger.jsonl           # the raw §8.4 rows (now incl. model)
 ```
 
 Each request writes one honest row: `counterfactual_input_tokens` (the free
@@ -144,14 +144,14 @@ never does). Savings claims come ONLY from counterfactual − billed (§8.4).
 docker compose stop brain     # mid-session: requests keep working (passthrough),
                               # ledger rows show scorer_fail_opens; restart it and
                               # the skipped birth steps get re-decided next turn
-DASEIN_FREEZE=off scripts/proxy_dev.sh   # escape hatch: proxy runs pure passthrough
+PARSEC_FREEZE=off scripts/proxy_dev.sh   # escape hatch: proxy runs pure passthrough
 ```
 
 ## Teardown
 
 ```sh
 docker compose down
-# ledger/recordings persist in ~/.dasein — delete at will
+# ledger/recordings persist in ~/.parsec — delete at will
 ```
 
 ## Troubleshooting
@@ -166,5 +166,5 @@ docker compose down
   (`curl localhost:8090/health`) or the v1 handshake 409s (checkpoint
   changed under a live conversation — restart the proxy).
 - **Everything looks passthrough** — check the proxy terminal: without
-  `DASEIN_BRAIN_URL` (or with `DASEIN_FREEZE=off`) it runs the v0
+  `PARSEC_BRAIN_URL` (or with `PARSEC_FREEZE=off`) it runs the v0
   passthrough curation by design.

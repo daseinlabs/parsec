@@ -2,7 +2,7 @@
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://daseinlabs.dev/contracts/brain-api-dev/v0",
  "title": "Brain scoring API — DEV contract (v0, inference-first)",
- "description": "⚠️ CARRIES RAW TEXT — dev/dogfood machines only, never real users (docs/brain-serving-v0.md). The client sends the internal message view; the brain re-chunks with the vendored reference chunker (cross-checked against the client's chunk checksum), embeds via in-cluster dasein-embed, and runs the exact reference scoring path against curator_v4_prod.pt. The proxy only activates this path when DASEIN_BRAIN_URL is set AND DASEIN_BRAIN_DEV_RAW=1. Superseded by brain-api/v1 (vectors+features) once the local embedder + client featurization land.",
+ "description": "⚠️ CARRIES RAW TEXT — dev/dogfood machines only, never real users (docs/brain-serving-v0.md). The client sends the internal message view; the brain re-chunks with the vendored reference chunker (cross-checked against the client's chunk checksum), embeds via in-cluster dasein-embed, and runs the exact reference scoring path against curator_v4_prod.pt. The proxy only activates this path when PARSEC_BRAIN_URL is set AND PARSEC_BRAIN_DEV_RAW=1. Superseded by brain-api/v1 (vectors+features) once the local embedder + client featurization land.",
  "oneOf": [
   { "$ref": "#/$defs/score_trace_request" },
   { "$ref": "#/$defs/score_trace_response" },
@@ -205,9 +205,9 @@
    "additionalProperties": false,
    "required": ["nbr_cost_median", "nbr_count", "neighbors_active", "checkpoint_id"],
    "properties": {
-    "nbr_cost_median": { "type": ["number", "null"], "description": "MEDIAN realized cost (cumulative billed input tokens) of the top-k (DASEIN_NEIGHBORS=16) nearest anchors carrying cost metadata; null when hoods are off or fewer than 4 costs were found — the runaway signal stays inert (reference semantics)" },
+    "nbr_cost_median": { "type": ["number", "null"], "description": "MEDIAN realized cost (cumulative billed input tokens) of the top-k (PARSEC_NEIGHBORS=16) nearest anchors carrying cost metadata; null when hoods are off or fewer than 4 costs were found — the runaway signal stays inert (reference semantics)" },
     "nbr_count": { "type": "integer", "minimum": 0, "description": "how many neighbor cost samples were found (0 when hoods are off / no task statement / pre-cost artifact)" },
-    "neighbors_active": { "type": "boolean", "description": "the hoods artifact is mounted (DASEIN_HOODS_PKL) — mirrors /v1/bundle neighbors" },
+    "neighbors_active": { "type": "boolean", "description": "the hoods artifact is mounted (PARSEC_HOODS_PKL) — mirrors /v1/bundle neighbors" },
     "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
    }
   }

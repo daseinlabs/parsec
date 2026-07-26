@@ -1,6 +1,6 @@
 # learner
 
-Productization of the Dasein A3S stack: a Claude Code plugin that compresses
+Productization of the Parsec A3S stack: a Claude Code plugin that compresses
 agent context per turn using a learned curator. **Data plane local, control
 plane ours** — model traffic rides the user's own credentials from their
 machine; only chunk vectors + structural features ever reach our cloud.
@@ -12,8 +12,8 @@ in this repo.
 
 | Package | Language | License | What |
 |---|---|---|---|
-| `packages/plugin` | markdown + JSON + CI-built binaries | OSS | Claude Code plugin: `dasein:explore` agent, no-reread hook, savings skills, status line |
-| `packages/proxy` | Rust (`dasein` binary) | OSS | Local data-plane proxy; same binary deploys as the Team BYOK gateway |
+| `packages/plugin` | markdown + JSON + CI-built binaries | OSS | Claude Code plugin: `parsec:explore` agent, no-reread hook, savings skills, status line |
+| `packages/proxy` | Rust (`parsec` binary) | OSS | Local data-plane proxy; same binary deploys as the Team BYOK gateway |
 | `packages/engine` | Rust | OSS | Deterministic core: chunking, ONNX embedder, quantized freezing, featurization |
 | `packages/mapgen` | Rust | OSS | codescout exploration maps |
 | `packages/contracts` | JSON Schema | OSS | Cross-language schemas (trace contract, telemetry, savings ledger, brain API) |
@@ -35,18 +35,18 @@ claude --plugin-dir packages/plugin
 
 In the session: re-`Read` a file you already read — the hook denies it with a
 context-reuse pointer (re-issuing the same read once passes: the insist
-valve). Run the same Bash command 4x — the loop-breaker fires. `/dasein-savings`
+valve). Run the same Bash command 4x — the loop-breaker fires. `/parsec:savings`
 reports what was measured. Optional status line (user setting, not
 plugin-settable) in `~/.claude/settings.json`:
 
 ```json
-{ "statusLine": { "type": "command", "command": "<repo>/packages/plugin/bin/dasein statusline" } }
+{ "statusLine": { "type": "command", "command": "<repo>/packages/plugin/bin/parsec statusline" } }
 ```
 
 ## Build
 
 ```sh
-cargo build            # engine, proxy (dasein binary), mapgen
+cargo build            # engine, proxy (parsec binary), mapgen
 cargo test
 ```
 

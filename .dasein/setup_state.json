@@ -1,0 +1,10 @@
+{
+  "contract_version": "setup-state/v0",
+  "phase": "failed",
+  "bytes_done": 0,
+  "bytes_total": 0,
+  "error": "no model source configured (DASEIN_MODEL_BASE_URL)",
+  "env_written": false,
+  "port": 0,
+  "updated_unix": 1784320540
+}

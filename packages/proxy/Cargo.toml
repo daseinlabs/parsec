@@ -1,18 +1,18 @@
 [package]
-name = "dasein-proxy"
-description = "The dasein binary: local data-plane proxy (also the Team cloud gateway), plus mcp / hook / statusline subcommands."
+name = "parsec-proxy"
+description = "The parsec binary: local data-plane proxy (also the Team cloud gateway), plus mcp / hook / statusline subcommands."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "dasein"
+name = "parsec"
 path = "src/main.rs"
 
 [dependencies]
-dasein-engine = { path = "../engine" }
-dasein-mapgen = { path = "../mapgen" }
+parsec-engine = { path = "../engine" }
+parsec-mapgen = { path = "../mapgen" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

@@ -1,0 +1,23 @@
+{
+  "name": "parsec",
+  "background": "#0A0E0C",
+  "foreground": "#D7FBE4",
+  "cursorColor": "#4AF626",
+  "selectionBackground": "#163A22",
+  "black": "#0A0E0C",
+  "red": "#FF5C57",
+  "green": "#4AF626",
+  "yellow": "#FFB84D",
+  "blue": "#37AEE2",
+  "purple": "#FF5FD2",
+  "cyan": "#4AD0E0",
+  "white": "#C8D8CE",
+  "brightBlack": "#3A4A40",
+  "brightRed": "#FF8079",
+  "brightGreen": "#7CFFB2",
+  "brightYellow": "#FFD08A",
+  "brightBlue": "#6FD0F0",
+  "brightPurple": "#FF93E2",
+  "brightCyan": "#86E9F5",
+  "brightWhite": "#EAFBF0"
+}

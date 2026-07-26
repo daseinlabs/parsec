@@ -1,7 +1,7 @@
-# dasein-brain
+# parsec-brain
 
 Hosted GNN scoring API (control plane, private). Serves `curator_v4_prod.pt`
-through the **vendored reference scoring path** (`src/dasein_brain/vendored/` —
+through the **vendored reference scoring path** (`src/parsec_brain/vendored/` —
 the exact code that trained the checkpoint), so parity with the trainer forward
 is by construction. Design record: `docs/brain-serving-v0.md`. Two wire
 contracts, dispatched on the request `contract` field at the same endpoints:
@@ -25,7 +25,7 @@ The v0 contract (`brain-api-dev/v0`) sends the **internal message view — raw
 conversation text — to this service**. That is a deliberate, dev-only exception
 to the "raw code/text never leaves the user's machine" rule: fine for our own
 machines, never for real users. The proxy only activates this path when
-`DASEIN_BRAIN_URL` is set **and** `DASEIN_BRAIN_DEV_RAW=1`. The v1 contract
+`PARSEC_BRAIN_URL` is set **and** `PARSEC_BRAIN_DEV_RAW=1`. The v1 contract
 carries no text; the proxy migrates to it as the client-side featurization
 port + local embedder land (the embedder parity gate is already green — see
 the docs/brain-serving-v0.md appendix).
@@ -36,13 +36,13 @@ The bundle self-validates at startup (`bundle.py`): dims derived from the state
 weights must equal the ckpt's recorded config (hidden 384 / layers 3 / nrel 14 /
 read_struct 49 / struct_dim 50 / emb_dim 3072), `chunk_mode=fixed` /
 `chunk_lines=10` must match the engine chunker, `tau_calib` must resolve
-`DASEIN_TARGET_COV` (string keys, nearest-key), and the rules roster must parse.
+`PARSEC_TARGET_COV` (string keys, nearest-key), and the rules roster must parse.
 Any mismatch raises at load — the app never starts on a bad bundle.
 
 | piece | where | tracked? |
 |---|---|---|
-| `curator_v4_prod.pt` (36MB) | `~/.dasein/brain/curator_v4_prod.pt` (override: `DASEIN_CKPT`); baked into the image at deploy | no — out of the repo |
-| `rules.json` (16-rule roster; `/v1/score/rules` default = the `active`+`always_on` subset) | `models/rules.json` (override: `DASEIN_RULES_JSON`) | yes |
+| `curator_v4_prod.pt` (36MB) | `~/.parsec/brain/curator_v4_prod.pt` (override: `PARSEC_CKPT`); baked into the image at deploy | no — out of the repo |
+| `rules.json` (16-rule roster; `/v1/score/rules` default = the `active`+`always_on` subset) | `models/rules.json` (override: `PARSEC_RULES_JSON`) | yes |
 | `changeprone.pkl` (readout col 42 sidecar) | `models/changeprone.pkl` (override: `AC_CHANGEPRONE_PKL`); absent ⇒ zero-filled col | yes |
 | checkpoint identity | `checkpoint_id` = sha256 of the `.pt`, on every response + `/v1/bundle` | — |
 
@@ -57,34 +57,34 @@ Local, hermetic (deterministic hash embeddings — no cluster access):
 
 ```sh
 cd packages/brain
-DASEIN_EMBED_BACKEND=hash PYTHONPATH=src \
-  .venv/bin/uvicorn --factory dasein_brain.app:create_app --port 8080
+PARSEC_EMBED_BACKEND=hash PYTHONPATH=src \
+  .venv/bin/uvicorn --factory parsec_brain.app:create_app --port 8080
 ```
 
 Local against the real in-cluster embedder (bge-large, 1024-d), port-forwarded:
 
 ```sh
 kubectl port-forward svc/dasein-embed 9090:80 &
-DASEIN_EMBED_URL=http://127.0.0.1:9090/embed PYTHONPATH=src \
-  .venv/bin/uvicorn --factory dasein_brain.app:create_app --port 8080
+PARSEC_EMBED_URL=http://127.0.0.1:9090/embed PYTHONPATH=src \
+  .venv/bin/uvicorn --factory parsec_brain.app:create_app --port 8080
 ```
 
-In-cluster the default `DASEIN_EMBED_URL`
+In-cluster the default `PARSEC_EMBED_URL`
 (`http://dasein-embed.default.svc.cluster.local/embed`) needs no config. Scores
 from the hash backend are **valid only for tests** — real serving requires the
 bge vectors the ckpt was trained on.
 
-Env: `DASEIN_CKPT`, `DASEIN_RULES_JSON`, `DASEIN_EMBED_URL`,
-`DASEIN_EMBED_BACKEND=hash`, `DASEIN_TARGET_COV` (default 0.70),
-`DASEIN_SERVE_TAU` (explicit operating-point override — the reference's
+Env: `PARSEC_CKPT`, `PARSEC_RULES_JSON`, `PARSEC_EMBED_URL`,
+`PARSEC_EMBED_BACKEND=hash`, `PARSEC_TARGET_COV` (default 0.70),
+`PARSEC_SERVE_TAU` (explicit operating-point override — the reference's
 `AC_SERVE_TAU` dial, namespaced so `_flags` can keep popping stray `AC_*`;
 used by `scripts/e2e_smoke.sh` to force deterministic cuts),
-`DASEIN_BRAIN_KEY` (optional bearer auth on `/v1/*`; `/health` stays open),
-`DASEIN_HOODS_PKL` (hoods artifact path; **unset = neighbors OFF**, exactly the
+`PARSEC_BRAIN_KEY` (optional bearer auth on `/v1/*`; `/health` stays open),
+`PARSEC_HOODS_PKL` (hoods artifact path; **unset = neighbors OFF**, exactly the
 v0 serving; set-but-missing/corrupt = refuse to start — train/serve-skew
-guard, no auto-fetch), `DASEIN_NEIGHBORS` (runaway cost top-k, default 16),
-`DASEIN_NEIGHBORS_X` (GNN block top-x, default 2 — the trained value, do not
-change), `DASEIN_BRAIN_LOG` (level, default INFO), `DASEIN_BRAIN_LOG_JSON=1`
+guard, no auto-fetch), `PARSEC_NEIGHBORS` (runaway cost top-k, default 16),
+`PARSEC_NEIGHBORS_X` (GNN block top-x, default 2 — the trained value, do not
+change), `PARSEC_BRAIN_LOG` (level, default INFO), `PARSEC_BRAIN_LOG_JSON=1`
 (JSON-lines logs). Logs never carry raw message/task text or tool schemas;
 conversation ids ride as sha8 prefixes only.
 
@@ -117,7 +117,7 @@ conversation ids ride as sha8 prefixes only.
     paths are bit-identical on the same conversation (`tests/test_v1.py`) —
     including with neighbors mounted and doom scored
     (`tests/test_neighbors_doom.py`). Client fails open on any error.
-  - With `DASEIN_HOODS_PKL` mounted, the top-x=2 cross-trace neighbor blocks
+  - With `PARSEC_HOODS_PKL` mounted, the top-x=2 cross-trace neighbor blocks
     attach into the trace graph (assemble_trace order: after `attach_task`,
     before `attach_steps`; rels 5/6; **no serve-time dropout**). Anchor query:
     dev = the task text embedded via the request backend; v1 = the payload
@@ -185,4 +185,4 @@ pairs) and asserts the v1 endpoints return exactly the dev endpoints' ints on
 the handcrafted golden AND on turns of the proxy's recorded
 `golden_conversation.json`; it also validates the committed v1 schema +
 example against the served models. Requires the ckpt at
-`~/.dasein/brain/curator_v4_prod.pt` (tests skip loudly without it).
+`~/.parsec/brain/curator_v4_prod.pt` (tests skip loudly without it).

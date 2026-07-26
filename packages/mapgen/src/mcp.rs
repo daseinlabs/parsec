@@ -1,5 +1,5 @@
-//! `dasein mcp` — a minimal MCP stdio server (JSON-RPC 2.0, newline-
-//! delimited) exposing the scan tools to the `dasein:explore` agent.
+//! `parsec mcp` — a minimal MCP stdio server (JSON-RPC 2.0, newline-
+//! delimited) exposing the scan tools to the `parsec:explore` agent.
 //!
 //! Hand-rolled on purpose: three tools need initialize / tools/list /
 //! tools/call / ping and nothing else; a full SDK + tokio buys nothing for a
@@ -127,7 +127,7 @@ pub fn serve_stdio() -> anyhow::Result<()> {
                     json!({
                         "protocolVersion": requested,
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "dasein-scout", "version": env!("CARGO_PKG_VERSION")}
+                        "serverInfo": {"name": "parsec-scout", "version": env!("CARGO_PKG_VERSION")}
                     }),
                 );
             }

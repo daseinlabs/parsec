@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from dasein_bench.ledger import (
+from parsec_bench.ledger import (
     LedgerTotals,
     read_ledger,
     rows_for_run,

@@ -3,8 +3,8 @@
 # conversation invariant including the actual GNN forward (the Rust golden
 # test, packages/proxy/tests/golden_conversation.rs, runs the same replay
 # with a mock brain):
-#   fixture turns → dasein proxy → local brain (curator_v4_prod, hash embed,
-#   DASEIN_SERVE_TAU forced) → trimmed requests → mock upstream.
+#   fixture turns → parsec proxy → local brain (curator_v4_prod, hash embed,
+#   PARSEC_SERVE_TAU forced) → trimmed requests → mock upstream.
 # Asserts byte stability + aggregate frozen:new ≥ 10:1 and prints the
 # per-turn cut and ratio table. Hermetic: no cloud, no kubectl.
 #
@@ -12,12 +12,12 @@
 #   scripts/golden_replay.sh [fixture.json]   # default: the committed fixture
 #
 # Requires: the brain venv (packages/brain/.venv), the checkpoint at
-# ~/.dasein/brain/curator_v4_prod.pt, cargo.
+# ~/.parsec/brain/curator_v4_prod.pt, cargo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FIXTURE="${1:-packages/proxy/parity/fixtures/golden_conversation.json}"
-CKPT="${DASEIN_CKPT:-$HOME/.dasein/brain/curator_v4_prod.pt}"
+CKPT="${PARSEC_CKPT:-$HOME/.parsec/brain/curator_v4_prod.pt}"
 BRAIN_PORT=8093 UPSTREAM_PORT=8094 PROXY_PORT=8095
 TMP="$(mktemp -d)"
 SPOOL="$TMP/upstream"
@@ -26,24 +26,24 @@ cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
 trap cleanup EXIT
 
 [ -f "$FIXTURE" ] || { echo "fixture missing: $FIXTURE"; exit 1; }
-[ -f "$CKPT" ] || { echo "checkpoint missing: $CKPT (gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt \$HOME/.dasein/brain/)"; exit 1; }
+[ -f "$CKPT" ] || { echo "checkpoint missing: $CKPT (gsutil cp gs://dasein-473321-ac-learning/rulehead/curator_v4_prod.pt \$HOME/.parsec/brain/)"; exit 1; }
 
 echo "── building proxy"
-cargo build -q --bin dasein
+cargo build -q --bin parsec
 
 echo "── mock upstream :$UPSTREAM_PORT (spool $SPOOL)"
 python3 scripts/mock_upstream.py --port $UPSTREAM_PORT --spool "$SPOOL" & PIDS+=($!)
 
-# DASEIN_SERVE_TAU forces the operating point so the replay is deterministic
+# PARSEC_SERVE_TAU forces the operating point so the replay is deterministic
 # regardless of what the model thinks of the (sanitized) conversation — the
 # replay proves the §8.1 MACHINERY end to end with the real forward in the
 # loop, not the checkpoint's taste. Export GOLDEN_TAU="" for calibrated tau.
 GOLDEN_TAU="${GOLDEN_TAU-0.999}"
 TAU_ENV=()
-[ -n "$GOLDEN_TAU" ] && TAU_ENV=(DASEIN_SERVE_TAU="$GOLDEN_TAU")
+[ -n "$GOLDEN_TAU" ] && TAU_ENV=(PARSEC_SERVE_TAU="$GOLDEN_TAU")
 echo "── brain :$BRAIN_PORT (embed=hash, tau=${GOLDEN_TAU:-calibrated})"
-( cd packages/brain && env DASEIN_EMBED_BACKEND=hash "${TAU_ENV[@]}" DASEIN_CKPT="$CKPT" \
-    .venv/bin/python -m uvicorn --factory dasein_brain.app:create_app --host 127.0.0.1 \
+( cd packages/brain && env PARSEC_EMBED_BACKEND=hash "${TAU_ENV[@]}" PARSEC_CKPT="$CKPT" \
+    .venv/bin/python -m uvicorn --factory parsec_brain.app:create_app --host 127.0.0.1 \
     --port $BRAIN_PORT --log-level warning ) & PIDS+=($!)
 for i in $(seq 1 60); do
   curl -sf "http://127.0.0.1:$BRAIN_PORT/health" >/dev/null && break
@@ -52,14 +52,14 @@ for i in $(seq 1 60); do
 done
 
 echo "── proxy :$PROXY_PORT"
-env DASEIN_PROXY_PORT=$PROXY_PORT DASEIN_UPSTREAM="http://127.0.0.1:$UPSTREAM_PORT" \
-    DASEIN_BRAIN_URL="http://127.0.0.1:$BRAIN_PORT" DASEIN_BRAIN_DEV_RAW=1 \
-    DASEIN_BRAIN_TIMEOUT_MS=120000 \
-    HOME="$TMP" ./target/debug/dasein proxy & PIDS+=($!)
+env PARSEC_PROXY_PORT=$PROXY_PORT PARSEC_UPSTREAM="http://127.0.0.1:$UPSTREAM_PORT" \
+    PARSEC_BRAIN_URL="http://127.0.0.1:$BRAIN_PORT" PARSEC_BRAIN_DEV_RAW=1 \
+    PARSEC_BRAIN_TIMEOUT_MS=120000 \
+    HOME="$TMP" ./target/debug/parsec proxy & PIDS+=($!)
 sleep 1
 
 echo "── replaying $FIXTURE"
-python3 - "$FIXTURE" "$PROXY_PORT" "$SPOOL" "$TMP/.dasein/ledger.jsonl" <<'EOF'
+python3 - "$FIXTURE" "$PROXY_PORT" "$SPOOL" "$TMP/.parsec/ledger.jsonl" <<'EOF'
 import json, pathlib, sys, urllib.request
 
 fixture, port, spool, ledger = sys.argv[1:5]

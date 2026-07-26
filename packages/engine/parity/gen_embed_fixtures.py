@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate hash-embedder parity fixtures from the vendored Python reference.
 
-Runs dasein_brain.vendored.embedding._hash_embed over a battery of texts and
+Runs parsec_brain.vendored.embedding._hash_embed over a battery of texts and
 dims, storing each output element as the u32 bit pattern of its float32
 narrowing. The Rust suite (tests/parity_embed.rs) replays the battery through
 engine::embed::hash_embed and asserts bit equality — the §7b parity contract
@@ -21,7 +21,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
 sys.path.insert(0, os.path.abspath(os.path.join(
     os.path.dirname(__file__), "..", "..", "brain", "src")))
 
-from dasein_brain.vendored.embedding import _hash_embed  # noqa: E402
+from parsec_brain.vendored.embedding import _hash_embed  # noqa: E402
 
 CASES = [
     # (text, dim) — dims chosen to hit the digest boundaries: one sha256

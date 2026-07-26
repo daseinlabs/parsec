@@ -1,7 +1,7 @@
 # Debug log: plugin reinstall left proxy dead (2026-07-17)
 
 Symptom: after reinstalling the plugin from the marketplace, the proxy never
-started and nothing new appeared in `~/.dasein/proxy.log`. SessionStart kept
+started and nothing new appeared in `~/.parsec/proxy.log`. SessionStart kept
 printing "setup complete — restart Claude Code to activate curation" on every
 restart, forever.
 
@@ -10,8 +10,8 @@ restart, forever.
 1. **Plugin reinstall wipes the managed env.** Claude Code holds
    `~/.claude/settings.json` in memory and rewrites it from that copy when
    plugin state changes (install/uninstall/update). The env block setup had
-   written externally (`ANTHROPIC_BASE_URL`, `DASEIN_EMBED_BACKEND`,
-   `DASEIN_ONNX_DIR`) was clobbered back to `"env": {}`.
+   written externally (`ANTHROPIC_BASE_URL`, `PARSEC_EMBED_BACKEND`,
+   `PARSEC_ONNX_DIR`) was clobbered back to `"env": {}`.
 2. **The hook trusted stale state.** `setup_state.json` still said
    `phase: ready, env_written: true`, so `maybe_autosetup` printed the
    "restart to activate" nudge — but restarting could never help, because the
@@ -35,9 +35,9 @@ would land in this permanent limbo.
   overwritten) and saves corrected state. Messages: env restored → "routing
   was missing … restored, restart"; already present → old "setup complete"
   nudge; foreign URL → conflict message, value untouched; unparseable
-  settings → "run `dasein setup`".
+  settings → "run `parsec setup`".
 - **`GET /health` on the proxy** — `server.rs` router: answers locally with
-  `{"ok":true,"service":"dasein-proxy","version":…}`. Never contacts
+  `{"ok":true,"service":"parsec-proxy","version":…}`. Never contacts
   upstream, so 200 strictly means "proxy up", not "upstream reachable".
 
 Verified: cargo tests green; `/health` exercised end-to-end on a spare port;
@@ -46,19 +46,19 @@ re-run, foreign-URL conflict non-overwrite all pass).
 
 ## Open items (not yet fixed)
 
-- **0.0.4-alpha release binary has no baked model source.** `dasein setup`
+- **0.0.4-alpha release binary has no baked model source.** `parsec setup`
   fails with "no model source configured" and — worse — flips a `ready` state
   to `failed` before checking whether the model is already on disk.
-  `release.yml` bakes `DASEIN_DEFAULT_MODEL_BASE_URL` from the GitHub repo
-  variable `vars.DASEIN_MODEL_BASE_URL`, which came through empty for this
+  `release.yml` bakes `PARSEC_DEFAULT_MODEL_BASE_URL` from the GitHub repo
+  variable `vars.PARSEC_MODEL_BASE_URL`, which came through empty for this
   build. TODO: set the repo variable; make the workflow fail when it is
   empty; make `setup::run` skip the bail (and the download) when verified
   model files already exist on disk.
 - **Workaround on an affected machine** (model already downloaded):
-  `DASEIN_MODEL_BASE_URL=https://placeholder.invalid dasein setup` —
+  `PARSEC_MODEL_BASE_URL=https://placeholder.invalid parsec setup` —
   existing files pass sha verification, nothing is fetched, routing is
   re-written.
-- **Binary reports `dasein 0.1.0`** while the plugin version is 0.0.4-alpha —
+- **Binary reports `parsec 0.1.0`** while the plugin version is 0.0.4-alpha —
   crate version and release tag are not linked.
 - One historical `Address already in use (os error 48)` in `proxy.log`: two
   proxies raced for 8082 (likely a dev build vs the managed one). The
@@ -76,7 +76,7 @@ re-run, foreign-URL conflict non-overwrite all pass).
 curl -s http://127.0.0.1:8082/health        # binaries with the fix: 200 JSON
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8082/  # older: 404 = up
 lsof -nP -iTCP:8082 -sTCP:LISTEN
-tail ~/.dasein/proxy.log                    # "listening on 127.0.0.1:8082"
+tail ~/.parsec/proxy.log                    # "listening on 127.0.0.1:8082"
 ```
 
 In-session: `! echo $ANTHROPIC_BASE_URL` shows whether that session is
@@ -86,7 +86,7 @@ for routed sessions.
 
 ## Curation bugs observed from the inside (dogfood notes)
 
-This debugging session was itself curated by dasein, and the no-reread gate
+This debugging session was itself curated by parsec, and the no-reread gate
 repeatedly worked against the agent:
 
 1. **Post-summarization re-reads stay blocked.** After context management

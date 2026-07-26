@@ -1,4 +1,4 @@
-//! Integration tests for `dasein proxy` (server.rs): a mock Anthropic
+//! Integration tests for `parsec proxy` (server.rs): a mock Anthropic
 //! upstream records what the proxy actually sends and serves canned
 //! responses, so every wire invariant — auth passthrough, anchor placement,
 //! the fps-commit-on-success ordering, ledger honesty, count_tokens
@@ -16,7 +16,7 @@ use axum::routing::post;
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_proxy::server::{router, AppState};
+use parsec_proxy::server::{router, AppState};
 
 // ── mock upstream ───────────────────────────────────────────────────────────
 
@@ -156,7 +156,7 @@ async fn setup_entitled(entitled: bool) -> Ctx {
     tokio::spawn(async move { axum::serve(ml, mock_router).await.unwrap() });
 
     let ledger = std::env::temp_dir().join(format!(
-        "dasein-proxy-test-{}-{}.jsonl",
+        "parsec-proxy-test-{}-{}.jsonl",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -226,7 +226,7 @@ fn ledger_rows(ctx: &Ctx) -> Vec<Value> {
 /// Unentitled (no API key ⇒ `AppState::entitled = false`): the serve path is a
 /// PURE PASSTHROUGH. The body is forwarded byte-verbatim (no cache_control
 /// anchors, no fold/curation), auth still flows, and NO count_tokens probe is
-/// made — dasein saves nothing until a key is set. Contrast with
+/// made — parsec saves nothing until a key is set. Contrast with
 /// `auth_headers_forwarded_and_anchors_added`, which asserts the entitled path
 /// DOES add anchors and probe.
 #[tokio::test]
@@ -287,7 +287,7 @@ async fn auth_headers_forwarded_and_anchors_added() {
     assert_eq!(r.header("anthropic-beta"), Some("prompt-caching-2024"));
     // the bench run-id tag rides upstream: the usage gateway below the proxy
     // keys its per-request rows by it (the reference forwarded it; a SHARED
-    // gateway cannot isolate the dasein arm's rows without it)
+    // gateway cannot isolate the parsec arm's rows without it)
     assert_eq!(r.header("x-ccb-run-id"), Some("bench-run-42"));
     assert_eq!(r.header("x-unrelated"), None);
     // the counterfactual probe carried the same auth + run-id tag

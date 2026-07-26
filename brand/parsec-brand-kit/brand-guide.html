@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>parsec — brand & build kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --phosphor:#4AF626;--phosphor-hover:#64F846;--phosphor-press:#38C41B;--on-phosphor:#06210B;
+    --mint:#7CFFB2;--dim:#2E7D46;
+    --bg:#0A0E0C;--surface:#0F1512;--elevated:#131B17;--overlay:#16201B;
+    --line:#1D2A22;--line-strong:#2E7D46;
+    --text:#D7FBE4;--muted:#8CA897;--faint:#556D60;
+    --success:#4AF626;--warning:#FFB84D;--error:#FF5C57;--info:#4AD0E0;--magenta:#FF5FD2;
+    --glow:0 0 6px rgba(74,246,38,.55),0 0 22px rgba(74,246,38,.20);
+    --mono:'JetBrains Mono',ui-monospace,'IBM Plex Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--mono);
+    font-size:15px;line-height:1.6;letter-spacing:.2px;-webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 50% -10%, rgba(74,246,38,.06), transparent 60%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.16) 3px, rgba(0,0,0,0) 4px);
+    background-attachment:fixed;}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;
+    background:radial-gradient(120% 120% at 50% 50%, transparent 62%, rgba(0,0,0,.55) 100%);mix-blend-mode:multiply;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 100px}
+  code{color:var(--mint);font-size:.9em}
+  a{color:var(--info);text-decoration:none}a:hover{text-decoration:underline}
+
+  .term{background:linear-gradient(180deg,var(--surface),#0c110e);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.55);}
+  .term-bar{display:flex;align-items:center;gap:8px;padding:9px 13px;background:var(--elevated);
+    border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .dot{width:11px;height:11px;border-radius:50%}.dot.r{background:#ff5f56}.dot.y{background:#ffbd2e}.dot.g{background:#27c93f}
+  .term-title{margin-left:8px;letter-spacing:.5px}
+  .term-body{padding:38px 30px 42px}
+  .cursor{display:inline-block;width:.6ch;height:1em;background:var(--phosphor);vertical-align:-2px;
+    margin-left:3px;box-shadow:var(--glow);animation:blink 1.05s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  .hero{display:flex;gap:34px;align-items:center;flex-wrap:wrap}
+  .hero .copy{flex:1;min-width:260px}
+  .hero h1{font-weight:800;font-size:clamp(34px,6vw,58px);margin:0;letter-spacing:-1px}
+  .hero h1 .g{color:var(--muted);font-weight:500}
+  .hero .tagline{color:var(--mint);font-size:clamp(15px,2.4vw,20px);margin:14px 0 0}
+  .hero .sub{color:var(--muted);font-size:13px;margin:8px 0 0}
+  .kicker{color:var(--muted);font-size:12.5px;letter-spacing:2px;text-transform:uppercase;margin:0 0 20px}
+
+  section{margin-top:52px}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:0 0 8px}
+  .sec-head h2{font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--phosphor);margin:0;text-shadow:var(--glow)}
+  .sec-head .num{color:var(--dim);font-size:13px}
+  .sec-head .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+  .lead{color:var(--muted);font-size:13.5px;max-width:74ch;margin:0 0 22px}
+
+  /* logo lockups */
+  .logos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+  .logo-card{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+  .logo-card .cap{padding:7px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
+  .logo-card .st{display:flex;align-items:center;justify-content:center;min-height:120px;padding:18px}
+  .logo-card.light .st{background:#F4F7F4}
+  svg{display:block;overflow:visible}
+
+  /* colors */
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+  .sw{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+  .sw .chip{height:56px}
+  .sw .meta{padding:8px 11px;font-size:11.5px}
+  .sw .meta .nm{color:var(--text)}
+  .sw .meta .hex{color:var(--muted);letter-spacing:.5px}
+  .grp-title{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint);margin:18px 0 10px}
+
+  /* type */
+  .type{border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:22px 24px}
+  .type .row{padding:14px 0;border-bottom:1px solid var(--line)}.type .row:last-child{border:0}
+  .type .role{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+  .disp{font-weight:800;font-size:32px;letter-spacing:-.5px}
+  .metrics{font-weight:700;font-size:24px;color:var(--phosphor);text-shadow:var(--glow)}
+
+  /* components */
+  .comp{border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:22px 24px;display:flex;flex-direction:column;gap:20px}
+  .cluster{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .btn{font-family:var(--mono);font-weight:500;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;
+    background:var(--phosphor);color:var(--on-phosphor);transition:background .12s}
+  .btn:hover{background:var(--phosphor-hover)}
+  .btn.ghost{background:transparent;color:var(--phosphor);border:1px solid var(--line-strong)}
+  .btn.subtle{background:var(--elevated);color:var(--text);border:1px solid var(--line)}
+  .input{font-family:var(--mono);background:var(--bg);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:9px 12px;min-width:220px}
+  .input:focus{outline:2px solid var(--phosphor);outline-offset:1px;border-color:transparent}
+  .badge{font-size:11.5px;padding:3px 9px;border-radius:999px;border:1px solid}
+  .badge.ok{color:var(--success);border-color:rgba(74,246,38,.4)}
+  .badge.warn{color:var(--warning);border-color:rgba(255,184,77,.4)}
+  .badge.err{color:var(--error);border-color:rgba(255,92,87,.4)}
+  .badge.info{color:var(--info);border-color:rgba(74,208,224,.4)}
+  .track{height:8px;border-radius:999px;background:var(--line);overflow:hidden;max-width:320px}
+  .track > i{display:block;height:100%;width:62%;background:var(--phosphor);box-shadow:var(--glow)}
+
+  /* CLI sample */
+  .cli{background:#070a08;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .cli .bar{display:flex;gap:8px;align-items:center;padding:8px 12px;background:#0c110e;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--faint)}
+  .cli pre{margin:0;padding:18px 20px;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow-x:auto}
+  .cli .p{color:var(--phosphor)}.cli .ok{color:var(--success)}.cli .w{color:var(--warning)}
+  .cli .e{color:var(--error)}.cli .i{color:var(--info)}.cli .m{color:var(--muted)}.cli .f{color:var(--faint)}
+  .cli .t{color:var(--text)}.cli .mag{color:var(--magenta)}.cli b{font-weight:700}
+  .bar16{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:14px}
+  .bar16 .c{height:34px;border-radius:5px;border:1px solid rgba(255,255,255,.08);position:relative}
+  .bar16 .c span{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:9px;color:var(--faint)}
+
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);
+    font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="term">
+    <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="term-title">~/brand/parsec — brand & build kit</span></div>
+    <div class="term-body">
+      <p class="kicker">// design tokens · logo · cli theming</p>
+      <div class="hero">
+        <svg width="230" height="150" viewBox="0 0 260 160" aria-label="parsec mark">
+          <g fill="none" stroke="#4AF626" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px rgba(74,246,38,.7))">
+            <line x1="44" y1="40" x2="194" y2="80"/>
+            <line x1="44" y1="120" x2="194" y2="80"/>
+          </g>
+          <path d="M194 54 L203.4 70.6 L220 80 L203.4 89.4 L194 106 L184.6 89.4 L168 80 L184.6 70.6 Z" fill="#4AF626" style="filter:drop-shadow(0 0 6px rgba(74,246,38,.95))"/>
+        </svg>
+        <div class="copy">
+          <h1><span class="g">get</span>parsec</h1>
+          <p class="tagline">2× the context. ½ the cost.</p>
+          <p class="sub">Retro-terminal identity — phosphor green on void, monospace, one glowing star. Dark is the default theme.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGO -->
+  <section>
+    <div class="sec-head"><span class="num">01</span><h2>logo</h2><span class="rule"></span></div>
+    <p class="lead">Two sightlines converging on a star — the parsec parallax angle, symmetric about the axis. Single flat color; the glow is a screen treatment, not part of the mark. Full asset set (SVG + PNG, favicons, app icon) is in <code>logo/</code>.</p>
+    <div class="logos">
+      <div class="logo-card"><div class="st">
+        <svg width="150" height="96" viewBox="0 0 260 160"><g fill="none" stroke="#4AF626" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px rgba(74,246,38,.7))"><line x1="44" y1="40" x2="194" y2="80"/><line x1="44" y1="120" x2="194" y2="80"/></g><path d="M194 54 L203.4 70.6 L220 80 L203.4 89.4 L194 106 L184.6 89.4 L168 80 L184.6 70.6 Z" fill="#4AF626" style="filter:drop-shadow(0 0 6px rgba(74,246,38,.95))"/></svg>
+      </div><div class="cap">mark · glow · on void</div></div>
+
+      <div class="logo-card"><div class="st">
+        <svg width="150" height="96" viewBox="0 0 260 160"><g fill="none" stroke="#4AF626" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><line x1="44" y1="40" x2="194" y2="80"/><line x1="44" y1="120" x2="194" y2="80"/></g><path d="M194 54 L203.4 70.6 L220 80 L203.4 89.4 L194 106 L184.6 89.4 L168 80 L184.6 70.6 Z" fill="#4AF626"/></svg>
+      </div><div class="cap">mark · flat</div></div>
+
+      <div class="logo-card light"><div class="st">
+        <svg width="150" height="96" viewBox="0 0 260 160"><g fill="none" stroke="#2FA317" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><line x1="44" y1="40" x2="194" y2="80"/><line x1="44" y1="120" x2="194" y2="80"/></g><path d="M194 54 L203.4 70.6 L220 80 L203.4 89.4 L194 106 L184.6 89.4 L168 80 L184.6 70.6 Z" fill="#2FA317"/></svg>
+      </div><div class="cap">mark · on light (#2FA317)</div></div>
+
+      <div class="logo-card"><div class="st">
+        <svg width="92" height="92" viewBox="0 0 100 100"><rect x="0" y="0" width="100" height="100" rx="22" fill="#0F1512" stroke="#1D2A22"/><g fill="none" stroke="#4AF626" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 3px rgba(74,246,38,.8))"><line x1="20" y1="28" x2="74" y2="50"/><line x1="20" y1="72" x2="74" y2="50"/></g><path d="M74 35 L79.4 44.6 L89 50 L79.4 55.4 L74 65 L68.6 55.4 L59 50 L68.6 44.6 Z" fill="#4AF626"/></svg>
+      </div><div class="cap">app icon / favicon tile</div></div>
+    </div>
+  </section>
+
+  <!-- COLOR -->
+  <section>
+    <div class="sec-head"><span class="num">02</span><h2>color</h2><span class="rule"></span></div>
+    <p class="lead">Source of truth: <code>tokens/tokens.json</code>. Ready-to-use CSS variables in <code>tokens/theme.css</code> and a Tailwind preset in <code>tokens/tailwind.preset.js</code>.</p>
+
+    <div class="grp-title">brand</div>
+    <div class="swatches" id="brand"></div>
+    <div class="grp-title">surfaces &amp; text</div>
+    <div class="swatches" id="surface"></div>
+    <div class="grp-title">status</div>
+    <div class="swatches" id="status"></div>
+  </section>
+
+  <!-- TYPE -->
+  <section>
+    <div class="sec-head"><span class="num">03</span><h2>typography</h2><span class="rule"></span></div>
+    <p class="lead">JetBrains Mono carries the identity — display, UI, and code. IBM Plex Sans is the optional body face for long-form. Numerals do the marketing.</p>
+    <div class="type">
+      <div class="row"><div class="role">Display — JetBrains Mono 800</div><div class="disp">getparsec — 2× context</div></div>
+      <div class="row"><div class="role">Body / UI — JetBrains Mono 400–500</div><div style="color:var(--muted);max-width:64ch">parsec extends your coding agent's usable context and trims token spend by about half — no config, no model swap. Install the plugin and keep shipping.</div></div>
+      <div class="row"><div class="role">Metrics — tabular figures</div><div class="metrics">2× · ÷2 · 1 pc · 3.26 ly</div></div>
+    </div>
+  </section>
+
+  <!-- COMPONENTS -->
+  <section>
+    <div class="sec-head"><span class="num">04</span><h2>app components</h2><span class="rule"></span></div>
+    <p class="lead">Baseline UI built straight from the tokens — buttons, inputs, status badges, progress. Everything monospace, dark-first, focus ring in phosphor.</p>
+    <div class="comp">
+      <div class="cluster">
+        <button class="btn">Install plugin</button>
+        <button class="btn ghost">Docs</button>
+        <button class="btn subtle">Settings</button>
+        <input class="input" placeholder="parsec optimize --project ." />
+      </div>
+      <div class="cluster">
+        <span class="badge ok">✓ optimized</span>
+        <span class="badge info">ℹ 2 parsecs</span>
+        <span class="badge warn">⚠ budget 80%</span>
+        <span class="badge err">✗ timeout</span>
+      </div>
+      <div class="cluster"><div class="track"><i></i></div><span style="color:var(--muted);font-size:12px">context 62%</span></div>
+    </div>
+  </section>
+
+  <!-- CLI -->
+  <section>
+    <div class="sec-head"><span class="num">05</span><h2>cli theming</h2><span class="rule"></span></div>
+    <p class="lead">Drop-in theme modules (<code>cli/cli-theme.js</code>, <code>cli/cli_theme.py</code>) plus ready color schemes for iTerm2, Windows Terminal, and VS Code in <code>cli/</code>. Below is the theme rendered.</p>
+    <div class="cli">
+      <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span style="margin-left:6px">parsec — zsh</span></div>
+<pre><span class="p">  ╲</span>
+<span class="p">   ╲</span>
+<span class="p">    <b>✦</b></span>  <b class="t">parsec</b>   <span class="m">2× context · ½ cost</span>
+<span class="p">   ╱</span>
+<span class="p">  ╱</span>
+
+<span class="p"><b>❯</b></span> parsec optimize --project .
+<span class="ok">✓</span> <span class="t">context doubled</span>  <span class="f">(cache warm, 2.1s)</span>
+<span class="i">ℹ</span> <span class="t">using 2 parsecs of context</span>  <span class="mag">·</span>  <span class="i">https://getparsec.ai/docs</span>
+<span class="w">⚠</span> <span class="t">token budget at 80%</span>
+<span class="e">✗</span> <span class="t">provider timeout — retrying</span>
+<span class="p">█████████████████</span><span class="f">───────</span> <span class="m">62%</span>
+<span class="p">⠸</span> <span class="m">optimizing context…</span></pre>
+    </div>
+    <div class="bar16" id="ansi"></div>
+    <div style="height:8px"></div>
+  </section>
+
+  <footer>
+    <span>parsec · brand &amp; build kit v1</span>
+    <span class="p" style="color:var(--phosphor)">&gt; ship it<span class="cursor" style="height:.9em"></span></span>
+  </footer>
+
+</div>
+
+<script>
+  const brand=[["phosphor","#4AF626","primary / accent"],["phosphor-hover","#64F846","hover"],
+    ["phosphor-press","#38C41B","active"],["mint","#7CFFB2","highlight"],
+    ["dim","#2E7D46","muted green"],["green-light","#2FA317","on light bg"]];
+  const surface=[["void","#0A0E0C","background"],["surface","#0F1512","cards"],
+    ["elevated","#131B17","hover / raised"],["overlay","#16201B","menus"],
+    ["border","#1D2A22","hairline"],["border-strong","#2E7D46","focus"],
+    ["text","#D7FBE4","foreground"],["text-muted","#8CA897","secondary"],["text-faint","#556D60","tertiary"]];
+  const status=[["success","#4AF626",""],["warning","#FFB84D",""],["error","#FF5C57",""],
+    ["info / link","#4AD0E0",""],["magenta","#FF5FD2","special"]];
+  function fill(id,arr){document.getElementById(id).innerHTML=arr.map(function(c){
+    return '<div class="sw"><div class="chip" style="background:'+c[1]+'"></div>'+
+      '<div class="meta"><div class="nm">'+c[0]+(c[2]?' <span style="color:var(--faint)">· '+c[2]+'</span>':'')+
+      '</div><div class="hex">'+c[1]+'</div></div></div>';}).join('');}
+  fill('brand',brand);fill('surface',surface);fill('status',status);
+
+  // 16-color ANSI grid
+  const ansi=[["#0A0E0C","0"],["#FF5C57","1"],["#4AF626","2"],["#FFB84D","3"],["#37AEE2","4"],["#FF5FD2","5"],["#4AD0E0","6"],["#C8D8CE","7"],
+    ["#3A4A40","8"],["#FF8079","9"],["#7CFFB2","10"],["#FFD08A","11"],["#6FD0F0","12"],["#FF93E2","13"],["#86E9F5","14"],["#EAFBF0","15"]];
+  document.getElementById('ansi').innerHTML=ansi.map(function(c){
+    return '<div class="c" style="background:'+c[0]+'"><span>'+c[1]+'</span></div>';}).join('');
+</script>
+</body>
+</html>

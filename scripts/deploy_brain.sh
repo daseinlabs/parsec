@@ -30,13 +30,17 @@ EMBED_MODEL="${EMBED_MODEL:-BAAI/bge-large-en-v1.5}"
 # bge on CPU — slower but no quota, the safe first deploy.
 GPU="${GPU:-false}"
 MIN_INSTANCES="${MIN_INSTANCES:-1}"
+# Must be <= the project's L4 quota on the GPU path: the quota check reads
+# maxScale, so leaving cloudbuild's default (10) fails a 3-GPU project with
+# "requested: 100/10". See docs/deploy-cloud-run.md "GPU deploy gotchas".
+MAX_INSTANCES="${MAX_INSTANCES:-3}"
 CONCURRENCY="${CONCURRENCY:-1}"
 CPU="${CPU:-4}"
 # bge-large (~1.3GB) resident on CPU wants headroom; GPU path pins 16Gi itself.
 MEMORY="${MEMORY:-8Gi}"
 TIMEOUT="${TIMEOUT:-300}"
 BRAIN_KEY_SECRET="${BRAIN_KEY_SECRET:-}"
-# Platform base URL for per-user dsn_ key validation (/keys/validate). Set it to
+# Platform base URL for per-user psc_ key validation (/keys/validate). Set it to
 # gate scoring on entitlement; empty keeps the static-key/open behavior.
 PLATFORM_URL="${PLATFORM_URL:-}"
 
@@ -76,4 +80,4 @@ fi
 exec gcloud builds submit packages/brain \
   --project "$PROJECT" \
   --config packages/brain/cloudbuild.yaml \
-  --substitutions="_REGION=$REGION,_REPO=$REPO,_SERVICE=$SERVICE,_CKPT_GCS=$CKPT_GCS,_EMBED_BACKEND=$EMBED_BACKEND,_EMBED_URL=$EMBED_URL,_EMBED_MODEL=$EMBED_MODEL,_GPU=$GPU,_CONCURRENCY=$CONCURRENCY,_MIN_INSTANCES=$MIN_INSTANCES,_CPU=$CPU,_MEMORY=$MEMORY,_TIMEOUT=$TIMEOUT,_BRAIN_KEY_SECRET=$BRAIN_KEY_SECRET,_PLATFORM_URL=$PLATFORM_URL"
+  --substitutions="_REGION=$REGION,_REPO=$REPO,_SERVICE=$SERVICE,_CKPT_GCS=$CKPT_GCS,_EMBED_BACKEND=$EMBED_BACKEND,_EMBED_URL=$EMBED_URL,_EMBED_MODEL=$EMBED_MODEL,_GPU=$GPU,_CONCURRENCY=$CONCURRENCY,_MIN_INSTANCES=$MIN_INSTANCES,_MAX_INSTANCES=$MAX_INSTANCES,_CPU=$CPU,_MEMORY=$MEMORY,_TIMEOUT=$TIMEOUT,_BRAIN_KEY_SECRET=$BRAIN_KEY_SECRET,_PLATFORM_URL=$PLATFORM_URL"

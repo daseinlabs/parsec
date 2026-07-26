@@ -17,9 +17,9 @@ use axum::routing::post;
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_proxy::brain::{self, BrainConfig, BrainContract};
-use dasein_proxy::server::{router, AppState};
-use dasein_proxy::splice::strip_cache_control;
+use parsec_proxy::brain::{self, BrainConfig, BrainContract};
+use parsec_proxy::server::{router, AppState};
+use parsec_proxy::splice::strip_cache_control;
 
 /// Grid tau the mock brain hands out (the real ckpt's 0.70-cov tau).
 const TAU_Q: i64 = 315_265;
@@ -172,7 +172,7 @@ async fn setup() -> Ctx {
     tokio::spawn(async move { axum::serve(bl, brain_router).await.unwrap() });
 
     let ledger = std::env::temp_dir().join(format!(
-        "dasein-brain-test-{}-{}.jsonl",
+        "parsec-brain-test-{}-{}.jsonl",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -370,7 +370,7 @@ async fn tool_keepset_frozen_once_per_conversation() {
     post_messages(&ctx, &b).await;
 
     // Equal mass, first name scored high, cut 0.70 of 4 ⇒ keep exactly Read
-    // full; the pruned three ride as name+note stubs (DASEIN_TOOL_STUB
+    // full; the pruned three ride as name+note stubs (PARSEC_TOOL_STUB
     // default) so the model knows they can be called back.
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     let fwd_tools = sent[0]["tools"].as_array().unwrap();

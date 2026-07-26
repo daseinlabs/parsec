@@ -1,0 +1,1 @@
+Error: no model source configured — set DASEIN_MODEL_BASE_URL to the directory URL hosting model.onnx + tokenizer.json (release builds bake one in)

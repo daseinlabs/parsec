@@ -4,7 +4,7 @@
 # → brain serves it again). No cloud, no deployments, no credits.
 #
 # Prereqs (one-time): the package venvs (brain/bench/platform/trainer — see
-# each README), the checkpoint at ~/.dasein/brain/curator_v4_prod.pt, cargo.
+# each README), the checkpoint at ~/.parsec/brain/curator_v4_prod.pt, cargo.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -38,12 +38,12 @@ step "e2e: cross-contract parity (v1)"  ./scripts/parity_v1.sh
 # ── the closed loop: identity trainer → promoted bundle → brain serves it ──
 loop_closure() {
   local out; out="$(mktemp -d)/bundles"
-  packages/trainer/.venv/bin/python -m dasein_trainer.retrain \
+  packages/trainer/.venv/bin/python -m parsec_trainer.retrain \
     --out "$out" --version battery || return 1
   # The §8.1 gate must hold VERBATIM on the promoted artifact (identity ⇒
   # same checkpoint_id, same 10.9:1 table).
-  DASEIN_CKPT="$out/battery/curator.pt" \
-  DASEIN_RULES_JSON="$out/battery/rules.json" ./scripts/golden_replay.sh
+  PARSEC_CKPT="$out/battery/curator.pt" \
+  PARSEC_RULES_JSON="$out/battery/rules.json" ./scripts/golden_replay.sh
 }
 step "loop: trainer promote → golden replay on promoted bundle" loop_closure
 

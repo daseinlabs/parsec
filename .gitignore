@@ -16,7 +16,7 @@ build/
 packages/plugin/bin/*/
 
 # local state
-.dasein/
+.parsec/
 *.onnx
 .env
 # local platform-stack env (.env.local.example is the tracked template)

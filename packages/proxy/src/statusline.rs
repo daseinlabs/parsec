@@ -1,4 +1,4 @@
-//! `dasein statusline` — reads the Claude Code statusline JSON on stdin and
+//! `parsec statusline` — reads the Claude Code statusline JSON on stdin and
 //! prints one line. Savings numbers come only from what the hook actually
 //! measured (blocked re-reads x on-disk bytes of the denied range) — never a
 //! modeled baseline (DIRECTION.md §8.4).
@@ -67,16 +67,47 @@ pub fn run() -> anyhow::Result<()> {
             format!("proxy {saved} tok (overhead)")
         });
     }
-    let mut dasein = if parts.is_empty() {
-        "⌁ dasein watching".to_string()
+    let mut parsec = if parts.is_empty() {
+        "⌁ parsec watching".to_string()
     } else {
-        format!("⌁ dasein {}", parts.join(" · "))
+        format!("⌁ parsec {}", parts.join(" · "))
     };
     if let Some(note) = setup_note() {
-        dasein.push_str(" · ");
-        dasein.push_str(&note);
+        parsec.push_str(" · ");
+        parsec.push_str(&note);
     }
-    println!("{model} · {dir} · {dasein}");
+    println!("{model} · {dir} · {parsec}");
+    Ok(())
+}
+
+/// `parsec subagent-statusline` — the per-subagent line in the agent panel.
+/// Claude Code pipes `{columns, tasks: [{id, label, tokenCount, …}], …}` on
+/// stdin and expects one JSON object per line back, `{"id", "content"}`,
+/// dropping any line it cannot parse (verified against CC 2.1.220). Polled
+/// every 5s with a 5s timeout, so this stays a pure format of the payload —
+/// no disk reads, no proxy calls.
+///
+/// `tokenCount` is the harness's own number for that subagent; we render it
+/// rather than any savings figure, because savings are measured per REQUEST
+/// on the proxy and are not attributable to a subagent (measurement honesty
+/// — DIRECTION.md §8.4).
+pub fn subagent_statusline() -> anyhow::Result<()> {
+    let mut input = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
+    let payload: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
+    let Some(tasks) = payload.get("tasks").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    for task in tasks {
+        let Some(id) = task.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let content = match task.get("tokenCount").and_then(Value::as_u64) {
+            Some(n) if n > 0 => format!("⌁ parsec · {} tok", fmt_tokens(n)),
+            _ => "⌁ parsec".to_string(),
+        };
+        println!("{}", serde_json::json!({"id": id, "content": content}));
+    }
     Ok(())
 }
 
@@ -86,7 +117,7 @@ pub fn run() -> anyhow::Result<()> {
 /// warning if the autostarted proxy ever dies mid-session. A routed session
 /// with a live proxy shows nothing extra: healthy is the quiet state.
 fn setup_note() -> Option<String> {
-    // Routed = this session's env points at a local dasein proxy. The
+    // Routed = this session's env points at a local parsec proxy. The
     // statusline inherits the session env, so this is authoritative.
     let routed_port = std::env::var("ANTHROPIC_BASE_URL")
         .ok()
@@ -102,8 +133,8 @@ fn setup_note() -> Option<String> {
         // A live port means the supervisor is up; a dead worker behind it is
         // invisible here (the supervisor answers and falls back to Anthropic),
         // which is correct — the session keeps working. Only a dead SUPERVISOR
-        // shows through, and that is the case `dasein up` fixes.
-        return (!up).then(|| format!("proxy DOWN (127.0.0.1:{port} — run `dasein up`)"));
+        // shows through, and that is the case `parsec up` fixes.
+        return (!up).then(|| format!("proxy DOWN (127.0.0.1:{port} — run `parsec up`)"));
     }
     let st = crate::setup::load_state()?;
     match st.phase.as_str() {
@@ -111,7 +142,7 @@ fn setup_note() -> Option<String> {
         // now just settings routing, which is effectively instant.
         "spawned" | "routing" => Some("setting up".to_string()),
         "ready" if st.env_written => Some("restart to activate curation".to_string()),
-        "failed" => Some("setup failed — run `dasein setup`".to_string()),
+        "failed" => Some("setup failed — run `parsec setup`".to_string()),
         _ => None,
     }
 }
@@ -121,28 +152,28 @@ fn setup_note() -> Option<String> {
 /// summed SIGNED over probed rows only. Null-probe rows are excluded and
 /// counted — never estimated. Mirrors packages/bench ledger math.
 #[derive(Default, Debug, PartialEq)]
-struct LedgerAgg {
-    rows: u64,
-    probed: u64,
-    null_probes: u64,
-    fail_open: u64,
-    scorer_fail_opens: u64,
-    counterfactual: i64,
-    billed_input_side: i64,
-    cache_read: i64,
-    cache_write: i64,
-    saved: i64,
-    freeze_cut: i64,
-    convs: std::collections::HashSet<String>,
+pub(crate) struct LedgerAgg {
+    pub(crate) rows: u64,
+    pub(crate) probed: u64,
+    pub(crate) null_probes: u64,
+    pub(crate) fail_open: u64,
+    pub(crate) scorer_fail_opens: u64,
+    pub(crate) counterfactual: i64,
+    pub(crate) billed_input_side: i64,
+    pub(crate) cache_read: i64,
+    pub(crate) cache_write: i64,
+    pub(crate) saved: i64,
+    pub(crate) freeze_cut: i64,
+    pub(crate) convs: std::collections::HashSet<String>,
     /// Distinct client sessions (rows carrying the optional session_id) —
     /// one session spans the several conv_ids compaction/subagents mint.
-    sessions: std::collections::HashSet<String>,
+    pub(crate) sessions: std::collections::HashSet<String>,
     /// model id -> (probed requests, counterfactual, saved) — token-
     /// denominated per model; dollarize with packages/bench pricing.
-    by_model: std::collections::BTreeMap<String, (u64, i64, i64)>,
+    pub(crate) by_model: std::collections::BTreeMap<String, (u64, i64, i64)>,
 }
 
-fn aggregate_ledger(lines: &str) -> LedgerAgg {
+pub(crate) fn aggregate_ledger(lines: &str) -> LedgerAgg {
     let mut a = LedgerAgg::default();
     for line in lines.lines() {
         let Ok(row) = serde_json::from_str::<Value>(line.trim()) else {
@@ -232,14 +263,14 @@ fn session_saved_from_lines(lines: &str, session_id: &str) -> Option<i64> {
 
 fn ledger_file() -> std::path::PathBuf {
     crate::setup::home_dir()
-        .join(".dasein")
+        .join(".parsec")
         .join("ledger.jsonl")
 }
 
 /// One-line lifetime roll-up for the SessionStart notice (the doc's one-time
 /// awareness message: docs/plugin-user-messaging.md Part 1 §3). None when
 /// nothing has been measured yet — a fresh install stays quiet. The numbers
-/// are the same aggregates `dasein savings` prints: the proxy figure is the
+/// are the same aggregates `parsec savings` prints: the proxy figure is the
 /// §8.4 counterfactual sum (signed, never clamped), the hook figure keeps
 /// its "~" because it is the on-disk-bytes approximation.
 pub fn lifetime_note() -> Option<String> {
@@ -285,13 +316,13 @@ fn lifetime_note_from(
     }
     (!parts.is_empty()).then(|| {
         format!(
-            "⌁ dasein active — lifetime: {}. /dasein:savings for details.",
+            "⌁ parsec active — lifetime: {}. /parsec:savings for details.",
             parts.join(" · ")
         )
     })
 }
 
-/// `dasein savings` — the measured roll-up for the /dasein-savings skill:
+/// `parsec savings` — the measured roll-up for the /parsec:savings skill:
 /// the proxy's savings ledger (§8.4 counterfactual vs billed) plus the
 /// free-tier hook counters. Nothing here is ever estimated.
 pub fn savings_report() -> anyhow::Result<()> {
@@ -406,7 +437,7 @@ pub fn savings_report() -> anyhow::Result<()> {
     }
 
     if !printed {
-        println!("No dasein activity recorded yet — no ledger rows and no hook sessions.");
+        println!("No parsec activity recorded yet — no ledger rows and no hook sessions.");
     }
     Ok(())
 }
@@ -475,7 +506,7 @@ mod tests {
         assert!(note.contains("proxy ~1300 tok saved"), "{note}");
         assert!(note.contains("3 re-read(s) blocked (~12.0k tok)"), "{note}");
         assert!(note.contains("1 loop(s) broken"), "{note}");
-        assert!(note.contains("/dasein:savings"), "{note}");
+        assert!(note.contains("/parsec:savings"), "{note}");
         // A net-negative proxy shows signed overhead, never clamped (§8.4).
         let neg = lifetime_note_from(
             Some(r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":100,"billed_input_tokens":150,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#),

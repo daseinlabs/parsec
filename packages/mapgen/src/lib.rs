@@ -1,6 +1,6 @@
-//! dasein-mapgen — the DETERMINISTIC core of codescout
+//! parsec-mapgen — the DETERMINISTIC core of codescout
 //! (`adaptive-context-clean/bench/codescout.py` + `mapgen/map_one.py`),
-//! exposed as MCP tools for the `dasein:explore` agent (free tier,
+//! exposed as MCP tools for the `parsec:explore` agent (free tier,
 //! DIRECTION.md §3/§4.1).
 //!
 //! The reference pipeline was AST-grounding + paid LLM stages (scope →

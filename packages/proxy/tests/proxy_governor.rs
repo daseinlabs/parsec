@@ -26,13 +26,13 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_proxy::brain::{BrainConfig, BrainContract};
-use dasein_proxy::governor::{
+use parsec_proxy::brain::{BrainConfig, BrainContract};
+use parsec_proxy::governor::{
     self, action_of, budget_features, edited_src_files, is_test_path, loop_feats,
     loop_fracs_default, struct_edited_src, GovMode, GovernorConfig,
 };
-use dasein_proxy::server::{router, AppState};
-use dasein_proxy::splice::strip_cache_control;
+use parsec_proxy::server::{router, AppState};
+use parsec_proxy::splice::strip_cache_control;
 
 // ═══════════════════════════ 1. reference parity ═══════════════════════════
 
@@ -412,7 +412,7 @@ async fn setup_with(gov: GovernorConfig, serve_rules_route: bool, contract: Brai
     tokio::spawn(async move { axum::serve(bl, brain_router).await.unwrap() });
 
     let ledger = std::env::temp_dir().join(format!(
-        "dasein-governor-test-{}-{}.jsonl",
+        "parsec-governor-test-{}-{}.jsonl",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));

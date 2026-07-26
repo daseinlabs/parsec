@@ -1,5 +1,5 @@
 """Replay mode end-to-end: the 2-turn synthetic fixture through a REAL arm
-proxy (the dasein binary, passthrough mode — no brain needed) + the mock
+proxy (the parsec binary, passthrough mode — no brain needed) + the mock
 upstream. This is the machinery smoke: proxy spawn, 1:1 forwarding, ledger
 rows, and the counterfactual-vs-served math on one consistent chars/4 scale.
 """
@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from dasein_bench.replay import ReplayReport, main as replay_main, replay
+from parsec_bench.replay import ReplayReport, main as replay_main, replay
 
 pytestmark = pytest.mark.filterwarnings("ignore::ResourceWarning")
 

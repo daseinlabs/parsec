@@ -17,4 +17,4 @@ COPY --from=build /venv /venv
 ENV PATH="/venv/bin:$PATH"
 # Cloud Run injects PORT; default matches local runs.
 ENV PORT=8080
-CMD ["sh", "-c", "uvicorn --factory dasein_platform:create_app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn --factory parsec_platform:create_app --host 0.0.0.0 --port ${PORT}"]

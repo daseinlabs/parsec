@@ -1,5 +1,5 @@
 [project]
-name = "dasein-brain"
+name = "parsec-brain"
 version = "0.1.0"
 description = "Hosted scoring API: GNN inference, self-validating checkpoint bundles, tau calibration. Private."
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ dependencies = [
     # symbol-graph centrality (readout cols 37-41); absent it degrades to zeros = score drift
     "tree-sitter-language-pack",
     # fallback python grammar for envs where the language pack's prebuilt dylib cannot load
-    # (vendored symbol_graph DASEIN-PATCH); the same grammar version the engine port pins
+    # (vendored symbol_graph PARSEC-PATCH); the same grammar version the engine port pins
     "tree-sitter-python==0.23.6",
 ]
 
@@ -25,7 +25,7 @@ test = [
     "httpx",
     "jsonschema",   # brain-api/v1 schema + example validation (test_v1.py)
 ]
-# In-process bge-large-en-v1.5 embedder (DASEIN_EMBED_BACKEND=local): collapses
+# In-process bge-large-en-v1.5 embedder (PARSEC_EMBED_BACKEND=local): collapses
 # the dasein-embed HTTP hop so the brain is a single proxy->brain->proxy round
 # trip. The Cloud Run deploy target. torch is already a core dep; this adds the
 # encoder + weight loader. Omit for the 'dasein'/'hash' backends.
@@ -39,4 +39,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dasein_brain"]
+packages = ["src/parsec_brain"]

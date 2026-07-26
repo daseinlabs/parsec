@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dasein_bench.pricing import (
+from parsec_bench.pricing import (
     DEFAULT_RATES,
     PRICE_TABLE,
     cache_frame_cost,

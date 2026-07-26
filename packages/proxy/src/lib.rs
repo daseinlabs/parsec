@@ -1,4 +1,4 @@
-//! dasein-proxy — Anthropic-wire /v1/messages proxy.
+//! parsec-proxy — Anthropic-wire /v1/messages proxy.
 //!
 //! Ported from `adaptive-context-clean/service`, absorbing the old gateway's
 //! upstream bridge as provider adapters (anthropic-passthrough | vertex | byok).
@@ -15,6 +15,7 @@
 pub mod adjudicator;
 pub mod apikey;
 pub mod brain;
+pub mod brand;
 pub mod credentials;
 pub mod featurize;
 pub mod governor;
@@ -22,6 +23,7 @@ pub mod hook;
 pub mod internal;
 pub mod ledger_ship;
 pub mod measure;
+pub mod migrate;
 pub mod noreread;
 pub mod providers;
 pub mod server;

@@ -153,7 +153,7 @@ the freeze.rs module doc):
 - Client-edit cascade: an edit at turn k changes prefixes for all j >= k;
   decisions recompute against the new prefix (correct), but the provider
   cache for the tail is lost regardless (same as reference).
-- Proxy glue: wiring Freezer + splice::apply_curation into `dasein proxy`,
+- Proxy glue: wiring Freezer + splice::apply_curation into `parsec proxy`,
   with the FoldMap as a pure memo and the (index, fingerprint) key kept for
   client-edit detection; breakpoint placement (place_cache_breakpoint port)
   and its `last_msg_fps` — note the reference writes fps before the upstream

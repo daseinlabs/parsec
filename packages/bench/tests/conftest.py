@@ -1,4 +1,4 @@
-"""Shared test helpers for dasein-bench."""
+"""Shared test helpers for parsec-bench."""
 
 from __future__ import annotations
 

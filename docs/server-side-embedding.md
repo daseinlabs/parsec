@@ -101,7 +101,7 @@ ids, and the `checkpoint_id` guard.
 - **Loses:** nothing.
 
 Brain-side this is a small insertion: embed the three text fields, then feed the **existing**
-`v1graph` path that already consumes vectors at `packages/brain/src/dasein_brain/v1graph.py:78-80`.
+`v1graph` path that already consumes vectors at `packages/brain/src/parsec_brain/v1graph.py:78-80`.
 Featurization, graph build, and readout are untouched.
 
 ### Feature parity is already done
@@ -117,15 +117,15 @@ So "full feature parity" is not a build item. The new contract inherits it.
 ## 5. The embedder: onnxruntime-gpu, not sentence-transformers
 
 The swap point is clean. `TraceScorer.__init__` builds `EmbeddingClient(cfg, backend)` from
-`DASEIN_EMBED_BACKEND` (`scorer.py:158-160`), and everything funnels through one method,
+`PARSEC_EMBED_BACKEND` (`scorer.py:158-160`), and everything funnels through one method,
 `_embed()` (`scorer.py:178-186`). Add a backend branch at
-`packages/brain/src/dasein_brain/vendored/embedding.py:54-62`, lazy-imported (mirroring how the
-`dasein` branch does it at `:56`), preserving the
+`packages/brain/src/parsec_brain/vendored/embedding.py:54-62`, lazy-imported (mirroring how the
+`parsec` branch does it at `:56`), preserving the
 `embed(texts, as_query=False) -> list[list[float]]` contract. No call-site changes.
 
 **DECIDED 2026-07-21 — implemented with `transformers`, not ORT** (reversing the
 recommendation below). `vendored/local_embed.py` loads bge-large via
-`transformers.AutoModel` in-process (`DASEIN_EMBED_BACKEND=local`). The ORT
+`transformers.AutoModel` in-process (`PARSEC_EMBED_BACKEND=local`). The ORT
 concern — that adding transformers pressures the `torch>=2.2,<2.3` pin and
 drifts the curator — did **not** materialize: `transformers>=4.40,<5` resolves
 against the existing torch 2.2.2 with no upgrade, and all golden/parity tests
@@ -133,7 +133,7 @@ pass unchanged. Chosen because the cluster embedder *is* a SentenceTransformer
 of the same model, so transformers-with-the-same-model matches by construction,
 and it avoids reimplementing tokenize+pool+normalize around an ONNX session.
 Cost accepted: `transformers` in the image, and the `parity_gate.py`/ONNX export
-below are not on this path (a one-off cosine check vs the `dasein` endpoint
+below are not on this path (a one-off cosine check vs the `parsec` endpoint
 still gates prod — see `docs/deploy-cloud-run.md`).
 
 <details><summary>Superseded recommendation (ORT)</summary>
@@ -257,16 +257,16 @@ costs sticky routing and restart-safety, and breaks the round-robin property in 
 2. **In-process embedder** — §5. Backend branch, text-prep reimplementation, parity gate arm.
 3. **Interlocks** — the current ones actively prevent shipping this and must be reworked
    deliberately:
-   - `DASEIN_BRAIN_DEV_RAW=1` required or the brain stays off (`brain.rs:130-140`)
+   - `PARSEC_BRAIN_DEV_RAW=1` required or the brain stays off (`brain.rs:130-140`)
    - a baked release URL forces v1, so a shipped binary can never speak raw text
      (`brain.rs:113`)
    - the startup log announcing an *"our-machines-only posture"* (`server.rs:274-278`)
-   - make an unknown `DASEIN_EMBED_BACKEND` **fatal** — it currently falls through to `hash`
+   - make an unknown `PARSEC_EMBED_BACKEND` **fatal** — it currently falls through to `hash`
      (`embedding.py:61`), which serves confident garbage. The proxy already guards against this
      (`brain.rs:149-167`); the brain does not.
 4. **Throttling + keys** — deploy `packages/platform`, have the brain call `/keys/validate`,
    add per-key quota + 429/`Retry-After`, and proxy-side backoff. Independently urgent: the
-   live brain is **open by default** if `DASEIN_BRAIN_KEY` is unset (`app.py:211-220`), and it
+   live brain is **open by default** if `PARSEC_BRAIN_KEY` is unset (`app.py:211-220`), and it
    is baked into every released binary (`.github/workflows/release.yml:79`).
 5. **nginx** — N single-threaded brain processes, round-robin, no stickiness.
 6. **CI** — `scripts/parity_v1.sh` and `scripts/golden_replay.sh` are local-only today, and the

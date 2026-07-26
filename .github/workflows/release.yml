@@ -1,6 +1,6 @@
 name: release
 
-# Builds the per-platform `dasein` binaries and publishes the assembled plugin
+# Builds the per-platform `parsec` binaries and publishes the assembled plugin
 # to the public marketplace repo daseinlabs/claude-plugins (DIRECTION.md §7b:
 # distribution is git-clone with no build step, so binaries ship prebuilt).
 # Publishes on every push to main (dev version stamped from git describe) and
@@ -34,42 +34,42 @@ jobs:
           - os: ubuntu-latest   # x64
             platform: linux-x64
           - os: windows-latest  # x64
-            platform: win-x64   # matches bin/dasein.cmd dispatch
+            platform: win-x64   # matches bin/parsec.cmd dispatch
             ext: .exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # DASEIN_DEFAULT_BRAIN_URL is baked into the binary at compile time
+      # PARSEC_DEFAULT_BRAIN_URL is baked into the binary at compile time
       # (brain.rs BAKED_BRAIN_URL): released plugins reach the production
-      # brain with zero user configuration. Runtime DASEIN_BRAIN_URL still
+      # brain with zero user configuration. Runtime PARSEC_BRAIN_URL still
       # overrides; dev/CI builds (no env here) bake nothing. The baked
       # default implies the v2 contract (chunk text to the brain, which
       # embeds) — see BrainConfig::from_env.
       #
       # No model ships with the client since 2026-07-20: the embedder moved
       # server-side (docs/server-side-embedding.md), so the `onnx` feature,
-      # the DASEIN_DEFAULT_MODEL_* repo variables, and first-run model
+      # the PARSEC_DEFAULT_MODEL_* repo variables, and first-run model
       # download are all gone. Install → first session → curation on, with
       # no 1.3GB download in the middle.
-      # DASEIN_DEFAULT_PLATFORM_URL is baked the same way (ledger_ship.rs
+      # PARSEC_DEFAULT_PLATFORM_URL is baked the same way (ledger_ship.rs
       # BAKED_PLATFORM_URL): released binaries know where to POST savings-ledger
-      # rows. Shipping still requires a per-user DASEIN_API_KEY at runtime (the
-      # dsn_ key the user mints in the dashboard), so no rows leave without it.
-      - run: cargo build --release -p dasein-proxy
+      # rows. Shipping still requires a per-user PARSEC_API_KEY at runtime (the
+      # psc_ key the user mints in the dashboard), so no rows leave without it.
+      - run: cargo build --release -p parsec-proxy
         env:
-          DASEIN_DEFAULT_BRAIN_URL: https://dasein-brain-939340394421.us-central1.run.app
-          DASEIN_DEFAULT_PLATFORM_URL: ${{ vars.DASEIN_DEFAULT_PLATFORM_URL }}
+          PARSEC_DEFAULT_BRAIN_URL: ${{ vars.PARSEC_DEFAULT_BRAIN_URL }}
+          PARSEC_DEFAULT_PLATFORM_URL: ${{ vars.PARSEC_DEFAULT_PLATFORM_URL }}
       # Launch smoke: a binary that builds but can't start must fail HERE,
       # not on a user's machine after install.
-      - run: ./target/release/dasein${{ matrix.ext }} --version
+      - run: ./target/release/parsec${{ matrix.ext }} --version
       # NOTE (2026-07-20): this bundling existed because ort's /MD prebuilts
       # forced the dynamic CRT. ort is gone, so the C++ runtime (msvcp140) is
       # very likely no longer imported — but that is UNVERIFIED on a clean
       # Windows box, and the failure mode if we are wrong is silent
       # (0xC0000135, no stderr, undiagnosable from a hook error). Kept until
       # a win-x64 release is dumpbin-checked; ~750 KB is cheap insurance.
-      # dasein.exe imports msvcp140/vcruntime140 — VC++ redistributable DLLs
+      # parsec.exe imports msvcp140/vcruntime140 — VC++ redistributable DLLs
       # that are present on this runner (VS is installed) but absent on clean
       # user machines, where the loader kills the process before main()
       # (0xC0000135, no stderr, undiagnosable from a hook error). App-local
@@ -93,9 +93,9 @@ jobs:
           Get-ChildItem target/release/*.dll
       - uses: actions/upload-artifact@v4
         with:
-          name: dasein-${{ matrix.platform }}
+          name: parsec-${{ matrix.platform }}
           path: |
-            target/release/dasein${{ matrix.ext }}
+            target/release/parsec${{ matrix.ext }}
             target/release/msvcp140*.dll
             target/release/vcruntime140*.dll
           if-no-files-found: error
@@ -119,24 +119,24 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist && mkdir -p dist
-          cp -R packages/plugin dist/dasein
+          cp -R packages/plugin dist/parsec
           # Platform dirs are gitignored (absent in CI checkouts); clear any
           # stragglers before installing fresh builds.
-          rm -rf dist/dasein/bin/darwin-arm64
+          rm -rf dist/parsec/bin/darwin-arm64
           for p in darwin-arm64 linux-x64; do
-            install -D -m 755 "artifacts/dasein-$p/dasein" "dist/dasein/bin/$p/dasein"
+            install -D -m 755 "artifacts/parsec-$p/parsec" "dist/parsec/bin/$p/parsec"
           done
-          install -D -m 644 "artifacts/dasein-win-x64/dasein.exe" "dist/dasein/bin/win-x64/dasein.exe"
+          install -D -m 644 "artifacts/parsec-win-x64/parsec.exe" "dist/parsec/bin/win-x64/parsec.exe"
           # App-local VC++ CRT (see the build job's bundle step): the loader
           # only searches next to the exe, so these must sit in win-x64/.
-          install -m 644 artifacts/dasein-win-x64/*.dll "dist/dasein/bin/win-x64/"
-          chmod 755 dist/dasein/bin/dasein   # upload-artifact drops exec bits
-          (cd dist && zip -r dasein-plugin.zip dasein)
-          echo 'Unzip, then: `claude --plugin-dir ./dasein`' >> "$GITHUB_STEP_SUMMARY"
+          install -m 644 artifacts/parsec-win-x64/*.dll "dist/parsec/bin/win-x64/"
+          chmod 755 dist/parsec/bin/parsec   # upload-artifact drops exec bits
+          (cd dist && zip -r parsec-plugin.zip parsec)
+          echo 'Unzip, then: `claude --plugin-dir ./parsec`' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: dasein-plugin
-          path: dist/dasein-plugin.zip
+          name: parsec-plugin
+          path: dist/parsec-plugin.zip
           if-no-files-found: error
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -144,10 +144,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
-          gh release upload "$GITHUB_REF_NAME" dist/dasein-plugin.zip --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/parsec-plugin.zip --clobber
       # Publish the marketplace repo users actually install from:
       #   claude plugin marketplace add https://github.com/daseinlabs/claude-plugins
-      #   claude plugin install dasein@dasein-marketplace
+      #   claude plugin install parsec@parsec-marketplace
       - name: Publish to daseinlabs/claude-plugins
         # Tag pushes and main pushes publish; workflow_dispatch stays a dry
         # run of the build matrix.
@@ -167,17 +167,17 @@ jobs:
           fi
           rm -rf publish && mkdir -p publish/plugins
           cp -R packages/marketplace/. publish/
-          cp -R dist/dasein publish/plugins/dasein
+          cp -R dist/parsec publish/plugins/parsec
           # plugin.json `version` is the update channel — stamp it from the tag.
           jq --arg v "$VERSION" '.version = $v' \
-            publish/plugins/dasein/.claude-plugin/plugin.json > plugin.json.tmp
-          mv plugin.json.tmp publish/plugins/dasein/.claude-plugin/plugin.json
+            publish/plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
+          mv plugin.json.tmp publish/plugins/parsec/.claude-plugin/plugin.json
           cd publish
           git init -b main
           git config user.name "dasein-release"
           git config user.email "release@dasein.rocks"
           git add -A
-          git commit -m "dasein v$VERSION"
+          git commit -m "parsec v$VERSION"
           git push --force \
             "https://x-access-token:${PUBLISH_TOKEN}@github.com/daseinlabs/claude-plugins.git" \
             main

@@ -16,6 +16,6 @@ export async function GET(request: NextRequest) {
   // Same-origin relative paths only — "//evil.com" and absolute URLs would
   // turn this into an open redirect.
   const next = params.get("next");
-  const dest = next && /^\/(?!\/)/.test(next) ? next : "/dashboard";
+  const dest = next && /^\/(?!\/)/.test(next) ? next : "/";
   return NextResponse.redirect(`${publicOrigin(request)}${dest}`);
 }

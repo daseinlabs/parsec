@@ -1,6 +1,6 @@
 # Routing and proxy liveness
 
-How Claude gets pointed at the dasein proxy, what the alternatives are, and
+How Claude gets pointed at the parsec proxy, what the alternatives are, and
 what to do when the proxy isn't there. Two topics because they are one
 problem: the routing mechanism we use is fixed at session launch, so it
 cannot route around a dead proxy — liveness is the routing story's other
@@ -44,7 +44,7 @@ Every documented way to put something between Claude and the model API.
 
 ## 2. What we do today, and what it costs
 
-`dasein setup` merges `ANTHROPIC_BASE_URL` into the `env` block of the
+`parsec setup` merges `ANTHROPIC_BASE_URL` into the `env` block of the
 user's `settings.json`, additively: a key the user already set is never
 overwritten, and a foreign base URL is refused rather than clobbered
 (`setup.rs:678`, `setup.rs:701`).
@@ -67,7 +67,7 @@ Worth surfacing to users rather than letting them discover it as a bug.
 `ANTHROPIC_BASE_URL` is read at Claude Code launch. Nothing in the product
 lets a running session be repointed at a different endpoint, and nothing
 falls back. Recovery therefore means *putting a listener back on the same
-port* — which is what `dasein up` does (`setup.rs:308`) and why §4 is framed
+port* — which is what `parsec up` does (`setup.rs:308`) and why §4 is framed
 the way it is.
 
 ### 2.3 Open question — settle before relying on §2.2
@@ -75,7 +75,7 @@ the way it is.
 There is a direct conflict here that we have not resolved empirically:
 
 - `setup.rs:305` asserts the routing env "is read at Claude Code launch and
-  cannot change." The whole `dasein up` design rests on this.
+  cannot change." The whole `parsec up` design rests on this.
 - A docs review claims the `settings.json` `env` block is watched and
   reloaded per session turn, which would make the base URL hot-swappable.
 
@@ -124,14 +124,14 @@ separable failure classes.
 Causes, most to least common:
 
 1. **Our own idle timer.** `spawn_proxy_detached` sets
-   `DASEIN_PROXY_IDLE_EXIT_S=1800` on autostart (`setup.rs:864`), and the
+   `PARSEC_PROXY_IDLE_EXIT_S=1800` on autostart (`setup.rs:864`), and the
    sweep calls `process::exit(0)` (`server.rs:374`). The usual "proxy died
    mid-conversation" is not a crash — it is a user returning after 30 idle
    minutes to a dead port. In-flight requests hold the timer off
    (`server.rs:195`), so agentic loops are safe; walking away is not.
 2. Crash, OOM kill, machine sleep/reboot, binary replaced by an upgrade.
 
-`SessionStart` revives the proxy, but only at session start. `dasein up` is
+`SessionStart` revives the proxy, but only at session start. `parsec up` is
 the manual twin. Nothing covers mid-session.
 
 ### 4.2 The process is alive but the engine is broken
@@ -151,7 +151,7 @@ process level and not only per step.
 *before* the turn's API request goes out, so a liveness check there closes
 the exact mid-session gap. Both halves already exist — `port_listening`
 (`hook.rs:369`) and `up()` (`setup.rs:308`) — and the event is not currently
-registered in `packages/plugin/hooks/dasein-hooks.json`. Zero install footprint;
+registered in `packages/plugin/hooks/parsec-hooks.json`. Zero install footprint;
 turns "dead port" into "one slow turn."
 
 Caveats: cold start includes the ONNX model load, so the revived turn may

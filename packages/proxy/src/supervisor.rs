@@ -1,4 +1,4 @@
-//! `dasein proxy` — the SUPERVISOR that owns the routed port.
+//! `parsec proxy` — the SUPERVISOR that owns the routed port.
 //!
 //! DIRECTION.md §4 puts the data plane on the user's machine; this process is
 //! what makes that plane *survivable*. Claude Code routes `ANTHROPIC_BASE_URL`
@@ -6,7 +6,7 @@
 //! The supervisor is deliberately DUMB — pure transport, no curation — so it
 //! (nearly) cannot crash, and it holds the socket for its whole life:
 //!
-//! - It spawns the curating **worker** (`dasein proxy-worker`) on an ephemeral
+//! - It spawns the curating **worker** (`parsec proxy-worker`) on an ephemeral
 //!   loopback port and **restarts** it whenever it exits or wedges (bugs:
 //!   "proxy crashed mid-session", "proxy didn't auto restart").
 //! - While the worker is down/unhealthy it forwards requests **straight to
@@ -14,7 +14,7 @@
 //!   degrades to a plain passthrough instead of a wedged session ("fall back
 //!   to regular Anthropic URLs when the proxy is down").
 //! - There is no idle self-shutdown: the port stays alive until `/shutdown`
-//!   (or the machine reboots). The SessionStart hook / `dasein up` revive the
+//!   (or the machine reboots). The SessionStart hook / `parsec up` revive the
 //!   supervisor if it ever dies.
 //!
 //! Why a second process rather than one resilient server: only a separate
@@ -36,7 +36,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
-use crate::setup::{dasein_home, default_port};
+use crate::setup::{default_port, parsec_home};
 
 /// Request bodies are whole conversations — a few MB in practice. Cap high
 /// enough never to reject a real Claude Code turn, low enough to bound a
@@ -47,7 +47,7 @@ const MAX_BODY: usize = 256 * 1024 * 1024;
 /// if it goes stale — the portable orphan guard (no `PR_SET_PDEATHSIG` on
 /// Windows/macOS; a heartbeat file behaves identically on every platform).
 pub fn heartbeat_path() -> PathBuf {
-    dasein_home().join("supervisor.heartbeat")
+    parsec_home().join("supervisor.heartbeat")
 }
 
 fn epoch_s() -> u64 {
@@ -88,10 +88,10 @@ impl SupState {
         }
     }
 
-    /// GET /health on `port` and confirm the responder is a dasein proxy (ours
+    /// GET /health on `port` and confirm the responder is a parsec proxy (ours
     /// or the worker's) — the identity check that distinguishes a live worker
     /// from a foreign squatter reusing the port.
-    async fn health_is_dasein(&self, port: u16) -> bool {
+    async fn health_is_parsec(&self, port: u16) -> bool {
         match self
             .client
             .get(format!("http://127.0.0.1:{port}/health"))
@@ -102,7 +102,7 @@ impl SupState {
             Ok(r) if r.status().is_success() => r
                 .text()
                 .await
-                .map(|t| t.contains("dasein-proxy"))
+                .map(|t| t.contains("parsec-proxy"))
                 .unwrap_or(false),
             _ => false,
         }
@@ -129,7 +129,7 @@ impl SupState {
     async fn spawn_worker(&self) -> anyhow::Result<u16> {
         let port = pick_free_port()?;
         let exe = std::env::current_exe()?;
-        let log_dir = dasein_home();
+        let log_dir = parsec_home();
         std::fs::create_dir_all(&log_dir)?;
         let log = std::fs::OpenOptions::new()
             .create(true)
@@ -137,8 +137,8 @@ impl SupState {
             .open(log_dir.join("proxy.log"))?;
         let mut cmd = std::process::Command::new(exe);
         cmd.arg("proxy-worker")
-            .env("DASEIN_PROXY_PORT", port.to_string())
-            .env("DASEIN_SUPERVISOR_HEARTBEAT", &self.heartbeat)
+            .env("PARSEC_PROXY_PORT", port.to_string())
+            .env("PARSEC_SUPERVISOR_HEARTBEAT", &self.heartbeat)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::from(log.try_clone()?))
             .stderr(std::process::Stdio::from(log));
@@ -149,7 +149,7 @@ impl SupState {
         // its ephemeral port got stolen in the bind race — the caller retries
         // with a new port).
         for _ in 0..50 {
-            if self.health_is_dasein(port).await {
+            if self.health_is_parsec(port).await {
                 return Ok(port);
             }
             if let Some(ch) = lock(&self.child).as_mut() {
@@ -169,7 +169,7 @@ impl SupState {
         tracing::info!(
             reason,
             fallbacks = self.fallbacks.load(Ordering::Relaxed),
-            "dasein supervisor shutting down (worker stopped)"
+            "parsec supervisor shutting down (worker stopped)"
         );
     }
 }
@@ -182,10 +182,10 @@ fn pick_free_port() -> anyhow::Result<u16> {
     Ok(l.local_addr()?.port())
 }
 
-/// `dasein proxy` entrypoint. Bind the routed port and run forever.
+/// `parsec proxy` entrypoint. Bind the routed port and run forever.
 pub fn run() -> anyhow::Result<()> {
     let port = default_port();
-    let upstream = std::env::var("DASEIN_UPSTREAM")
+    let upstream = std::env::var("PARSEC_UPSTREAM")
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
     let state = Arc::new(SupState::new(upstream));
 
@@ -194,25 +194,25 @@ pub fn run() -> anyhow::Result<()> {
         let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
             Ok(l) => l,
             Err(e) => {
-                // Idempotent double-start: if a dasein supervisor already owns
+                // Idempotent double-start: if a parsec supervisor already owns
                 // the port, this spawn is a no-op success (the SessionStart
-                // hook and `dasein up` both fire spawns that may race).
-                if state.health_is_dasein(port).await {
-                    tracing::info!("a dasein proxy already owns 127.0.0.1:{port} — nothing to do");
+                // hook and `parsec up` both fire spawns that may race).
+                if state.health_is_parsec(port).await {
+                    tracing::info!("a parsec proxy already owns 127.0.0.1:{port} — nothing to do");
                     return Ok(());
                 }
                 // Foreign squatter on the routed port. We cannot move — Claude
-                // Code is already pointed here — so fail loudly; `dasein setup`
+                // Code is already pointed here — so fail loudly; `parsec setup`
                 // is what re-routes to a free port for the next session.
                 anyhow::bail!(
-                    "cannot bind 127.0.0.1:{port}: {e} — a non-dasein process holds the routed \
-                     port, so curation is off until it frees. Run `dasein setup` to re-route to \
+                    "cannot bind 127.0.0.1:{port}: {e} — a non-parsec process holds the routed \
+                     port, so curation is off until it frees. Run `parsec setup` to re-route to \
                      a free port (takes effect on the next Claude Code launch)."
                 );
             }
         };
         tracing::info!(
-            "dasein supervisor listening on 127.0.0.1:{port} — owns the routed port; \
+            "parsec supervisor listening on 127.0.0.1:{port} — owns the routed port; \
              worker curates, fallback is direct-to-Anthropic"
         );
         tokio::spawn(monitor(state.clone()));
@@ -278,7 +278,7 @@ async fn monitor(st: Arc<SupState>) {
         } else {
             // Liveness probe on the running worker.
             let port = st.worker_port.load(Ordering::Relaxed);
-            if port != 0 && !st.health_is_dasein(port).await {
+            if port != 0 && !st.health_is_parsec(port).await {
                 health_fails += 1;
                 tracing::warn!(health_fails, "worker health probe failed");
                 if health_fails >= 2 {
@@ -299,20 +299,20 @@ async fn monitor(st: Arc<SupState>) {
 pub fn router(state: Arc<SupState>) -> Router {
     Router::new()
         // Identity + liveness of the SUPERVISOR (answered locally). `service`
-        // carries "dasein-proxy" so `dasein uninstall`'s stop probe and the
+        // carries "parsec-proxy" so `parsec uninstall`'s stop probe and the
         // hook's identity check recognize us.
         .route(
             "/health",
             get(|| async {
                 Json(json!({
                     "ok": true,
-                    "service": "dasein-proxy",
+                    "service": "parsec-proxy",
                     "role": "supervisor",
                     "version": env!("CARGO_PKG_VERSION"),
                 }))
             }),
         )
-        // Localhost kill-switch (dasein uninstall): stop the worker, then the
+        // Localhost kill-switch (parsec uninstall): stop the worker, then the
         // supervisor. Reply first, exit off the response path so the 200
         // flushes.
         .route("/shutdown", post(shutdown_handler))
@@ -330,7 +330,7 @@ async fn shutdown_handler(State(st): State<Arc<SupState>>) -> Response {
     });
     Json(json!({
         "ok": true,
-        "service": "dasein-proxy",
+        "service": "parsec-proxy",
         "role": "supervisor",
         "shutting_down": true,
     }))
@@ -414,7 +414,7 @@ fn bad_gateway(e: &reqwest::Error) -> Response {
     tracing::warn!("upstream unreachable: {e}");
     (
         StatusCode::BAD_GATEWAY,
-        format!("dasein proxy: upstream unreachable: {e}"),
+        format!("parsec proxy: upstream unreachable: {e}"),
     )
         .into_response()
 }
@@ -431,9 +431,9 @@ fn heartbeat_fresh(raw: Option<String>, now: u64, max_stale_s: u64) -> bool {
 /// supervisor, watch its heartbeat file and exit if it goes stale — so a
 /// crashed/killed supervisor never leaves an unreachable worker running
 /// forever (there is no idle-exit backstop any more). A hand-run worker has
-/// no `DASEIN_SUPERVISOR_HEARTBEAT` and is left alone.
+/// no `PARSEC_SUPERVISOR_HEARTBEAT` and is left alone.
 pub fn arm_orphan_guard() {
-    let Ok(hb) = std::env::var("DASEIN_SUPERVISOR_HEARTBEAT") else {
+    let Ok(hb) = std::env::var("PARSEC_SUPERVISOR_HEARTBEAT") else {
         return;
     };
     let hb = hb.trim().to_string();

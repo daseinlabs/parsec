@@ -14,11 +14,11 @@ user's own account key.
 ```
  proxy (user's machine)                 platform (our cloud)          dashboard
  ─────────────────────                  ────────────────────          ─────────
- compute savings                        POST /ledger  (dsn_-key auth)  GET /ledger/summary
+ compute savings                        POST /ledger  (psc_-key auth)  GET /ledger/summary
  (count_tokens counterfactual           → store row in Supabase        GET /ledger/usage
   vs actually-billed usage, §8.4)          (ledger table + extra JSONB) → per-model + per-day
  write_ledger →                         GET /ledger/summary|usage         cost & savings
-   • ~/.dasein/ledger.jsonl (local)       aggregate + join model_pricing
+   • ~/.parsec/ledger.jsonl (local)       aggregate + join model_pricing
    • ship row to platform (if keyed)      → cost at report time
 ```
 
@@ -27,8 +27,8 @@ user's own account key.
   modeled baseline. A failed probe stores `counterfactual_input_tokens = NULL` —
   a hole, never an imputed zero. Summaries derive savings only over rows where the
   probe succeeded.
-- **Local first, ship second.** Every row is written to `~/.dasein/ledger.jsonl`
-  regardless (the source of `/dasein-savings` and the status line). Shipping to
+- **Local first, ship second.** Every row is written to `~/.parsec/ledger.jsonl`
+  regardless (the source of `/parsec:savings` and the status line). Shipping to
   the platform is an *additional* fire-and-forget POST — it never blocks or fails
   a request. Ingest is idempotent on `request_id`, so retries/dupes are harmless.
 - **What ships:** the savings-ledger row
@@ -38,39 +38,39 @@ user's own account key.
 
 ## Configuring the account key (the user-facing part)
 
-The proxy ships rows only when it has the user's per-account **`dsn_` API key**.
+The proxy ships rows only when it has the user's per-account **`psc_` API key**.
 The user mints it in the dashboard (**Account → Brain API key**) and sets it from
 inside Claude — no env vars, no restart:
 
 ```
-dasein key set dsn_…                                   # release build (platform URL baked in)
-dasein key set dsn_… --platform-url http://127.0.0.1:8080   # dev build (no baked URL)
-dasein key show                                        # masked key + resolution source + shipping status
-dasein key clear                                       # stop reporting
+parsec key set psc_…                                   # release build (platform URL baked in)
+parsec key set psc_… --platform-url http://127.0.0.1:8080   # dev build (no baked URL)
+parsec key show                                        # masked key + resolution source + shipping status
+parsec key clear                                       # stop reporting
 ```
 
-The `/dasein-key` plugin skill wraps the same commands conversationally.
+The `/parsec:key` plugin skill wraps the same commands conversationally.
 
-- **Storage:** `~/.dasein/credentials.json`, mode `0600` (bearer secret).
-  Written atomically by `dasein key set` (`credentials.rs`).
+- **Storage:** `~/.parsec/credentials.json`, mode `0600` (bearer secret).
+  Written atomically by `parsec key set` (`credentials.rs`).
 - **Takes effect on the next request, no restart.** `ledger_ship::resolve()`
   reads the key live per shipped row, so a mid-session `key set` ships the very
   next row.
 - **Resolution / precedence** (`ledger_ship::resolve`) — shipping is active only
   when BOTH resolve:
-  - **Platform URL:** `DASEIN_PLATFORM_URL` env → baked `DASEIN_DEFAULT_PLATFORM_URL`
+  - **Platform URL:** `PARSEC_PLATFORM_URL` env → baked `PARSEC_DEFAULT_PLATFORM_URL`
     (stamped into release binaries by `release.yml`) → `credentials.json`
     `platform_url`.
-  - **API key:** `DASEIN_API_KEY` env → `credentials.json` `api_key`.
-- **Env overrides the file.** `DASEIN_API_KEY` / `DASEIN_PLATFORM_URL` in the
+  - **API key:** `PARSEC_API_KEY` env → `credentials.json` `api_key`.
+- **Env overrides the file.** `PARSEC_API_KEY` / `PARSEC_PLATFORM_URL` in the
   environment win over the stored file — that's the CI / self-host path; the file
   is the end-user path.
 - **Dev-build gotcha:** a locally-built proxy has **no baked platform URL**, so
-  `dasein key show` reports *shipping: inactive* until you also pass
-  `--platform-url` (or set `DASEIN_PLATFORM_URL`). Released builds bake it, so the
+  `parsec key show` reports *shipping: inactive* until you also pass
+  `--platform-url` (or set `PARSEC_PLATFORM_URL`). Released builds bake it, so the
   key alone is enough.
 
-Confirm shipping is live in `~/.dasein/proxy.log`:
+Confirm shipping is live in `~/.parsec/proxy.log`:
 
 ```
 per-account savings shipping active (API key configured) — rows post to the platform ledger …
@@ -78,22 +78,28 @@ per-account savings shipping active (API key configured) — rows post to the pl
 
 ## Platform APIs
 
-FastAPI app (`packages/platform`, `dasein_platform.app:create_app`). Two
+FastAPI app (`packages/platform`, `parsec_platform.app:create_app`). Two
 credentials (`auth.py`):
 
 - **Supabase JWT** (`Authorization: Bearer …`, `aud=authenticated`) — identifies
   a human/account for dashboard-facing endpoints. Verified via
   `SUPABASE_JWKS_URL` (asymmetric, preferred) or `SUPABASE_JWT_SECRET` (legacy).
-- **Brain-API key** (`dsn_…`, `X-Dasein-Key` header) — identifies the proxy for
+- **Brain-API key** (`psc_…`, `X-Parsec-Key` header) — identifies the proxy for
   machine-to-machine calls (ledger ingest). Stored **hashed** (SHA-256); the raw
   key is shown once at mint and never persisted.
+  The pre-rename forms — `dsn_…` keys and the `X-Dasein-Key` header — are still
+  accepted by the platform (`auth.py::require_key_account`). They have to be:
+  binaries shipped before the rename send the old header, and because only the
+  hash is stored, an already-minted `dsn_` key cannot be reissued server-side.
+  Do not "tidy up" that dependency's parameter names — FastAPI derives the
+  header name from them.
 
 | Method & path | Auth | Purpose |
 |---|---|---|
 | `GET /health` | none | Liveness. |
-| `POST /keys` | Supabase JWT | Mint a `dsn_` key for the account (returned once; only its hash is stored). |
+| `POST /keys` | Supabase JWT | Mint a `psc_` key for the account (returned once; only its hash is stored). |
 | `GET /keys/validate/{key}` | none | "Is this key valid + entitled?" — the §7 seam the brain could ask. Unknown ⇒ `{valid:false}` (not 404). |
-| `POST /ledger` | `dsn_` key | Ingest one savings-ledger row, attributed to the key's account. Idempotent on `request_id`. |
+| `POST /ledger` | `psc_` key | Ingest one savings-ledger row, attributed to the key's account. Idempotent on `request_id`. |
 | `GET /ledger/summary` | Supabase JWT | Account totals + savings + **`by_model`** (per-model tokens & cost) + total **`cost_usd`**. |
 | `GET /ledger/usage?days=N` | Supabase JWT | Per-day usage series (`days` 1–365, default 30): tokens, tokens_saved, cost per day. |
 | `POST /webhooks/stripe` | Stripe sig | Entitlement flag from Stripe events. |
@@ -104,8 +110,8 @@ caller's own account from the JWT, so a user only ever sees their own usage.
 
 ## Storage & migrations
 
-Store seam (`store.py`): **SQLite** by default (`DASEIN_PLATFORM_DB` path or
-in-memory — zero-infra dev), **Postgres/Supabase** when `DASEIN_PLATFORM_DB_URL`
+Store seam (`store.py`): **SQLite** by default (`PARSEC_PLATFORM_DB` path or
+in-memory — zero-infra dev), **Postgres/Supabase** when `PARSEC_PLATFORM_DB_URL`
 is set (`pgstore.py`). Schema lives in `packages/platform/migrations/*.sql`
 (applied via the Supabase CLI — the service never runs DDL at startup). The
 SQLite `_SCHEMA` mirrors it; keep them in sync.
@@ -134,7 +140,7 @@ Apply migrations to Supabase:
 supabase db push
 # or apply a file directly (idempotent: ADD COLUMN/CREATE TABLE IF NOT EXISTS,
 # INSERT … ON CONFLICT DO NOTHING) — but this bypasses migration tracking:
-psql "$DASEIN_PLATFORM_DB_URL" -f packages/platform/migrations/0002_ledger_extra_pricing.sql
+psql "$PARSEC_PLATFORM_DB_URL" -f packages/platform/migrations/0002_ledger_extra_pricing.sql
 ```
 
 ⚠️ **If `0002` is not applied, `/ledger/summary` and `/ledger/usage` 500** (they
@@ -184,20 +190,20 @@ Local dev:
 
 ```sh
 cd packages/platform
-set -a; . ./.env; set +a          # DASEIN_PLATFORM_DB_URL, SUPABASE_JWKS_URL, …
-.venv/bin/python -m uvicorn --factory dasein_platform:create_app --port 8080
+set -a; . ./.env; set +a          # PARSEC_PLATFORM_DB_URL, SUPABASE_JWKS_URL, …
+.venv/bin/python -m uvicorn --factory parsec_platform:create_app --port 8080
 ```
 
 Container: `packages/platform/Dockerfile`
-(`uvicorn --factory dasein_platform:create_app --host 0.0.0.0 --port ${PORT}`).
-Point `DASEIN_PLATFORM_DB_URL` at Supabase's **transaction pooler** (port 6543) —
+(`uvicorn --factory parsec_platform:create_app --host 0.0.0.0 --port ${PORT}`).
+Point `PARSEC_PLATFORM_DB_URL` at Supabase's **transaction pooler** (port 6543) —
 Cloud Run instances churn and would exhaust direct connections.
 
 Relevant env:
 
 | Var | Purpose |
 |---|---|
-| `DASEIN_PLATFORM_DB_URL` | Postgres/Supabase DSN. Unset ⇒ SQLite (`DASEIN_PLATFORM_DB`). |
+| `PARSEC_PLATFORM_DB_URL` | Postgres/Supabase DSN. Unset ⇒ SQLite (`PARSEC_PLATFORM_DB`). |
 | `SUPABASE_JWKS_URL` / `SUPABASE_JWT_SECRET` | Dashboard JWT verification (JWKS preferred). |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signature check. |
 
@@ -205,19 +211,19 @@ Client side, so released proxies ship without any per-user config beyond the key
 
 | Var | Where |
 |---|---|
-| `DASEIN_DEFAULT_PLATFORM_URL` | Baked into release binaries by `.github/workflows/release.yml` (repo variable). |
-| `DASEIN_PLATFORM_URL` | Runtime override (required on dev builds — no baked URL). |
-| `DASEIN_API_KEY` | Runtime override of the stored key (CI/self-host). |
+| `PARSEC_DEFAULT_PLATFORM_URL` | Baked into release binaries by `.github/workflows/release.yml` (repo variable). |
+| `PARSEC_PLATFORM_URL` | Runtime override (required on dev builds — no baked URL). |
+| `PARSEC_API_KEY` | Runtime override of the stored key (CI/self-host). |
 
 ## Go-live checklist
 
 1. **Apply migrations** `0001` + `0002` to the Supabase DB.
-2. **Set `DASEIN_DEFAULT_PLATFORM_URL`** (GitHub Actions repo variable) and cut a
+2. **Set `PARSEC_DEFAULT_PLATFORM_URL`** (GitHub Actions repo variable) and cut a
    release so binaries know where to POST.
 3. Ensure the platform service is **running** and reachable at `PLATFORM_URL`.
-4. User **mints a key** in the dashboard and runs **`dasein key set dsn_…`**
-   (release) — or the `/dasein-key` skill.
-5. Confirm `dasein key show` reports *shipping: active* and `proxy.log` shows the
+4. User **mints a key** in the dashboard and runs **`parsec key set psc_…`**
+   (release) — or the `/parsec:key` skill.
+5. Confirm `parsec key show` reports *shipping: active* and `proxy.log` shows the
    shipping line; run traffic; rows appear in the dashboard.
 
 ## Troubleshooting
@@ -240,11 +246,11 @@ Likely causes, in order:
 
 **No rows in the dashboard, but curation is working locally.**
 
-- `dasein key show` → *shipping: inactive*? Missing key or (dev build) platform
+- `parsec key show` → *shipping: inactive*? Missing key or (dev build) platform
   URL — set both.
 - Installed plugin binary predates the shipping code — rebuild the local binary
   (`scripts/refresh_plugin_bin.sh`) or cut a fresh release.
-- `~/.dasein/proxy.log` — a `ledger ship: platform rejected row` / `platform
+- `~/.parsec/proxy.log` — a `ledger ship: platform rejected row` / `platform
   unreachable` debug line points at ingest 4xx/5xx or a down platform (shipping is
   best-effort, so the row is still on disk and can be backfilled).
 

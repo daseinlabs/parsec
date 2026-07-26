@@ -1,0 +1,17 @@
+#!/bin/sh
+# Platform shim: dispatch to the committed per-platform parsec binary.
+dir="$(cd "$(dirname "$0")" && pwd)"
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) bin="$dir/darwin-arm64/parsec" ;;
+  Darwin-x86_64) bin="$dir/darwin-x64/parsec" ;;
+  Linux-x86_64) bin="$dir/linux-x64/parsec" ;;
+  # Git Bash / MSYS / Cygwin report e.g. MINGW64_NT-10.0-26200-x86_64; the
+  # build number varies per machine, so match on the subsystem prefix only.
+  MINGW*|MSYS*|CYGWIN*) bin="$dir/win-x64/parsec.exe" ;;
+  *) echo "parsec: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+if [ ! -x "$bin" ]; then
+  echo "parsec: no prebuilt binary for $(uname -s)-$(uname -m) in this release" >&2
+  exit 1
+fi
+exec "$bin" "$@"

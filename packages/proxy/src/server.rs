@@ -1,4 +1,4 @@
-//! `dasein proxy` — the local Anthropic-wire passthrough proxy (DIRECTION.md
+//! `parsec proxy` — the local Anthropic-wire passthrough proxy (DIRECTION.md
 //! §4): Claude Code points `ANTHROPIC_BASE_URL` here; we apply cache-safe
 //! splicing + breakpoint placement and forward to api.anthropic.com with the
 //! user's own auth headers. Port of the wire layer of
@@ -40,8 +40,8 @@ use futures_util::StreamExt;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
-use dasein_engine::freeze::{FreezeConfig, Freezer};
-use dasein_engine::pystr::py_json_dumps;
+use parsec_engine::freeze::{FreezeConfig, Freezer};
+use parsec_engine::pystr::py_json_dumps;
 
 use crate::brain::{self, BrainConfig, BrainScorer};
 use crate::governor::{self, GovMode};
@@ -85,7 +85,7 @@ impl Default for ConvState {
 }
 
 /// Evict conversation memos idle past `ttl`, then oldest-first down to `cap`
-/// (reference: DASEIN_SESSION_TTL_S=3600, DASEIN_SESSION_MAX=512). A
+/// (reference: PARSEC_SESSION_TTL_S=3600, PARSEC_SESSION_MAX=512). A
 /// long-lived auto-started proxy must not grow without bound.
 fn evict_stale(
     convs: &mut HashMap<String, ConvState>,
@@ -120,7 +120,7 @@ pub struct AppState {
     /// Real-scorer path (docs/brain-serving-v0.md). None = v0 passthrough
     /// curation exactly as before.
     pub brain: Option<BrainConfig>,
-    /// Governor dials (DASEIN_GOVERNOR et al.) — Off by default: zero
+    /// Governor dials (PARSEC_GOVERNOR et al.) — Off by default: zero
     /// behavior change, zero extra brain calls.
     pub governor: governor::GovernorConfig,
     /// Governor-seam fail-opens (rules/neighbors/signal errors): the request
@@ -226,7 +226,7 @@ fn log_shutdown(state: &AppState, reason: &str) {
         in_flight = state.in_flight.load(Ordering::SeqCst),
         fail_open = state.fail_open_count.load(Ordering::SeqCst),
         gov_fail_open = state.gov_fail_open_count.load(Ordering::SeqCst),
-        "dasein proxy shutting down"
+        "parsec proxy shutting down"
     );
 }
 
@@ -262,17 +262,17 @@ async fn shutdown_signal() {
     }
 }
 
-/// `dasein proxy` entrypoint: serve on 127.0.0.1:$DASEIN_PROXY_PORT
-/// (default 8082), upstream $DASEIN_UPSTREAM (default api.anthropic.com).
+/// `parsec proxy` entrypoint: serve on 127.0.0.1:$PARSEC_PROXY_PORT
+/// (default 8082), upstream $PARSEC_UPSTREAM (default api.anthropic.com).
 pub fn run() -> anyhow::Result<()> {
-    let port: u16 = std::env::var("DASEIN_PROXY_PORT")
+    let port: u16 = std::env::var("PARSEC_PROXY_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8082);
-    let upstream = std::env::var("DASEIN_UPSTREAM")
+    let upstream = std::env::var("PARSEC_UPSTREAM")
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
     let ledger = crate::setup::home_dir()
-        .join(".dasein")
+        .join(".parsec")
         .join("ledger.jsonl");
     let brain = BrainConfig::from_env();
     if let Some(b) = &brain {
@@ -292,19 +292,19 @@ pub fn run() -> anyhow::Result<()> {
     if crate::ledger_ship::resolve().is_some() {
         tracing::info!(
             "per-account savings shipping active (API key configured) — rows post to \
-             the platform ledger in addition to the local ~/.dasein ledger"
+             the platform ledger in addition to the local ~/.parsec ledger"
         );
     }
     let mut state = AppState::with_brain(upstream, ledger, brain);
     // Entitlement resolved once, like the brain config: no key ⇒ pure
     // passthrough serve path (apikey gate). The hook resolves live per
-    // invocation; a mid-session `dasein key set` activates the proxy on its
+    // invocation; a mid-session `parsec key set` activates the proxy on its
     // next (re)start, same as the brain config.
     state.entitled = crate::apikey::enabled();
     if !state.entitled {
         tracing::warn!(
-            "no API key — dasein is INERT: serving pure passthrough, saving nothing. \
-             Get a key at {} and run `dasein key set <dsn_…>`.",
+            "no API key — parsec is INERT: serving pure passthrough, saving nothing. \
+             Get a key at {} and run `parsec key set <psc_…>`.",
             crate::apikey::SIGNUP_URL
         );
     }
@@ -318,7 +318,7 @@ pub fn run() -> anyhow::Result<()> {
             runaway_ratio = state.governor.runaway_ratio,
             kill_floor_tok = state.governor.kill_floor_tok,
             horizon_step = state.governor.horizon_step,
-            "governor active (DASEIN_GOVERNOR) — directives {}",
+            "governor active (PARSEC_GOVERNOR) — directives {}",
             if state.governor.mode == GovMode::On {
                 "INJECTED"
             } else {
@@ -333,11 +333,11 @@ pub fn run() -> anyhow::Result<()> {
     // would just be respawned, and (removed 2026-07-21) the old 1800s exit
     // was a live source of mid-session wedges when a still-active session
     // went briefly idle. The worker runs until the supervisor stops it.
-    let ttl_s: u64 = std::env::var("DASEIN_SESSION_TTL_S")
+    let ttl_s: u64 = std::env::var("PARSEC_SESSION_TTL_S")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(3600);
-    let cap: usize = std::env::var("DASEIN_SESSION_MAX")
+    let cap: usize = std::env::var("PARSEC_SESSION_MAX")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(512);
@@ -345,7 +345,7 @@ pub fn run() -> anyhow::Result<()> {
     // Orphan guard: if the supervisor that spawned us dies (crash, kill -9,
     // reboot-race), no OS mechanism reparents-then-kills us portably, so we
     // watch its heartbeat file and exit when it goes stale. Only armed when
-    // spawned under a supervisor (DASEIN_SUPERVISOR_HEARTBEAT set); a
+    // spawned under a supervisor (PARSEC_SUPERVISOR_HEARTBEAT set); a
     // hand-run worker has no parent to outlive.
     crate::supervisor::arm_orphan_guard();
 
@@ -373,7 +373,7 @@ pub fn run() -> anyhow::Result<()> {
             }
         });
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-        tracing::info!("dasein proxy worker listening on 127.0.0.1:{port}");
+        tracing::info!("parsec proxy worker listening on 127.0.0.1:{port}");
         let on_exit = state.clone();
         axum::serve(listener, router(state))
             .with_graceful_shutdown(shutdown_signal())
@@ -396,12 +396,12 @@ pub fn router(state: Arc<AppState>) -> Router {
             axum::routing::get(|| async {
                 axum::Json(serde_json::json!({
                     "ok": true,
-                    "service": "dasein-proxy",
+                    "service": "parsec-proxy",
                     "version": env!("CARGO_PKG_VERSION"),
                 }))
             }),
         )
-        // Localhost kill-switch for `dasein uninstall`: the bind is
+        // Localhost kill-switch for `parsec uninstall`: the bind is
         // 127.0.0.1-only, so only same-machine processes can reach it. Reply
         // first, exit off the response path so the 200 flushes.
         .route(
@@ -415,7 +415,7 @@ pub fn router(state: Arc<AppState>) -> Router {
                 });
                 axum::Json(serde_json::json!({
                     "ok": true,
-                    "service": "dasein-proxy",
+                    "service": "parsec-proxy",
                     "shutting_down": true,
                 }))
             }),
@@ -521,7 +521,7 @@ fn note_fail_open(st: &AppState, why: &str) {
     );
 }
 
-/// §8.1 capture seam: with `DASEIN_RECORD_DIR` set, every real /v1/messages
+/// §8.1 capture seam: with `PARSEC_RECORD_DIR` set, every real /v1/messages
 /// body is dumped VERBATIM (pre-curation) to `<dir>/<conv_id>/turn_<n>.json`
 /// — a maintainer runs real Claude Code through the proxy once, then feeds
 /// the conversation directory to scripts/record_to_fixture.py. count_tokens
@@ -530,7 +530,7 @@ fn note_fail_open(st: &AppState, why: &str) {
 /// restart mid-recording keeps appending instead of overwriting. Fail-open:
 /// a dump error is logged and the request proceeds untouched.
 fn record_inbound(headers: &HeaderMap, body: &Value, raw: &[u8]) {
-    let Some(dir) = std::env::var("DASEIN_RECORD_DIR")
+    let Some(dir) = std::env::var("PARSEC_RECORD_DIR")
         .ok()
         .filter(|d| !d.trim().is_empty())
     else {
@@ -552,7 +552,7 @@ fn record_inbound(headers: &HeaderMap, body: &Value, raw: &[u8]) {
         std::fs::write(d.join(format!("turn_{n}.json")), raw)
     })();
     if let Err(e) = res {
-        tracing::warn!("DASEIN_RECORD_DIR dump failed (recording is fail-open): {e}");
+        tracing::warn!("PARSEC_RECORD_DIR dump failed (recording is fail-open): {e}");
     }
 }
 
@@ -578,7 +578,7 @@ struct PlanStats {
     /// (reactive unfreeze) — Some only on the request that unfroze them.
     tools_unfrozen: Option<usize>,
     /// Pruned tools served as name+note stubs THIS request
-    /// (DASEIN_TOOL_STUB) — Some only when > 0.
+    /// (PARSEC_TOOL_STUB) — Some only when > 0.
     tools_stubbed: Option<usize>,
     tools_pre_prune_sha8: Option<String>,
     // ── detailed-tracing seams (contract Track B item 6) ───────────────────
@@ -592,7 +592,7 @@ struct PlanStats {
     /// Message indices carrying a cache anchor in the served body.
     anchors: Vec<usize>,
     curate_ms: f64,
-    /// Governor seams — Some only when DASEIN_GOVERNOR != off.
+    /// Governor seams — Some only when PARSEC_GOVERNOR != off.
     gov: Option<GovStats>,
 }
 
@@ -649,7 +649,7 @@ fn internal_mass(msgs: &[Value]) -> i64 {
                 Some(Value::String(s)) => s.clone(),
                 other => splice::content_text(other),
             };
-            dasein_engine::pystr::char_len(&t) as i64 / 4
+            parsec_engine::pystr::char_len(&t) as i64 / 4
         })
         .sum()
 }
@@ -995,7 +995,7 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                         .cloned()
                         .unwrap_or_default();
                     // Pruned tools are served as name+note stubs (default;
-                    // DASEIN_TOOL_STUB=off restores the hard-drop) so the
+                    // PARSEC_TOOL_STUB=off restores the hard-drop) so the
                     // model knows they exist and can call one to get its
                     // full schema back via the reactive unfreeze above.
                     // Stub bytes are deterministic, so the frozen keep-set
@@ -1444,7 +1444,7 @@ fn rfc3339_now() -> String {
 }
 
 /// One savings-ledger row per completed request, appended to
-/// ~/.dasein/ledger.jsonl. Field names follow
+/// ~/.parsec/ledger.jsonl. Field names follow
 /// packages/contracts/schemas/savings-ledger.schema.json (flat `billed_*`,
 /// `cachePrefixSha8`, RFC3339 `ts`). `counterfactual_input_tokens` is null
 /// when the probe failed — measurement honesty (§8.4) forbids estimating.
@@ -1492,7 +1492,7 @@ fn write_ledger(
         "fail_open": fail_open,
     });
 
-    // The live savings line — what `tail -f ~/.dasein/proxy.log` (or the
+    // The live savings line — what `tail -f ~/.parsec/proxy.log` (or the
     // proxy terminal) shows per request. Token-denominated per §8.4; the
     // input-side billed sum is uncached + cache read + cache write.
     let billed_side =
@@ -1614,7 +1614,7 @@ fn write_ledger(
     // Also ship the row to the platform for per-account attribution (the
     // dashboard's savings view). Fire-and-forget and fail-open: the row is
     // already on disk, and shipping never blocks or fails the request. `ship`
-    // resolves the API key live (env → ~/.dasein/credentials.json) and no-ops
+    // resolves the API key live (env → ~/.parsec/credentials.json) and no-ops
     // when shipping is unconfigured.
     crate::ledger_ship::ship(&st.client, &row);
 }
@@ -1750,7 +1750,7 @@ fn bad_gateway(e: &reqwest::Error) -> Response {
     tracing::warn!("upstream unreachable: {e}");
     (
         StatusCode::BAD_GATEWAY,
-        format!("dasein proxy: upstream unreachable: {e}"),
+        format!("parsec proxy: upstream unreachable: {e}"),
     )
         .into_response()
 }
@@ -1790,7 +1790,7 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
     }
 
     // Entitlement gate (apikey, resolved at startup into `st.entitled`): with
-    // no API key dasein saves nothing, so the serve path is a PURE PASSTHROUGH
+    // no API key parsec saves nothing, so the serve path is a PURE PASSTHROUGH
     // — no curation, no counterfactual probe, no ledger row. Claude Code still
     // streams normally (the forward/relay below sends the ORIGINAL body). This
     // is NOT a fail-open (no error).

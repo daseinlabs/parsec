@@ -3,7 +3,7 @@
 (packages/proxy/parity/fixtures/golden_conversation.json).
 
 Two inputs (auto-detected):
-  directory  — a DASEIN_RECORD_DIR conversation dir (turn_<n>.json files,
+  directory  — a PARSEC_RECORD_DIR conversation dir (turn_<n>.json files,
                each a full /v1/messages body as the client sent it)
   *.jsonl    — a Claude Code transcript (~/.claude/projects/<proj>/<id>.jsonl);
                the Anthropic request envelope (system + tools) is synthesized
@@ -25,7 +25,7 @@ what the §8.1 golden test exercises.
 
 Usage:
   scripts/record_to_fixture.py TRANSCRIPT.jsonl -o fixture.json --max-turns 21
-  scripts/record_to_fixture.py $DASEIN_RECORD_DIR/<conv_id> -o fixture.json
+  scripts/record_to_fixture.py $PARSEC_RECORD_DIR/<conv_id> -o fixture.json
 """
 
 import argparse

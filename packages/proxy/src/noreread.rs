@@ -114,7 +114,7 @@ pub struct FileReads {
     pub size: u64,
 }
 
-/// Session store, one JSON file per Claude Code session under ~/.dasein.
+/// Session store, one JSON file per Claude Code session under ~/.parsec.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionState {
     /// abs path -> reads (most recent touch is a read; edits evict).
@@ -129,7 +129,7 @@ pub struct SessionState {
     pub tokens_saved: u64,
     pub loops_broken: u64,
     /// Stop-hook adjudicator blocks issued this session (Track C block
-    /// mode's per-session budget, `DASEIN_ADJ_MAX_BLOCKS`).
+    /// mode's per-session budget, `PARSEC_ADJ_MAX_BLOCKS`).
     #[serde(default)]
     pub adj_blocks: u32,
 }
@@ -591,7 +591,7 @@ impl SessionState {
 // ---- persistence ----
 
 pub fn sessions_dir() -> PathBuf {
-    crate::setup::home_dir().join(".dasein").join("sessions")
+    crate::setup::home_dir().join(".parsec").join("sessions")
 }
 
 pub fn session_path(session_id: &str) -> PathBuf {

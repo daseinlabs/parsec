@@ -4,9 +4,9 @@
 //!
 //! Advisory-first: the Stop hook computes the reference's pre-LLM views
 //! (recent actions/observations, has-edit ladder, loop fractions) from the
-//! session transcript and logs a verdict row to ~/.dasein/adjudicator.jsonl.
+//! session transcript and logs a verdict row to ~/.parsec/adjudicator.jsonl.
 //! Blocking the stop is env-gated OFF by default — the reference CUT
-//! block-on-CONTINUE after it overrode correct stops (bench arms/dasein.py).
+//! block-on-CONTINUE after it overrode correct stops (bench arms/parsec.py).
 //!
 //! Ports (exact semantics; every cap counts CHARS like the Python slices):
 //! - [`messages_from_transcript`] = harness_runners._messages_from_transcript
@@ -48,7 +48,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{json, Value};
 
-use dasein_engine::pystr::{char_len, char_prefix, py_has_content, py_is_space, py_strip};
+use parsec_engine::pystr::{char_len, char_prefix, py_has_content, py_is_space, py_strip};
 
 use crate::governor;
 use crate::splice::py_truthy;
@@ -172,7 +172,7 @@ pub fn messages_from_transcript(path: &str, max_msgs: usize, obs_cap: usize) -> 
 /// transcript bytes (the verdict's determinism seam).
 pub fn parse_transcript(text: &str, max_msgs: usize, obs_cap: usize) -> Vec<Value> {
     let mut out: Vec<Value> = Vec::new();
-    for line in dasein_engine::pystr::py_splitlines(text) {
+    for line in parsec_engine::pystr::py_splitlines(text) {
         let Ok(e) = serde_json::from_str::<Value>(line) else {
             continue;
         };
@@ -527,10 +527,10 @@ pub fn disk_probe(cwd: &str) -> Option<bool> {
 
 // ── the advisory JSONL row ──────────────────────────────────────────────────
 
-/// `~/.dasein/adjudicator.jsonl` — one row per stop attempt, local-only.
+/// `~/.parsec/adjudicator.jsonl` — one row per stop attempt, local-only.
 pub fn log_path() -> PathBuf {
     crate::setup::home_dir()
-        .join(".dasein")
+        .join(".parsec")
         .join("adjudicator.jsonl")
 }
 

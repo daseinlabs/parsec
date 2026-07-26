@@ -8,7 +8,7 @@
 //! moving tail via `splice::append_user_text` +
 //! `place_cache_breakpoint(directive_appended=true)`.
 //!
-//! Default OFF (`DASEIN_GOVERNOR=off`): rule-τ is not yet bench-calibrated
+//! Default OFF (`PARSEC_GOVERNOR=off`): rule-τ is not yet bench-calibrated
 //! on this stack; `advise` computes and records without touching the wire.
 //!
 //! Documented deviations from the reference (DESIGN_CONTRACT.md Track B):
@@ -25,7 +25,7 @@
 //! - No LLM adjudicator: the conservative no-adjudicator fallback semantics
 //!   apply (runaway/head kill at the cost floor, bank window → DELIVER once,
 //!   horizon once; budget/doomed flags are advisory records only).
-//! - The kill floor is token-denominated (`DASEIN_KILL_FLOOR_TOK`, billed
+//! - The kill floor is token-denominated (`PARSEC_KILL_FLOOR_TOK`, billed
 //!   input-side tokens) — the port of AC_KILL_FLOOR_USD; the proxy does not
 //!   price tokens. `runaway_factor` = billed input-side cumulative tokens /
 //!   the hoods neighbour-cost median (both sides are billed-input-token
@@ -41,11 +41,11 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 
-use dasein_engine::pystr::{char_len, py_json_dumps, py_split_ws, py_strip};
+use parsec_engine::pystr::{char_len, py_json_dumps, py_split_ws, py_strip};
 
 // ── config ──────────────────────────────────────────────────────────────────
 
-/// `DASEIN_GOVERNOR`: off (default — zero behavior change) | advise (compute
+/// `PARSEC_GOVERNOR`: off (default — zero behavior change) | advise (compute
 /// + record, never touch the wire) | on (advise + inject directives).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GovMode {
@@ -78,22 +78,22 @@ impl GovMode {
 #[derive(Debug, Clone)]
 pub struct GovernorConfig {
     pub mode: GovMode,
-    /// `DASEIN_RULE_TAU` — reference start_proxy.sh calibration for
+    /// `PARSEC_RULE_TAU` — reference start_proxy.sh calibration for
     /// curator_v4_prod (0.25); our own bench calibration pending, which is
     /// why the governor defaults off.
     pub rule_tau: f64,
-    /// `DASEIN_DOOM_THRESH` (reference proxy: 0.5).
+    /// `PARSEC_DOOM_THRESH` (reference proxy: 0.5).
     pub doom_thresh: f64,
-    /// `DASEIN_DOOM_K` (reference: 3 consecutive).
+    /// `PARSEC_DOOM_K` (reference: 3 consecutive).
     pub doom_k: usize,
-    /// `DASEIN_RUNAWAY_RATIO` (AC_RUNAWAY_RATIO, the validated knee 3.25).
+    /// `PARSEC_RUNAWAY_RATIO` (AC_RUNAWAY_RATIO, the validated knee 3.25).
     pub runaway_ratio: f64,
-    /// `DASEIN_DOOMED_RATIO` (AC_DOOMED_RATIO 2.0) — advisory arm only here.
+    /// `PARSEC_DOOMED_RATIO` (AC_DOOMED_RATIO 2.0) — advisory arm only here.
     pub doomed_ratio: f64,
-    /// `DASEIN_KILL_FLOOR_TOK` — billed input-side tokens; the token-
+    /// `PARSEC_KILL_FLOOR_TOK` — billed input-side tokens; the token-
     /// denominated port of AC_KILL_FLOOR_USD=2.5 (default 750_000).
     pub kill_floor_tok: i64,
-    /// `DASEIN_HORIZON_STEP` — 0 = off (reference serve used 40).
+    /// `PARSEC_HORIZON_STEP` — 0 = off (reference serve used 40).
     pub horizon_step: i64,
 }
 
@@ -122,14 +122,14 @@ impl GovernorConfig {
         }
         let d = GovernorConfig::default();
         GovernorConfig {
-            mode: GovMode::from_env_value(std::env::var("DASEIN_GOVERNOR").ok().as_deref()),
-            rule_tau: num("DASEIN_RULE_TAU", d.rule_tau),
-            doom_thresh: num("DASEIN_DOOM_THRESH", d.doom_thresh),
-            doom_k: num("DASEIN_DOOM_K", d.doom_k),
-            runaway_ratio: num("DASEIN_RUNAWAY_RATIO", d.runaway_ratio),
-            doomed_ratio: num("DASEIN_DOOMED_RATIO", d.doomed_ratio),
-            kill_floor_tok: num("DASEIN_KILL_FLOOR_TOK", d.kill_floor_tok),
-            horizon_step: num("DASEIN_HORIZON_STEP", d.horizon_step),
+            mode: GovMode::from_env_value(std::env::var("PARSEC_GOVERNOR").ok().as_deref()),
+            rule_tau: num("PARSEC_RULE_TAU", d.rule_tau),
+            doom_thresh: num("PARSEC_DOOM_THRESH", d.doom_thresh),
+            doom_k: num("PARSEC_DOOM_K", d.doom_k),
+            runaway_ratio: num("PARSEC_RUNAWAY_RATIO", d.runaway_ratio),
+            doomed_ratio: num("PARSEC_DOOMED_RATIO", d.doomed_ratio),
+            kill_floor_tok: num("PARSEC_KILL_FLOOR_TOK", d.kill_floor_tok),
+            horizon_step: num("PARSEC_HORIZON_STEP", d.horizon_step),
         }
     }
 

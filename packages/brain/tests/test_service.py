@@ -1,4 +1,4 @@
-"""API surface + golden scoring parity (hermetic: DASEIN_EMBED_BACKEND=hash).
+"""API surface + golden scoring parity (hermetic: PARSEC_EMBED_BACKEND=hash).
 
 The GOLDEN block pins the exact quantized outputs of the vendored scoring path on a
 handcrafted internal-view conversation. Any change to chunking, graph construction,
@@ -16,12 +16,12 @@ from pathlib import Path
 
 # self-contained bootstrap so the __main__ regen helper runs without pytest/conftest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-os.environ.setdefault("DASEIN_EMBED_BACKEND", "hash")
+os.environ.setdefault("PARSEC_EMBED_BACKEND", "hash")
 
 from fastapi.testclient import TestClient
 
-from dasein_brain.app import create_app
-from dasein_brain.scorer import chunk_checksum, parse_internal
+from parsec_brain.app import create_app
+from parsec_brain.scorer import chunk_checksum, parse_internal
 
 # ---- handcrafted internal view: system + task + 3 (assistant, tool-observation) steps ----
 MESSAGES = [
@@ -85,7 +85,7 @@ def test_health_and_bundle():
     assert b["tau_q"] == GOLDEN_TAU_Q
     assert b["grid"] == 1_000_000
     assert b["heads"] == ["curator", "tool", "rule", "gate"]
-    assert b["neighbors"] is False               # DASEIN_HOODS_PKL unset in the hermetic suite
+    assert b["neighbors"] is False               # PARSEC_HOODS_PKL unset in the hermetic suite
     assert b["doom"] == {"gf": 4, "served": True}
     assert "hoods_anchors" not in b
     assert b["flags"]["AC_HUBPROPS"] == "off"
@@ -152,7 +152,7 @@ def test_score_tools_aligned_and_fail_shape():
 
 
 def test_bearer_auth_when_key_set(monkeypatch):
-    monkeypatch.setenv("DASEIN_BRAIN_KEY", "sekrit")
+    monkeypatch.setenv("PARSEC_BRAIN_KEY", "sekrit")
     client = TestClient(create_app())
     assert client.get("/health").status_code == 200            # health stays open (probes)
     assert client.get("/v1/bundle").status_code == 401
@@ -162,53 +162,53 @@ def test_bearer_auth_when_key_set(monkeypatch):
 
 
 def test_platform_entitlement_gate(monkeypatch):
-    """DASEIN_PLATFORM_URL set -> the bearer is a dsn_ key validated against the
+    """PARSEC_PLATFORM_URL set -> the bearer is a psc_ key validated against the
     platform; only valid+entitled keys are served."""
-    import dasein_brain.keyauth as keyauth
+    import parsec_brain.keyauth as keyauth
     keyauth._cache.clear()
-    monkeypatch.setattr(keyauth, "_validate_remote", lambda url, key: key == "dsn_good")
-    monkeypatch.setenv("DASEIN_PLATFORM_URL", "https://platform.test")
+    monkeypatch.setattr(keyauth, "_validate_remote", lambda url, key: key == "psc_good")
+    monkeypatch.setenv("PARSEC_PLATFORM_URL", "https://platform.test")
     client = TestClient(create_app())
     assert client.get("/health").status_code == 200                    # probes stay open
     assert client.get("/v1/bundle").status_code == 401                 # no key
     assert client.get("/v1/bundle",
-                      headers={"Authorization": "Bearer dsn_bad"}).status_code == 401
+                      headers={"Authorization": "Bearer psc_bad"}).status_code == 401
     assert client.get("/v1/bundle",
-                      headers={"Authorization": "Bearer dsn_good"}).status_code == 200
+                      headers={"Authorization": "Bearer psc_good"}).status_code == 200
 
 
 def test_platform_gate_fails_open_measured(monkeypatch):
     """A platform outage must NOT block a paying user (CLAUDE.md fail-open), and
     every fail-open is counted on /health."""
-    import dasein_brain.keyauth as keyauth
+    import parsec_brain.keyauth as keyauth
     keyauth._cache.clear()
 
     def _down(url, key):
         raise RuntimeError("platform unreachable")
 
     monkeypatch.setattr(keyauth, "_validate_remote", _down)
-    monkeypatch.setenv("DASEIN_PLATFORM_URL", "https://platform.test")
+    monkeypatch.setenv("PARSEC_PLATFORM_URL", "https://platform.test")
     client = TestClient(create_app())
     before = client.get("/health").json()["fail_opens"]
     assert client.get("/v1/bundle",
-                      headers={"Authorization": "Bearer dsn_any"}).status_code == 200
+                      headers={"Authorization": "Bearer psc_any"}).status_code == 200
     assert client.get("/health").json()["fail_opens"] == before + 1
 
 
 def test_platform_gate_strict_fails_closed(monkeypatch):
-    """DASEIN_BRAIN_AUTH_STRICT=1 flips the outage behavior to fail-closed."""
-    import dasein_brain.keyauth as keyauth
+    """PARSEC_BRAIN_AUTH_STRICT=1 flips the outage behavior to fail-closed."""
+    import parsec_brain.keyauth as keyauth
     keyauth._cache.clear()
 
     def _down(url, key):
         raise RuntimeError("platform unreachable")
 
     monkeypatch.setattr(keyauth, "_validate_remote", _down)
-    monkeypatch.setenv("DASEIN_PLATFORM_URL", "https://platform.test")
-    monkeypatch.setenv("DASEIN_BRAIN_AUTH_STRICT", "1")
+    monkeypatch.setenv("PARSEC_PLATFORM_URL", "https://platform.test")
+    monkeypatch.setenv("PARSEC_BRAIN_AUTH_STRICT", "1")
     client = TestClient(create_app())
     assert client.get("/v1/bundle",
-                      headers={"Authorization": "Bearer dsn_any"}).status_code == 401
+                      headers={"Authorization": "Bearer psc_any"}).status_code == 401
 
 
 if __name__ == "__main__":                       # golden regeneration helper

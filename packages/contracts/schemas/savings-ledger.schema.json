@@ -122,7 +122,7 @@
   "tools_stubbed": {
    "type": "integer",
    "minimum": 0,
-   "description": "Pruned tools served as name+note stubs instead of hard-dropped (DASEIN_TOOL_STUB on) — present only when the stub path ran."
+   "description": "Pruned tools served as name+note stubs instead of hard-dropped (PARSEC_TOOL_STUB on) — present only when the stub path ran."
   },
   "curator_insists": {
    "type": "integer",
@@ -134,7 +134,7 @@
     "advise",
     "on"
    ],
-   "description": "Governor seams (all gov_* fields + nbr_cost_median) are present only when DASEIN_GOVERNOR != off; pre-governor rows stay schema-identical. 'advise' = signals recorded, wire untouched; 'on' = directives may be injected."
+   "description": "Governor seams (all gov_* fields + nbr_cost_median) are present only when PARSEC_GOVERNOR != off; pre-governor rows stay schema-identical. 'advise' = signals recorded, wire untouched; 'on' = directives may be injected."
   },
   "gov_runaway_factor": {
    "type": "number",

@@ -12,8 +12,8 @@
 //! this (restart served different bytes); the pure fold must. Also asserted:
 //! idempotent re-serve, and the purity guard resetting on edited history.
 
-use dasein_engine::chunking::ChunkMode;
-use dasein_engine::freeze::{
+use parsec_engine::chunking::ChunkMode;
+use parsec_engine::freeze::{
     BirthQuery, ChunkScorer, FreezeConfig, FreezeError, Freezer, ScoreError, ScoreResult,
     StubScorer,
 };

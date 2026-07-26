@@ -1,26 +1,112 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* parsec design tokens — brand/parsec-brand-kit/tokens/tokens.json is the
+   source of truth. Retro-terminal identity: phosphor green on a near-black
+   void, monospace everywhere. Dark is the only theme this app ships. */
+@theme {
+  /* brand */
+  --color-phosphor: #4af626;
+  --color-phosphor-hover: #64f846;
+  --color-phosphor-press: #38c41b;
+  --color-on-phosphor: #06210b;
+  --color-mint: #7cffb2;
+  --color-dim: #2e7d46;
+
+  /* surfaces */
+  --color-void: #0a0e0c;
+  --color-surface: #0f1512;
+  --color-elevated: #131b17;
+  --color-overlay: #16201b;
+
+  /* borders */
+  --color-line: #1d2a22;
+  --color-line-strong: #2e7d46;
+
+  /* text */
+  --color-ink: #d7fbe4;
+  --color-muted: #8ca897;
+  --color-faint: #556d60;
+
+  /* status */
+  --color-success: #4af626;
+  --color-warning: #ffb84d;
+  --color-error: #ff5c57;
+  --color-info: #4ad0e0;
+  --color-magenta: #ff5fd2;
+
+  /* type — mono is the identity; sans is the optional long-form fallback */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "IBM Plex Mono",
+    SFMono-Regular, Menlo, monospace;
+  --font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --default-font-family: var(--font-mono);
+
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.35;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.35;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.6;
+  --text-md: 1rem;
+  --text-md--line-height: 1.6;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.35;
+  --text-xl: 1.75rem;
+  --text-xl--line-height: 1.15;
+  --text-2xl: 2.5rem;
+  --text-2xl--line-height: 1.15;
+  --text-3xl: 3.5rem;
+  --text-3xl--line-height: 1.15;
+
+  --tracking-display: -0.01em;
+  --tracking-caps: 0.12em;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 6px rgba(74, 246, 38, 0.55), 0 0 22px rgba(74, 246, 38, 0.2);
+  --shadow-glow-strong: 0 0 8px rgba(74, 246, 38, 0.9),
+    0 0 26px rgba(74, 246, 38, 0.35);
+
+  --ease-parsec: cubic-bezier(0.2, 0.6, 0.2, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-void);
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+  }
+
+  ::selection {
+    background: #163a22;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-phosphor);
+    outline-offset: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* The one glowing thing on the page. Used for the number that is the story. */
+  .glow {
+    text-shadow: var(--shadow-glow);
+  }
+
+  /* Same phosphor bloom for the mark — drop-shadow instead of an SVG filter so
+     the mark can be inlined more than once without colliding filter ids. */
+  .glow-mark {
+    filter: drop-shadow(0 0 4px rgba(74, 246, 38, 0.55));
+  }
 }

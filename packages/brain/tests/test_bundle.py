@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from conftest import CKPT
-from dasein_brain.bundle import BundleError, load_bundle
+from parsec_brain.bundle import BundleError, load_bundle
 
 
 def test_loads_real_ckpt():
@@ -25,10 +25,10 @@ def test_loads_real_ckpt():
 
 
 def test_nearest_key_tau_resolution(monkeypatch):
-    monkeypatch.setenv("DASEIN_TARGET_COV", "0.72")             # no exact key -> nearest (0.70)
+    monkeypatch.setenv("PARSEC_TARGET_COV", "0.72")             # no exact key -> nearest (0.70)
     b = load_bundle()
     assert b.calib_tau == pytest.approx(0.31526511907577515)
-    monkeypatch.setenv("DASEIN_TARGET_COV", "0.90")
+    monkeypatch.setenv("PARSEC_TARGET_COV", "0.90")
     assert load_bundle().calib_tau == pytest.approx(0.24759453535079956)
 
 

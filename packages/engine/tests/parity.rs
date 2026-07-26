@@ -4,11 +4,11 @@
 //! features. Regenerate fixtures with:
 //!   python3 parity/gen_fixtures.py fixed && python3 parity/gen_fixtures.py cst
 
-use dasein_engine::chunking::{
+use parsec_engine::chunking::{
     accumulated_chunks, chunk_assistant, chunk_observation, Chunk, ChunkMode, DEFAULT_WIN,
 };
-use dasein_engine::features::dup_feats_fast;
-use dasein_engine::messages;
+use parsec_engine::features::dup_feats_fast;
+use parsec_engine::messages;
 use serde_json::Value;
 
 fn load(mode: &str) -> Option<Value> {

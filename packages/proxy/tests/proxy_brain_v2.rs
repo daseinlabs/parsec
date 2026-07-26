@@ -1,4 +1,4 @@
-//! Integration tests for the brain-api/v2 CLIENT mode (DASEIN_BRAIN_CONTRACT
+//! Integration tests for the brain-api/v2 CLIENT mode (PARSEC_BRAIN_CONTRACT
 //! =v2): a mock brain serves /v1/bundle + v2-shaped scores so the wired
 //! behavior is asserted end to end on the actual proxy — chunk TEXT on the
 //! wire, NO vectors, the bundle handshake and its checkpoint_id still riding,
@@ -20,8 +20,8 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde_json::{json, Value};
 
-use dasein_proxy::brain::{BrainConfig, BrainContract};
-use dasein_proxy::server::{router, AppState};
+use parsec_proxy::brain::{BrainConfig, BrainContract};
+use parsec_proxy::server::{router, AppState};
 
 const TAU_Q: i64 = 315_265;
 const CKPT: fn() -> String = || "c".repeat(64);
@@ -177,7 +177,7 @@ async fn setup() -> Ctx {
     tokio::spawn(async move { axum::serve(bl, brain_router).await.unwrap() });
 
     let ledger = std::env::temp_dir().join(format!(
-        "dasein-brain-v2-test-{}-{}.jsonl",
+        "parsec-brain-v2-test-{}-{}.jsonl",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));

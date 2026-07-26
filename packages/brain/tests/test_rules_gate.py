@@ -1,4 +1,4 @@
-"""Rule + gate head endpoints (hermetic: DASEIN_EMBED_BACKEND=hash).
+"""Rule + gate head endpoints (hermetic: PARSEC_EMBED_BACKEND=hash).
 
 Same golden discipline as test_service.py: exact quantized ints pinned on the shared
 handcrafted conversation, twice from cold. NEITHER head has a proxy consumer yet — the
@@ -16,11 +16,11 @@ from pathlib import Path
 
 # self-contained bootstrap so the __main__ regen helper runs without pytest/conftest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-os.environ.setdefault("DASEIN_EMBED_BACKEND", "hash")
+os.environ.setdefault("PARSEC_EMBED_BACKEND", "hash")
 
 from fastapi.testclient import TestClient
 
-from dasein_brain.app import create_app
+from parsec_brain.app import create_app
 from test_service import MESSAGES, TOOLS
 
 RULES = [
@@ -144,7 +144,7 @@ def test_scoped_env_toggles_do_not_leak_into_trace_scoring():
 
 
 def test_bearer_auth_covers_rule_and_gate(monkeypatch):
-    monkeypatch.setenv("DASEIN_BRAIN_KEY", "sekrit")
+    monkeypatch.setenv("PARSEC_BRAIN_KEY", "sekrit")
     client = TestClient(create_app())
     assert client.post("/v1/score/rules", json=_rules_payload()).status_code == 401
     assert client.post("/v1/score/gate", json=_gate_payload()).status_code == 401

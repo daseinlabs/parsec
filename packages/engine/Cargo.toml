@@ -1,5 +1,5 @@
 [package]
-name = "dasein-engine"
+name = "parsec-engine"
 description = "Client-side deterministic core: chunking, freezing, feature extraction. No torch, no embedder, no network code — embedding moved server-side (docs/server-side-embedding.md)."
 version.workspace = true
 edition.workspace = true

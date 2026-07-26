@@ -5,7 +5,7 @@ The plugin ships JSON, never pickle: models/changeprone.pkl {cnt, total, held}
 -> packages/engine/parity/fixtures/changeprone.json {cnt, total} (readout col
 42 = cnt[basename]/total; `held` is eval bookkeeping, unused at serve). Keys
 are sorted for a stable committed artifact; `total` stays raw — the loaders
-(engine::readout::Changeprone::from_json, dasein_brain.bundle) clamp to >= 1.
+(engine::readout::Changeprone::from_json, parsec_brain.bundle) clamp to >= 1.
 
   packages/brain/.venv/bin/python scripts/changeprone_to_json.py [pkl] [json]
 """
