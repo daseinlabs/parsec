@@ -100,8 +100,8 @@ credentials (`auth.py`):
 | `POST /keys` | Supabase JWT | Mint a `psc_` key for the account (returned once; only its hash is stored). |
 | `GET /keys/validate/{key}` | none | "Is this key valid + entitled?" — the §7 seam the brain could ask. Unknown ⇒ `{valid:false}` (not 404). |
 | `POST /ledger` | `psc_` key | Ingest one savings-ledger row, attributed to the key's account. Idempotent on `request_id`. |
-| `GET /ledger/summary` | Supabase JWT | Account totals + savings + **`by_model`** (per-model tokens & cost) + total **`cost_usd`**. |
-| `GET /ledger/usage?days=N` | Supabase JWT | Per-day usage series (`days` 1–365, default 30): tokens, tokens_saved, cost per day. |
+| `GET /ledger/summary` | Supabase JWT | Account totals + savings + **`by_model`** (per-model tokens & cost) + totals **`cost_usd`** (spend) and **`cost_saved_usd`** (dashboard headline). |
+| `GET /ledger/usage?days=N` | Supabase JWT | Per-day usage series (`days` 1–365, default 30): tokens, tokens_saved, cost, cost_saved per day. |
 | `POST /webhooks/stripe` | Stripe sig | Entitlement flag from Stripe events. |
 
 All reporting endpoints are **self-scoped** — `require_account` returns the
@@ -157,13 +157,33 @@ reference `ledger.extra` and `model_pricing`), which the dashboard shows as
 - **Cost = Σ(tokens × per-MTok price) / 1e6**, per model, joined to
   `model_pricing`. Unpriced models (stale/unknown ids) report `cost_usd = null` —
   a hole, never a fabricated zero.
+- **Cost saved (`cost_saved_usd`)** — the dashboard headline — values
+  `tokens_saved` at the **blended input-side rate the account actually paid** for
+  that model: `Σ(billed input-side tokens × their price) ÷ Σ(billed input-side
+  tokens)`. Saved tokens were never sent, so no row records what they would have
+  been billed as, and the three candidate rates differ by 10x — the choice *is*
+  the number:
+  - *list input price* overstates warm Claude Code sessions, which bill nearly
+    all input as cache reads at 0.1x;
+  - *cache-read price* is a floor that understates cold/first-turn traffic;
+  - the *blend* is self-calibrating — a cache-heavy account gets a cache-weighted
+    rate, a cold one lands near list input — and derives entirely from that
+    account's own measured mix rather than an assumed one.
+
+  Priced **per model before summing** (blending across models would price one
+  model's saved tokens at another's rate), and `null` for unpriced models, same
+  hole rule as `cost_usd`. Implemented once in `store.cost_saved_usd`, so SQLite
+  and Postgres cannot drift.
 
 Two caveats baked into the math:
 
 - **Savings is input-side only.** The counterfactual is input tokens
-  (`count_tokens` on the original body), so `tokens_saved =
-  counterfactual_input − billed_input`. There is no counterfactual for
-  output/cache — don't present a "total cost saved" that includes them.
+  (`count_tokens` on the original body), so `tokens_saved = counterfactual_input
+  − (billed_input + billed_cache_read + billed_cache_write)` — cache reads and
+  writes are billed input, and omitting them counts cache-served prefix as free
+  (>2x overstatement on real ledgers). There is no counterfactual for output, so
+  the **output rate is excluded from `cost_saved_usd`** and no saved-dollar
+  figure may include output tokens.
 - **Cache-write TTL.** The ledger stores one `billed_cache_write_tokens` and
   can't distinguish 5-minute vs 1-hour TTL, so `model_pricing` uses the **5m rate
   (1.25× input)**. Heavy 1h-cache use (2× input) undercounts write cost ~1.6×.
@@ -176,11 +196,14 @@ attached server-side, and `PLATFORM_URL` points at the platform service.
 
 `dashboard/page.tsx` shows (when the account has rows):
 
-- Tiles: tokens saved, **spend** (`cost_usd`), billed input, would-have-been
-  input, cache reads, fail-open count.
-- **By model** table: requests, tokens saved, billed input, cost per model.
-- **Usage — last 30 days**: per-day cost bar chart with tokens-saved annotations
-  (from `/ledger/usage`).
+- **Total cost saved** (`cost_saved_usd`) as the headline — the page's one
+  glowing number, with the token count and probe coverage demoted to its
+  subtitle. Raw token totals are not tiles; they live in the by-model table.
+- Tiles: **spend** (`cost_usd`), fail-open count.
+- **By model** table: requests, cost saved, tokens saved, billed input, **cache
+  read**, **cache write**, cost.
+- **Usage — last 30 days**: per-day cost bar chart annotated with dollars saved
+  (from `/ledger/usage`), so the page stays in one unit throughout.
 
 Empty account ⇒ "No ledger rows yet…". Fetch failure ⇒ "unreachable" (see below).
 

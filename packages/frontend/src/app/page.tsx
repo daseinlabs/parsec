@@ -9,15 +9,15 @@ import { Lockup, NavLink, SignOut } from "@/components/brand";
 // lives outside this app, and a logged-in user has no use for a splash screen.
 export const dynamic = "force-dynamic";
 
-// Colour carries meaning here, so the glow stays rare. Phosphor is reserved for
-// the number that IS the win (tokens saved); spend and volume are neutral facts
-// in ink; fail-open is a degradation signal and goes warning once it is non-zero.
-// Everything glowing green would read as "all of this is good news" — spend and
-// fail-opens are not.
-type Tone = "win" | "neutral" | "warn";
+// Colour carries meaning here, so the glow stays rare. Phosphor's glow belongs
+// to exactly one number — the win, dollars saved — and that number is the
+// <CostSaved> headline, not a tile; hence no "win" tone here. Spend and volume
+// are neutral facts in ink; fail-open is a degradation signal and goes warning
+// once it is non-zero. Everything glowing green would read as "all of this is
+// good news" — spend and fail-opens are not.
+type Tone = "neutral" | "warn";
 
 const TONE: Record<Tone, string> = {
-  win: "text-phosphor glow",
   neutral: "text-ink",
   warn: "text-warning",
 };
@@ -47,6 +47,33 @@ function Tile({
 const fmt = (n: number) => Intl.NumberFormat("en", { notation: "compact" }).format(n);
 const usd = (n: number) =>
   Intl.NumberFormat("en", { style: "currency", currency: "USD" }).format(n);
+// Sub-cent sums round to "$0.00", which reads as "this saved nothing" on a fresh
+// account. Give small dollar amounts the precision to show they are non-zero.
+const usdPrecise = (n: number) =>
+  Intl.NumberFormat("en", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: n !== 0 && Math.abs(n) < 1 ? 4 : 2,
+  }).format(n);
+
+// The headline. It gets the page's one glow (globals.css: "the number that is
+// the story") and the largest type — everything else on the page exists to
+// explain it.
+function CostSaved({ summary }: { summary: LedgerSummary }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface p-6">
+      <div className="text-xs tracking-caps text-faint uppercase">Total cost saved</div>
+      <div className="mt-2 text-2xl font-bold tabular-nums text-phosphor glow">
+        {usdPrecise(summary.cost_saved_usd)}
+      </div>
+      <div className="mt-2 text-xs text-faint">
+        {fmt(summary.tokens_saved)} input tokens not sent, valued at the rate you
+        actually paid · measured on {fmt(summary.measured_rows)} of{" "}
+        {fmt(summary.rows_count)} requests
+      </div>
+    </div>
+  );
+}
 
 function ByModel({ summary }: { summary: LedgerSummary }) {
   if (summary.by_model.length === 0) return null;
@@ -59,8 +86,11 @@ function ByModel({ summary }: { summary: LedgerSummary }) {
             <tr className="border-b border-line">
               <th className="px-4 py-2 font-medium">Model</th>
               <th className="px-4 py-2 text-right font-medium">Requests</th>
+              <th className="px-4 py-2 text-right font-medium">Cost saved</th>
               <th className="px-4 py-2 text-right font-medium">Tokens saved</th>
               <th className="px-4 py-2 text-right font-medium">Billed input</th>
+              <th className="px-4 py-2 text-right font-medium">Cache read</th>
+              <th className="px-4 py-2 text-right font-medium">Cache write</th>
               <th className="px-4 py-2 text-right font-medium">Cost</th>
             </tr>
           </thead>
@@ -69,6 +99,14 @@ function ByModel({ summary }: { summary: LedgerSummary }) {
               <tr key={m.model ?? "unknown"} className="border-b border-line last:border-0">
                 <td className="px-4 py-2 text-xs text-muted">{m.model ?? "unknown"}</td>
                 <td className="px-4 py-2 text-right">{fmt(m.rows_count)}</td>
+                {/* Unpriced model ⇒ no dollar figure at all, not a zero. */}
+                <td
+                  className={`px-4 py-2 text-right ${
+                    m.cost_saved_usd ? "text-phosphor" : "text-faint"
+                  }`}
+                >
+                  {m.cost_saved_usd === null ? "—" : usdPrecise(m.cost_saved_usd)}
+                </td>
                 <td
                   className={`px-4 py-2 text-right ${
                     m.tokens_saved > 0 ? "text-phosphor" : "text-faint"
@@ -77,6 +115,12 @@ function ByModel({ summary }: { summary: LedgerSummary }) {
                   {fmt(m.tokens_saved)}
                 </td>
                 <td className="px-4 py-2 text-right">{fmt(m.billed_input_tokens)}</td>
+                <td className="px-4 py-2 text-right">
+                  {fmt(m.billed_cache_read_tokens)}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {fmt(m.billed_cache_write_tokens)}
+                </td>
                 <td className="px-4 py-2 text-right">
                   {m.cost_usd === null ? (
                     <span className="text-faint">—</span>
@@ -113,8 +157,10 @@ function DailyUsage({ usage }: { usage: LedgerUsage }) {
               />
             </span>
             <span className="w-16 shrink-0 text-right">{usd(d.cost_usd)}</span>
+            {/* Same currency as the headline — a token count here would make the
+                reader convert units mid-page. */}
             <span className="w-24 shrink-0 text-right text-muted">
-              {fmt(d.tokens_saved)} saved
+              {usdPrecise(d.cost_saved_usd)} saved
             </span>
           </li>
         ))}
@@ -177,25 +223,15 @@ export default async function DashboardPage() {
       )}
       {summary && summary.rows_count > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-            <Tile
-              label="Tokens saved"
-              value={fmt(summary.tokens_saved)}
-              hint={`measured on ${fmt(summary.measured_rows)} of ${fmt(summary.rows_count)} requests`}
-              tone="win"
-            />
+          {/* Dollars saved leads; raw token totals live in the by-model table
+              below rather than competing with the headline up here. */}
+          <CostSaved summary={summary} />
+          <div className="mt-4 grid grid-cols-2 gap-4">
             <Tile
               label="Spend"
               value={usd(summary.cost_usd)}
               hint="billed tokens at list price"
             />
-            <Tile label="Billed input" value={fmt(summary.billed_input_tokens)} />
-            <Tile
-              label="Would-have-been input"
-              value={fmt(summary.counterfactual_input_tokens)}
-              hint="count_tokens counterfactual"
-            />
-            <Tile label="Cache reads" value={fmt(summary.billed_cache_read_tokens)} />
             <Tile
               label="Fail-open requests"
               value={fmt(summary.fail_open_count)}

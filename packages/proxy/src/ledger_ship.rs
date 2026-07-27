@@ -106,58 +106,6 @@ pub fn ship(client: &reqwest::Client, row: &Value) {
     });
 }
 
-/// What the platform did with one awaited row.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ShipOutcome {
-    /// 2xx — ingested, or already present (ingest is idempotent on request_id).
-    Accepted,
-    /// 4xx — the platform refused the row itself (schema drift, unknown key).
-    /// Retrying it unchanged would fail identically, so callers report these
-    /// apart from transient failures.
-    Rejected { status: u16, detail: String },
-    /// 5xx or a transport error — transient; re-running the backfill is safe.
-    Failed(String),
-}
-
-/// Ship one row and AWAIT the outcome — the backfill counterpart to `ship`.
-///
-/// `ship` fires and forgets because it runs on the request path, where the row
-/// is already durable on disk and nothing may block a user's request. A
-/// one-shot foreground backfill (`parsec migrate`) has the opposite need: its
-/// entire job is telling the user what happened to each row, so it waits.
-/// Idempotency on `request_id` is what makes replaying a row safe.
-pub async fn ship_awaited(client: &reqwest::Client, sink: &LedgerSink, row: &Value) -> ShipOutcome {
-    let resp = client
-        .post(format!("{}/ledger", sink.url))
-        .header("X-Parsec-Key", sink.api_key.as_str())
-        .json(row)
-        .send()
-        .await;
-    match resp {
-        Ok(r) if r.status().is_success() => ShipOutcome::Accepted,
-        Ok(r) => {
-            let status = r.status();
-            // Bound the body: a 500 HTML error page must not flood the report.
-            let detail: String = r
-                .text()
-                .await
-                .unwrap_or_default()
-                .chars()
-                .take(200)
-                .collect();
-            if status.is_client_error() {
-                ShipOutcome::Rejected {
-                    status: status.as_u16(),
-                    detail,
-                }
-            } else {
-                ShipOutcome::Failed(format!("{status}: {detail}"))
-            }
-        }
-        Err(e) => ShipOutcome::Failed(e.to_string()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

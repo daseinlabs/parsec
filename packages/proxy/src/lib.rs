@@ -23,7 +23,6 @@ pub mod hook;
 pub mod internal;
 pub mod ledger_ship;
 pub mod measure;
-pub mod migrate;
 pub mod noreread;
 pub mod providers;
 pub mod server;

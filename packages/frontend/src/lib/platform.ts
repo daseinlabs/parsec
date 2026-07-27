@@ -16,6 +16,9 @@ export type ModelUsage = {
   billed_cache_read_tokens: number;
   billed_cache_write_tokens: number;
   cost_usd: number | null;
+  // Saved tokens valued at this model's blended input-side rate. Null when the
+  // model is unpriced — a hole, never a fabricated zero.
+  cost_saved_usd: number | null;
   currency: string;
 };
 
@@ -30,6 +33,7 @@ export type LedgerSummary = {
   measured_rows: number;
   tokens_saved: number;
   cost_usd: number;
+  cost_saved_usd: number;
   currency: string;
   by_model: ModelUsage[];
 };
@@ -44,6 +48,7 @@ export type DayUsage = {
   billed_cache_read_tokens: number;
   billed_cache_write_tokens: number;
   cost_usd: number;
+  cost_saved_usd: number;
 };
 
 export type LedgerUsage = {

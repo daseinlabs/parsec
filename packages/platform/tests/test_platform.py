@@ -376,6 +376,82 @@ def test_ledger_per_model_cost(client: TestClient) -> None:
     assert float(summary["cost_usd"]) == expected
     assert summary["currency"] == "USD"
 
+    # Saved tokens are valued at the blended input-side rate this account
+    # actually paid for the model — Σ(input-side tokens × price) ÷ Σ(input-side
+    # tokens) — not at list input price. Output is excluded: curation removes
+    # only input, so the output rate has no bearing on the dropped tokens.
+    input_side = 2110 + 27400 + 1980
+    blended = (2110 * 3.0 + 27400 * 0.3 + 1980 * 3.75) / input_side
+    assert float(m["cost_saved_usd"]) == round(
+        m["tokens_saved"] * blended / 1_000_000, 6
+    )
+    assert float(summary["cost_saved_usd"]) == float(m["cost_saved_usd"])
+
+
+def test_cost_saved_is_blended_not_list_input_price(client: TestClient) -> None:
+    """The dashboard headline (`cost_saved_usd`) must not price saved tokens at
+    full list input rate.
+
+    A warm Claude Code session bills almost all input as cache reads at 0.1x, so
+    valuing the un-sent tokens at the uncached input rate inflates the headline by
+    ~10x. The blend derives the rate from the account's own measured mix, so this
+    cache-heavy row lands far below the list-price figure and above the cache-read
+    floor."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    row = dict(
+        example,
+        request_id="req_" + "b" * 32,
+        model="claude-sonnet-5",  # 3 / 15 / 0.3 / 3.75 per MTok
+        counterfactual_input_tokens=100_000,
+        billed_input_tokens=500,
+        billed_cache_read_tokens=60_000,
+        billed_cache_write_tokens=9_500,
+    )
+    assert (
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+        == 201
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    saved = summary["tokens_saved"]  # 30_000
+    blended = (500 * 3.0 + 60_000 * 0.3 + 9_500 * 3.75) / (500 + 60_000 + 9_500)
+    assert float(summary["cost_saved_usd"]) == round(saved * blended / 1_000_000, 6)
+    # Bracketed by the two rates we deliberately did not use.
+    at_list_input = saved * 3.0 / 1_000_000
+    at_cache_read = saved * 0.3 / 1_000_000
+    assert at_cache_read < summary["cost_saved_usd"] < at_list_input
+    # The per-day series prices savings the same way (separate code path).
+    usage = client.get("/ledger/usage", headers=auth(mint_jwt())).json()
+    assert sum(d["cost_saved_usd"] for d in usage["days"]) == pytest.approx(
+        summary["cost_saved_usd"]
+    )
+
+
+def test_cost_saved_is_null_for_unpriced_model(client: TestClient) -> None:
+    """An unknown/stale model string has no pricing row, so its saved dollars are
+    a hole — never a fabricated zero (same honesty rule as `cost_usd`), and it
+    contributes nothing to the account total."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    row = dict(
+        example,
+        request_id="req_" + "c" * 32,
+        model="claude-not-a-real-model",
+    )
+    assert (
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+        == 201
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    by_model = {m["model"]: m for m in summary["by_model"]}
+    m = by_model["claude-not-a-real-model"]
+    assert m["tokens_saved"] > 0  # tokens are measured...
+    assert m["cost_saved_usd"] is None  # ...but their dollar value is unknown
+    assert m["cost_usd"] is None
+    assert summary["cost_saved_usd"] == 0.0
+
 
 def test_ledger_usage_series(client: TestClient) -> None:
     """The per-day usage series buckets rows by date with tokens + cost, and

@@ -58,18 +58,6 @@ enum Command {
     SubagentStatusline,
     /// Human-readable savings report across recent sessions (/parsec:savings).
     Savings,
-    /// One-time backfill: replay the pre-rename savings ledger from ~/.dasein
-    /// into the platform, so a user migrating from the old local-only build
-    /// keeps their history instead of restarting from zero. Safe to re-run —
-    /// platform ingest is idempotent on request_id.
-    Migrate {
-        /// Legacy ledger to read (default: ~/.dasein/ledger.jsonl).
-        #[arg(long, value_name = "FILE")]
-        from: Option<std::path::PathBuf>,
-        /// Report what would be sent, then stop.
-        #[arg(long)]
-        dry_run: bool,
-    },
     /// One-time activation: download the local embedder, write Claude Code
     /// routing env, start the proxy. Runs automatically on first session.
     Setup {
@@ -133,7 +121,6 @@ fn main() -> anyhow::Result<()> {
         Command::Statusline => parsec_proxy::statusline::run(),
         Command::SubagentStatusline => parsec_proxy::statusline::subagent_statusline(),
         Command::Savings => parsec_proxy::statusline::savings_report(),
-        Command::Migrate { from, dry_run } => parsec_proxy::migrate::run(from, dry_run),
         Command::Setup { auto } => parsec_proxy::setup::run(auto),
         Command::Disable => parsec_proxy::setup::disable(),
         Command::Uninstall => parsec_proxy::setup::uninstall(),

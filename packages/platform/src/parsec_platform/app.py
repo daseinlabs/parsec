@@ -135,11 +135,24 @@ def create_app(store: Store | None = None) -> FastAPI:
         """Per-account usage + savings reporting (§7c): the billing basis, the
         upsell proof, the trust artifact — all from count_tokens counterfactual
         rows (§8.4), never a modeled baseline. Carries a per-model/cost
-        breakdown (`by_model`) plus the account-wide total `cost_usd` summed from
-        the priced models (unpriced-model tokens simply add no cost)."""
+        breakdown (`by_model`) plus the account-wide totals `cost_usd` (spend) and
+        `cost_saved_usd` (the dashboard's headline number), each summed from the
+        priced models — unpriced-model tokens simply add no cost. Savings are
+        priced per model before summing so each model's saved tokens carry its own
+        blended input-side rate (see `store.cost_saved_usd`)."""
         summary = app.state.store.ledger_summary(account_id)
-        priced = [m["cost_usd"] for m in summary.get("by_model", []) if m["cost_usd"] is not None]
-        summary["cost_usd"] = round(sum(priced), 6)
+        by_model = summary.get("by_model", [])
+        summary["cost_usd"] = round(
+            sum(m["cost_usd"] for m in by_model if m["cost_usd"] is not None), 6
+        )
+        summary["cost_saved_usd"] = round(
+            sum(
+                m["cost_saved_usd"]
+                for m in by_model
+                if m["cost_saved_usd"] is not None
+            ),
+            6,
+        )
         summary["currency"] = "USD"
         return summary
 

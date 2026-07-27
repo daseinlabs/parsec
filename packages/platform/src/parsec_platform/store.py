@@ -59,10 +59,42 @@ def cost_usd(
     return round((bi * pi + bo * po + br * pr + bw * pw) / 1_000_000, 6)
 
 
+def cost_saved_usd(
+    tokens_saved: int,
+    sums: tuple[int, int, int, int],
+    prices: tuple[float | None, float | None, float | None, float | None] | None,
+) -> float | None:
+    """Dollar value of `tokens_saved`, priced at the *blended input-side rate the
+    account actually paid* for this model.
+
+    Saved tokens were never sent, so no ledger row says what they would have been
+    billed as. The three candidate rates differ by 10x, so the choice IS the
+    number: full input price overstates warm Claude Code sessions (which bill
+    nearly all input as cache reads at 0.1x), and the cache-read floor understates
+    cold traffic. The blend — Σ(billed input-side tokens × their price) ÷ Σ(billed
+    input-side tokens) — is self-calibrating: a cache-heavy account gets a
+    cache-weighted rate, a cold one lands near list input price, and it derives
+    entirely from that account's own measured mix rather than an assumed one.
+
+    Output tokens are excluded: curation only removes input, so output price has
+    no bearing on what the dropped tokens would have cost. None when the model is
+    unpriced (a hole, never a fabricated zero — same rule as `cost_usd`)."""
+    if prices is None or any(p is None for p in prices):
+        return None
+    bi, _bo, br, bw = sums
+    pi, _po, pr, pw = prices  # type: ignore[misc]
+    input_side = bi + br + bw
+    # No input-side tokens billed at all ⇒ no observed mix to blend. Nothing was
+    # served from cache, so list input price is the honest rate.
+    rate = (bi * pi + br * pr + bw * pw) / input_side if input_side else pi
+    return round(tokens_saved * rate / 1_000_000, 6)
+
+
 def _model_row(r: dict[str, Any]) -> dict[str, Any]:
     """Shape one grouped row (token sums + joined price columns, keys as named in
     both stores' by-model queries) into the API's per-model entry, with cost_usd
-    computed from the four price columns (None when the model is unpriced)."""
+    and cost_saved_usd computed from the four price columns (None when the model
+    is unpriced)."""
     sums = (
         int(r["billed_input_tokens"]),
         int(r["billed_output_tokens"]),
@@ -75,16 +107,18 @@ def _model_row(r: dict[str, Any]) -> dict[str, Any]:
         r["cache_read_per_mtok"],
         r["cache_write_per_mtok"],
     )
+    tokens_saved = int(r["tokens_saved"])
     return {
         "model": r["model"],  # None for rows with no model captured
         "rows_count": int(r["rows_count"]),
         "measured_rows": int(r["measured_rows"]),
-        "tokens_saved": int(r["tokens_saved"]),
+        "tokens_saved": tokens_saved,
         "billed_input_tokens": sums[0],
         "billed_output_tokens": sums[1],
         "billed_cache_read_tokens": sums[2],
         "billed_cache_write_tokens": sums[3],
         "cost_usd": cost_usd(sums, prices),
+        "cost_saved_usd": cost_saved_usd(tokens_saved, sums, prices),
         "currency": r.get("currency") or "USD",
     }
 
@@ -94,7 +128,10 @@ def fold_daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     query, plus a `day`) up to one bucket per day: summed tokens + cost, oldest
     day first. Cost is null-aware — a day's unpriced-model tokens add no cost but
     don't erase the priced portion (the model seed covers what the client sends,
-    so unpriced is only stale/unknown model strings)."""
+    so unpriced is only stale/unknown model strings). Savings are valued per
+    (day, model) *before* summing, so each model's own blended input-side rate
+    applies — blending across models would price one model's saved tokens at
+    another's rate."""
     days: dict[str, dict[str, Any]] = {}
     token_cols = (
         "billed_input_tokens",
@@ -113,27 +150,32 @@ def fold_daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "tokens_saved": 0,
                 **{c: 0 for c in token_cols},
                 "cost_usd": 0.0,
+                "cost_saved_usd": 0.0,
             },
         )
         b["rows_count"] += int(r["rows_count"])
         b["measured_rows"] += int(r["measured_rows"])
-        b["tokens_saved"] += int(r["tokens_saved"])
+        tokens_saved = int(r["tokens_saved"])
+        b["tokens_saved"] += tokens_saved
         for c in token_cols:
             b[c] += int(r[c])
-        c = cost_usd(
-            tuple(int(r[k]) for k in token_cols),  # type: ignore[arg-type]
-            (
-                r["input_per_mtok"],
-                r["output_per_mtok"],
-                r["cache_read_per_mtok"],
-                r["cache_write_per_mtok"],
-            ),
+        sums: tuple[int, int, int, int] = tuple(int(r[k]) for k in token_cols)  # type: ignore[assignment]
+        prices = (
+            r["input_per_mtok"],
+            r["output_per_mtok"],
+            r["cache_read_per_mtok"],
+            r["cache_write_per_mtok"],
         )
+        c = cost_usd(sums, prices)
         if c is not None:
             b["cost_usd"] += float(c)
+        s = cost_saved_usd(tokens_saved, sums, prices)
+        if s is not None:
+            b["cost_saved_usd"] += float(s)
     out = sorted(days.values(), key=lambda x: x["date"])
     for b in out:
         b["cost_usd"] = round(b["cost_usd"], 6)
+        b["cost_saved_usd"] = round(b["cost_saved_usd"], 6)
     return out
 
 
