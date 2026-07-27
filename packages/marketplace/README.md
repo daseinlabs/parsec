@@ -61,6 +61,8 @@ your status line. Ask for it any time:
 | Skill | What it does |
 |---|---|
 | `/parsec:savings` | Measured savings — by request, conversation, and session |
+| `/parsec:setup` | Activate parsec: routing env, status line, proxy — or retry a failed first run |
+| `/parsec:proxy` | Restart the local proxy if it was killed mid-session |
 | `/parsec:key` | Set, show, or clear your `psc_…` API key |
 | `/parsec:share` | Opt-in telemetry: preview the exact bytes, or turn it off |
 | `/parsec:uninstall` | Clean removal — routing, proxy, local data, plugin |
