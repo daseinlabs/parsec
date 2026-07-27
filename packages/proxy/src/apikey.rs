@@ -14,8 +14,10 @@
 
 use crate::credentials;
 
-/// Where the user mints their per-account `psc_` key.
-pub const SIGNUP_URL: &str = "app.getparsec.ai";
+/// Where the user mints their per-account `psc_` key. Written with the scheme
+/// so it renders as a click target: `brand::linkify` only hyperlinks (and
+/// terminals only auto-detect) a full `https://…` URL.
+pub const SIGNUP_URL: &str = "https://app.getparsec.ai";
 
 /// First non-empty (trimmed) candidate — the shared precedence primitive.
 fn first_key(cands: &[Option<&str>]) -> Option<String> {
@@ -60,13 +62,19 @@ pub fn enabled() -> bool {
 
 /// The prominent, top-of-session banner shown while unentitled. Pure so it is
 /// testable; [`gate_banner`] supplies the live `enabled`/`muted` inputs.
+///
+/// The URL leads: it is the one thing the reader has to act on, so it owns the
+/// first line (and its own line — `brand::panel` keeps these newlines) rather
+/// than sitting mid-paragraph. The explanation follows.
 fn banner_text() -> String {
     format!(
-        "⚠️  parsec: NO API KEY — savings are OFF.\n\
-         Claude Code runs normally, but parsec will not curate context or block \
-         re-reads/loops until you add a key.\n\
-         → Get your key at {SIGNUP_URL}, then run:  parsec key set <psc_…>\n\
-         (silence this reminder with PARSEC_API_KEY_NOTE=0)"
+        "→ Get your key:  {SIGNUP_URL}\n\
+         → Then run:  parsec key set <psc_…>\n\
+         \n\
+         ⚠️  NO API KEY — parsec savings are OFF. Claude Code runs normally, \
+         but parsec will not curate context or block re-reads/loops until you \
+         add a key.\n\
+         ~(silence this reminder with PARSEC_API_KEY_NOTE=0)"
     )
 }
 

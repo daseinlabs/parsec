@@ -76,6 +76,51 @@ pub fn muted(s: &str) -> String {
     paint(s, MUTED, false)
 }
 
+/// One OSC 8 hyperlink: `text` rendered as a click target for `url`.
+///
+/// The escapes occupy zero columns, so a linkified line still measures with
+/// [`display_width`] — that is what lets [`panel`] pad rows from the plain
+/// text and hyperlink afterwards. Terminals that do not implement OSC 8
+/// ignore it and show `text`; because we only ever link a full `https://…`
+/// URL that is also its own display text, those terminals still auto-detect
+/// it. Suppressed under `NO_COLOR`/`TERM=dumb` alongside the SGR.
+fn hyperlink(url: &str, text: &str) -> String {
+    format!("\x1b]8;;{url}\x1b\\\x1b[4m{text}\x1b[24m\x1b]8;;\x1b\\")
+}
+
+/// Make every bare `http(s)://…` token in `s` clickable. Trailing sentence
+/// punctuation is left outside the link so `see https://x.dev.` still points
+/// at `https://x.dev`.
+pub fn linkify(s: &str) -> String {
+    linkify_with(s, colors_enabled())
+}
+
+/// [`linkify`] with the escapes-allowed decision injected, so it is testable
+/// without racing the process-wide `NO_COLOR`.
+fn linkify_with(s: &str, escapes: bool) -> String {
+    if !escapes {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(start) = [rest.find("https://"), rest.find("http://")]
+        .into_iter()
+        .flatten()
+        .min()
+    {
+        let (head, tail) = rest.split_at(start);
+        out.push_str(head);
+        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+        let (token, after) = tail.split_at(end);
+        let url = token.trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']', '}']);
+        out.push_str(&hyperlink(url, url));
+        out.push_str(&token[url.len()..]);
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// A titled panel:
 ///
 /// ```text
@@ -92,26 +137,33 @@ pub fn muted(s: &str) -> String {
 /// - `^` renders it phosphor and skips wrapping — for [`logo`] art, whose
 ///   leading spaces are load-bearing.
 ///
-/// Colour is applied after measuring, never before: SGR escapes would
-/// otherwise count toward the width. Padding uses [`display_width`], not
-/// `chars().count()`, because real call sites pass emoji
-/// (`apikey::gate_banner`'s ⚠️) and a scalar count leaves those rows short.
+/// A body entry containing `\n` becomes that many panel lines: the newlines a
+/// call site writes are structure (the get-a-key URL owns its own row), not
+/// incidental whitespace, so they survive the wrap.
+///
+/// Colour and hyperlinks are applied after measuring, never before: SGR and
+/// OSC escapes would otherwise count toward the width. Padding uses
+/// [`display_width`], not `chars().count()`, because real call sites pass
+/// emoji (`apikey::gate_banner`'s ⚠️) and a scalar count leaves those rows
+/// short.
 pub fn panel(title: &str, body: &[&str]) -> String {
     let wrapped: Vec<(String, Tone)> = body
         .iter()
         .flat_map(|line| match line.strip_prefix('^') {
             // Art: preserved verbatim, leading whitespace and all.
             Some(art) => vec![(art.to_string(), Tone::Brand)],
-            None => {
-                let (text, tone) = match line.strip_prefix('~') {
-                    Some(rest) => (rest.trim_start(), Tone::Muted),
-                    None => (*line, Tone::Plain),
-                };
-                wrap(text, MAX_WIDTH - 4)
-                    .into_iter()
-                    .map(|l| (l, tone))
-                    .collect()
-            }
+            None => line
+                .split('\n')
+                .flat_map(|line| {
+                    let (text, tone) = match line.strip_prefix('~') {
+                        Some(rest) => (rest.trim_start(), Tone::Muted),
+                        None => (line, Tone::Plain),
+                    };
+                    wrap(text, MAX_WIDTH - 4)
+                        .into_iter()
+                        .map(move |l| (l, tone))
+                })
+                .collect(),
         })
         .collect();
 
@@ -133,10 +185,11 @@ pub fn panel(title: &str, body: &[&str]) -> String {
     out.push_str(&phosphor(&format!("╭─ {head} {rule}╮")));
     for (line, tone) in &wrapped {
         let pad = " ".repeat(inner.saturating_sub(display_width(line)));
+        let linked = linkify(line);
         let body = match tone {
-            Tone::Muted => muted(line),
-            Tone::Brand => phosphor(line),
-            Tone::Plain => line.to_string(),
+            Tone::Muted => muted(&linked),
+            Tone::Brand => phosphor(&linked),
+            Tone::Plain => linked,
         };
         out.push('\n');
         out.push_str(&paint("│", DIM, false));
@@ -253,19 +306,31 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// Strip SGR so tests assert on geometry, not on escapes.
+    /// Strip SGR *and* OSC 8 so tests assert on geometry, not on escapes.
+    /// Both are zero-width, so what survives is exactly what the terminal
+    /// draws.
     fn plain(s: &str) -> String {
         let mut out = String::new();
-        let mut chars = s.chars();
+        let mut chars = s.chars().peekable();
         while let Some(c) = chars.next() {
-            if c == '\x1b' {
-                for c in chars.by_ref() {
-                    if c == 'm' {
-                        break;
+            match c {
+                // CSI …m (colour) — ends at 'm'.
+                '\x1b' if chars.peek() == Some(&'[') => {
+                    for c in chars.by_ref() {
+                        if c == 'm' {
+                            break;
+                        }
                     }
                 }
-            } else {
-                out.push(c);
+                // OSC 8 …ST — ends at ESC \ (or BEL).
+                '\x1b' if chars.peek() == Some(&']') => {
+                    while let Some(c) = chars.next() {
+                        if c == '\x07' || (c == '\x1b' && chars.next() == Some('\\')) {
+                            break;
+                        }
+                    }
+                }
+                _ => out.push(c),
             }
         }
         out
@@ -391,6 +456,58 @@ mod tests {
     fn notice_leaves_unprefixed_copy_alone() {
         let out = plain(&notice(&["something else entirely".into()]));
         assert!(out.contains("something else entirely"), "{out}");
+    }
+
+    #[test]
+    fn urls_are_click_targets_that_do_not_skew_the_border() {
+        let url = "https://app.getparsec.ai";
+        // The click target is emitted…
+        let linked = linkify_with(&format!("→ Get your key:  {url}"), true);
+        assert!(
+            linked.contains(&format!("\x1b]8;;{url}\x1b\\")),
+            "{linked:?}"
+        );
+        // …the visible text is still the bare URL, so terminals without OSC 8
+        // auto-detect it…
+        assert!(plain(&linked).contains(url));
+        // …and the zero-width escapes did not push the panel row out.
+        let widths = rows(&panel(
+            "parsec",
+            &[&format!("→ Get your key:  {url}"), "plain"],
+        ));
+        assert!(
+            widths.windows(2).all(|w| w[0] == w[1]),
+            "ragged: {widths:?}"
+        );
+    }
+
+    #[test]
+    fn linkify_leaves_trailing_punctuation_outside_the_link() {
+        let out = linkify_with("see https://x.dev, ok", true);
+        assert!(out.contains("\x1b]8;;https://x.dev\x1b\\"), "{out:?}");
+        assert_eq!(plain(&out), "see https://x.dev, ok");
+        // Nothing to link -> byte-identical passthrough.
+        assert_eq!(linkify_with("no links here", true), "no links here");
+        // Escapes off (NO_COLOR / TERM=dumb) -> untouched.
+        assert_eq!(
+            linkify_with("see https://x.dev", false),
+            "see https://x.dev"
+        );
+    }
+
+    #[test]
+    fn explicit_newlines_become_their_own_rows() {
+        // The get-a-key URL must own the first line, not flow into a
+        // paragraph with the warning beneath it.
+        let p = plain(&panel(
+            "parsec",
+            &["https://app.getparsec.ai\nsecond\n\nfourth"],
+        ));
+        let body: Vec<&str> = p.lines().skip(1).take(4).collect();
+        assert!(body[0].contains("https://app.getparsec.ai"), "{p}");
+        assert!(body[1].contains("second"), "{p}");
+        assert!(body[2].trim_matches(['│', ' ']).is_empty(), "{p}");
+        assert!(body[3].contains("fourth"), "{p}");
     }
 
     #[test]
