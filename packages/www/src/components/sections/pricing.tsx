@@ -20,7 +20,7 @@ const TIERS: Tier[] = [
       "Exploration maps",
       "No-reread hook",
       "Savings status line",
-      "Runs on your plan or key — no account needed",
+      "Runs on your plan or key",
     ],
   },
   {
@@ -69,11 +69,6 @@ export function Pricing() {
         >
           Start free. The learned curator is the upgrade.
         </h2>
-        <p className="mt-3 max-w-2xl text-sm text-muted">
-          The free plugin is a real product, not a demo. Paid tiers add the
-          brain — the part that stays server-side.
-        </p>
-
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {TIERS.map((tier) => (
             <div
@@ -120,11 +115,6 @@ export function Pricing() {
             </div>
           ))}
         </div>
-
-        <p className="mt-6 text-xs text-faint">
-          On subscription plans there is no per-token bill — the win is more
-          Claude Code inside the same rate limits.
-        </p>
       </div>
     </section>
   );

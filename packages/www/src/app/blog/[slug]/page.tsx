@@ -63,6 +63,22 @@ export default async function BlogPostPage({
           <time dateTime={meta.date} className="text-xs text-faint">
             {meta.date}
           </time>
+          {meta.author && (
+            <span className="text-xs text-muted">
+              by{" "}
+              {meta.authorUrl ? (
+                <a
+                  href={meta.authorUrl}
+                  rel="noopener"
+                  className="text-info underline underline-offset-2 transition-colors duration-150 ease-parsec hover:text-phosphor"
+                >
+                  {meta.author}
+                </a>
+              ) : (
+                meta.author
+              )}
+            </span>
+          )}
           {meta.tags.length > 0 && (
             <ul className="flex flex-wrap gap-2">
               {meta.tags.map((tag) => (

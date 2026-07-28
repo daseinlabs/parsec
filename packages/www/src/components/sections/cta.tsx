@@ -32,12 +32,6 @@ export function Cta() {
           ))}
         </div>
 
-        {/* DIRECTION.md §3: the free tier is plugin-only, zero infrastructure. */}
-        <p className="mt-4 text-sm text-muted">
-          The free tier needs no account — exploration maps, the no-reread
-          hook, and the savings ledger run from the plugin alone.
-        </p>
-
         <div className="mt-8 flex flex-wrap items-center gap-6">
           <a
             href={SITE.links.app}

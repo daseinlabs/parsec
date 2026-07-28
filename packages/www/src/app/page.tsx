@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Hero } from "@/components/sections/hero";
 import { Demo } from "@/components/sections/demo";
 import { How } from "@/components/sections/how";
-import { Features } from "@/components/sections/features";
 import { Shots } from "@/components/sections/shots";
 import { Honesty } from "@/components/sections/honesty";
 import { Testimonials } from "@/components/sections/testimonials";
@@ -21,8 +20,8 @@ export const metadata: Metadata = {
 
 // The landing page is pure composition — every section owns its copy and
 // markup under components/sections/. Order tells the story: what it is →
-// see it run → how it works → what you get → what it looks like → why the
-// numbers are real → who says so → what it costs → questions → install.
+// see it run → how it works → what it looks like → why the numbers are
+// real → who says so → what it costs → questions → install.
 export default function HomePage() {
   return (
     <main>
@@ -31,7 +30,6 @@ export default function HomePage() {
       <Hero />
       <Demo />
       <How />
-      <Features />
       <Shots />
       <Honesty />
       <Testimonials />

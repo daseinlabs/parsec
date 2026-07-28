@@ -1,0 +1,23 @@
+---
+title: "Parsec Goes Live!"
+description: "Parsec is live: measured on SWE-bench Verified with Claude Code, it cut real cache-aware cost by 39%, reduced task completion time by 25%, and increased solves."
+date: "2026-07-28"
+author: "Nicholas Swaminathan"
+authorUrl: "https://www.linkedin.com/in/nicholas-swaminathan/"
+tags:
+  - announcement
+---
+
+# Parsec Goes Live!
+
+It's not every day you get to use a product in its own development but today we are excited to announce Parsec built with Parsec. At its core parsec is aimed at one thing serving the optimal context to coding agents to minimize cost and maximize success.
+
+Unlike many other "efficiency" tools and claims out there Parsec was measured against the premier benchmark for measuring success at software engineering tasks; SWE Bench Verified. Over 100 SWE Verified tasks using the claude code harness and Sonnet 4.6 Parsec was able to reduce real cache aware cost by 39% while also decreasing task completion time by 25% and increasing the number of solves. Every other measured tool performed significantly worse than Parsec or was actively harmful compared to base claude code. Full results here: [github.com/daseinlabs/code-compression-bench](https://github.com/daseinlabs/code-compression-bench)
+
+By measuring and building against real workloads at scale we were able to build an efficiency layer that works with any harness and any model cutting costs by ~40%+ for coding agents. Internally we have been using Parsec ourselves to nearly double the team's velocity as we hardened it for you. A virtuous cycle if there ever was one.
+
+Ultimately the premise of Parsec is a relatively simple one to serve agents what they need not what they ask for. There exists one subtle moment between when the agent requests information (a tool call) and when the model receives it. Parsec lives and dies in that little moment. The neural network we built trained on tens of thousands of real coding agent workloads is able to quickly filter the relevant from the irrelevant. In that one tiny instant it ranks and trims the agent's context so all the agent sees is exactly what it needs for success no more no less.
+
+But we aren't an efficiency company and Parsec is not an efficiency tool. We are a continual learning company and Parsec achieves efficiency through continual learning. It is designed to actively learn and adapt online to real observed agent sessions within your account or organization. Every coding agent, every developer, every harness and every workload is different. Our continual learning approach lets us guarantee savings under diverse setups because it adapts to what it observes.
+
+We are very excited to finally be able to share this initial first step publicly for the first time and we have an incredibly full roadmap. This is just the beginning and the opportunity to leverage continual learning for improved outcomes at lower cost is huge. Not only will we continue to grow the breadth and depth of Parsec as well as its underlying models we will be launching a number of other continual learning technologies. Our goal is to build a world where every agent and every person get the right context, the right way, anytime and everytime. And we know how to get there.

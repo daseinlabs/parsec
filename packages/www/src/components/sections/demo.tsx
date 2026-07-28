@@ -12,17 +12,11 @@ export function Demo() {
           id="demo-h"
           className="mt-2 text-xl font-bold tracking-display text-ink sm:text-2xl"
         >
-          Install, run, ask for the number
+          Installation
         </h2>
-        <p className="mt-4 max-w-2xl text-base text-muted">
-          Two commands to install. One skill to see what you saved.
-        </p>
         <div className="mt-8 max-w-3xl">
           <Terminal />
-          <p className="mt-3 text-xs text-faint">
-            Illustrative session — your numbers come from per-request
-            count_tokens measurement, never an estimate.
-          </p>
+          <p className="mt-3 text-xs text-faint">Illustrative session.</p>
         </div>
       </div>
     </section>

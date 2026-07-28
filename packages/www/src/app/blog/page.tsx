@@ -37,12 +37,15 @@ export default function BlogIndexPage() {
                 >
                   {post.title}
                 </Link>
-                <time
-                  dateTime={post.date}
-                  className="mt-1 block text-xs text-faint"
-                >
-                  {post.date}
-                </time>
+                <p className="mt-1 text-xs text-faint">
+                  <time dateTime={post.date}>{post.date}</time>
+                  {post.author && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      {post.author}
+                    </>
+                  )}
+                </p>
                 <p className="mt-2 text-sm text-muted">{post.description}</p>
                 {post.tags.length > 0 && (
                   <ul className="mt-3 flex flex-wrap gap-2">

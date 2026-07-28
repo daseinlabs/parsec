@@ -42,7 +42,6 @@ export function Nav() {
           {/* Anchors resolve on / ; from other routes they land on the
               homepage section thanks to the /# prefix. */}
           <span className="hidden items-center gap-5 sm:flex">
-            <NavLink href="/#features">Features</NavLink>
             <NavLink href="/#pricing">Pricing</NavLink>
             <NavLink href="/blog/">Blog</NavLink>
           </span>

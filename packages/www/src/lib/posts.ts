@@ -15,6 +15,10 @@ export type PostMeta = {
   description: string;
   /** ISO date, e.g. "2026-07-27" */
   date: string;
+  /** Optional byline, e.g. "Nicholas Swaminathan" */
+  author?: string;
+  /** Optional link for the byline, e.g. a LinkedIn profile */
+  authorUrl?: string;
   tags: string[];
   draft: boolean;
 };
@@ -41,6 +45,9 @@ export function allPosts(): PostMeta[] {
         title: data.title as string,
         description: data.description as string,
         date: data.date as string,
+        author: typeof data.author === "string" ? data.author : undefined,
+        authorUrl:
+          typeof data.authorUrl === "string" ? data.authorUrl : undefined,
         tags: (data.tags as string[]) ?? [],
         draft: data.draft === true,
       };

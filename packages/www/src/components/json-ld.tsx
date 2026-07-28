@@ -61,6 +61,8 @@ export function blogPostingLd(post: {
   title: string;
   description: string;
   date: string;
+  author?: string;
+  authorUrl?: string;
 }): Record<string, unknown> {
   return {
     "@context": "https://schema.org",
@@ -68,6 +70,13 @@ export function blogPostingLd(post: {
     headline: post.title,
     description: post.description,
     datePublished: post.date,
+    ...(post.author && {
+      author: {
+        "@type": "Person",
+        name: post.author,
+        ...(post.authorUrl && { url: post.authorUrl }),
+      },
+    }),
     url: `${SITE.url}/blog/${post.slug}/`,
     publisher: {
       "@type": "Organization",

@@ -5,7 +5,7 @@ import { JsonLd, faqLd } from "@/components/json-ld";
 export const FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "Does my code go to your servers?",
-    a: "On the Pro tier, the local proxy sends chunk text and structural features to our scoring API over TLS and gets keep/cut scores back — your model requests never route through us; they leave your machine with your own credentials. On the free tier, nothing is sent to us at all. The one exception is the hosted Team gateway, where you explicitly choose to run the proxy in our cloud with a BYOK API key.",
+    a: "On the Pro tier, the local proxy sends chunk text and structural features to our scoring API over TLS and gets keep/cut scores back — your model requests never route through us; they leave your machine with your own credentials. On the free tier, tokens are sent to us but never stored. The one exception is the hosted Team gateway, where you explicitly choose to run the proxy in our cloud with a BYOK API key.",
   },
   {
     q: "Can I use my Claude subscription (Max plan)?",
@@ -22,10 +22,6 @@ export const FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "Does it train on my data?",
     a: "No by default. Telemetry is opt-in and tiered, and the default is off. You can preview exactly what would upload before opting in, and purge requests are honored.",
-  },
-  {
-    q: "Is it open source?",
-    a: "The client stack — plugin, proxy, engine, mapgen, contracts — is MIT. The trained model and the training stack are not. We open-source the deterministic shell and sell the brain.",
   },
 ];
 

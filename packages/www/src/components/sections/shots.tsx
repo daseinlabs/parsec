@@ -17,8 +17,15 @@ export function Shots() {
           What it looks like
         </h2>
         <p className="mt-3 max-w-2xl text-sm text-muted">
-          A ledger, not a chart deck: dollars saved per request on the
-          dashboard, and the same accounting surfaced in your session.
+          Find your saved costs in{" "}
+          <a
+            href="https://app.getparsec.ai"
+            rel="noopener"
+            className="text-info underline underline-offset-2 hover:text-phosphor"
+          >
+            app.getparsec.ai
+          </a>{" "}
+          and the savings in your session.
         </p>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-2">

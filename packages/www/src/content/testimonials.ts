@@ -1,7 +1,7 @@
-// TODO(testimonials): PLACEHOLDER QUOTES — every quote, name, and company
-// below is fictional. Replace with real, permissioned quotes before launch.
-// The section renders whatever is in this array; swapping copy is the only
-// edit needed.
+// TODO(testimonials): except for the Nicholas Swaminathan quote, every
+// quote, name, and company below is a fictional placeholder. Replace with
+// real, permissioned quotes before launch. The section renders whatever is
+// in this array; swapping copy is the only edit needed.
 
 export type Testimonial = {
   quote: string;
@@ -11,6 +11,14 @@ export type Testimonial = {
 };
 
 export const TESTIMONIALS: Testimonial[] = [
+  {
+    quote:
+      "I love this. In the past week I saved $2.5K in api credits and 6B " +
+      "in tokens. I blasted my plan and never hit the limit.",
+    name: "Nicholas Swaminathan",
+    role: "Founder",
+    company: "Dasein",
+  },
   {
     quote:
       "By turn thirty our agents were dragging the entire transcript into " +
@@ -28,14 +36,5 @@ export const TESTIMONIALS: Testimonial[] = [
     name: "Anders Vieth",
     role: "Infrastructure lead",
     company: "Larkspur Systems",
-  },
-  {
-    quote:
-      "My Max plan used to hit the weekly wall by Thursday. Long agent " +
-      "sessions just keep going now — same model, same credentials, nothing " +
-      "routed through anyone else's cloud.",
-    name: "Priya Raghunath",
-    role: "Agent platform engineer",
-    company: "Ninebark Automation",
   },
 ];
