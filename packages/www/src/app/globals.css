@@ -1,0 +1,205 @@
+@import "tailwindcss";
+
+/* parsec design tokens — brand/parsecbrandkit/tokens/tokens.json is the
+   source of truth. Retro-terminal identity: phosphor green on a near-black
+   void, monospace everywhere.
+
+   Dark is the brand default and the values in @theme below. Light mode
+   ("Paper" — warm neutral, deep-emerald ink) is NOT a parallel set of `dark:`
+   variants — it is the same variables redefined under [data-theme="light"]
+   (values from tokens.json `color.light` and the Paper block of
+   brand/parsecbrandkit/tokens/theme.css). Tailwind v4 compiles `bg-void` to
+   background-color: var(--color-void), so redefining the variable re-themes
+   every utility in one place. */
+@theme {
+  /* brand */
+  --color-phosphor: #4af626;
+  --color-phosphor-hover: #64f846;
+  --color-phosphor-press: #38c41b;
+  --color-on-phosphor: #06210b;
+  --color-mint: #7cffb2;
+  --color-dim: #2e7d46;
+  /* the mark/graphics green — same as phosphor on dark, but on light it
+     stays the BRIGHT brand green (#2FA317, BRANDING.md §2 "logo green")
+     while phosphor darkens to the interactive emerald. Only the logo and
+     brand graphics use this. */
+  --color-logo: #4af626;
+
+  /* surfaces */
+  --color-void: #0a0e0c;
+  --color-surface: #0f1512;
+  --color-elevated: #131b17;
+  --color-overlay: #16201b;
+
+  /* borders */
+  --color-line: #1d2a22;
+  --color-line-strong: #2e7d46;
+
+  /* text */
+  --color-ink: #d7fbe4;
+  --color-muted: #8ca897;
+  --color-faint: #556d60;
+
+  /* status */
+  --color-success: #4af626;
+  --color-warning: #ffb84d;
+  --color-error: #ff5c57;
+  --color-info: #4ad0e0;
+  --color-magenta: #ff5fd2;
+
+  /* selection (flips for light below) */
+  --color-selection: #163a22;
+
+  /* type — mono is the identity; sans is the optional long-form fallback */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "IBM Plex Mono",
+    SFMono-Regular, Menlo, monospace;
+  --font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --default-font-family: var(--font-mono);
+
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.35;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.35;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.6;
+  --text-md: 1rem;
+  --text-md--line-height: 1.6;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.35;
+  --text-xl: 1.75rem;
+  --text-xl--line-height: 1.15;
+  --text-2xl: 2.5rem;
+  --text-2xl--line-height: 1.15;
+  --text-3xl: 3.5rem;
+  --text-3xl--line-height: 1.15;
+
+  --tracking-display: -0.01em;
+  --tracking-caps: 0.12em;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+
+  --ease-parsec: cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+
+/* Light theme "Paper" — warm neutral, deep-emerald ink (tokens.json
+   color.light; theme.css light block). The refined brand rule (BRANDING.md
+   §2): on light, the INTERACTIVE green is the contrast-safe emerald #17833A;
+   the bright #2FA317 is reserved for the logo and brand graphics; the glow
+   goes away entirely. Unlayered so it wins over the @layer'd theme defaults
+   regardless of order. */
+:root[data-theme="light"] {
+  --color-phosphor: #17833a;
+  --color-phosphor-hover: #14712f;
+  --color-phosphor-press: #0f5e27;
+  --color-on-phosphor: #ffffff;
+  --color-mint: #2fa317;
+  --color-dim: #6e8b78;
+  --color-logo: #2fa317;
+
+  --color-void: #f2f5f1;
+  --color-surface: #ffffff;
+  --color-elevated: #fbfdfa;
+  --color-overlay: #ffffff;
+
+  --color-line: #dce6de;
+  --color-line-strong: #17833a;
+
+  --color-ink: #0c1410;
+  --color-muted: #516358;
+  --color-faint: #8a9b8f;
+
+  /* Paper themes the FULL status set — the dark neons fail contrast on
+     white. */
+  --color-success: #17833a;
+  --color-warning: #b7791f;
+  --color-error: #c6362f;
+  --color-info: #0e7490;
+  --color-magenta: #b0359c;
+
+  /* mintSoft — the kit's soft highlight surface tint. */
+  --color-selection: #e4f7ec;
+
+  --shadow-sm: 0 1px 2px rgba(20, 40, 28, 0.1);
+  --shadow-md: 0 8px 24px rgba(20, 40, 28, 0.1);
+  --shadow-lg: 0 24px 60px rgba(20, 40, 28, 0.14);
+}
+
+/* Escape hatch for the rare NON-color difference between themes (color needs
+   none of this — the variables above flip every color utility already). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  body {
+    background: var(--color-void);
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+  }
+
+  ::selection {
+    background: var(--color-selection);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-phosphor);
+    outline-offset: 2px;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  /* The one glowing thing on the page — used for the number that is the
+     story. At most one glowing element per section; none at all on light. */
+  .glow {
+    text-shadow: 0 0 6px rgba(74, 246, 38, 0.55), 0 0 22px rgba(74, 246, 38, 0.2);
+  }
+
+  /* Same phosphor bloom for the mark — drop-shadow instead of an SVG filter so
+     the mark can be inlined more than once without colliding filter ids. */
+  .glow-mark {
+    filter: drop-shadow(0 0 4px rgba(74, 246, 38, 0.55));
+  }
+
+  :root[data-theme="light"] .glow,
+  :root[data-theme="light"] .glow-mark {
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+/* rehype-pretty-code dual-theme output: each token carries its light color
+   inline plus a --shiki-dark variable; apply the dark palette whenever the
+   site is in dark mode. (next.config.ts: themes {light, dark}.) */
+:root[data-theme="dark"] pre[data-theme*=" "],
+:root[data-theme="dark"] pre[data-theme*=" "] span,
+:root[data-theme="dark"] code[data-theme*=" "],
+:root[data-theme="dark"] code[data-theme*=" "] span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg, transparent);
+}

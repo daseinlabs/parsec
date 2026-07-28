@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { MintKey } from "@/components/mint-key";
 import { NavLink, PageTitle, SignOut } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function AccountPage() {
       <div className="mb-8 flex items-center justify-between">
         <PageTitle>account</PageTitle>
         <nav className="flex items-center gap-5 text-sm">
+          <ThemeToggle />
           <NavLink href="/">savings</NavLink>
           <SignOut />
         </nav>

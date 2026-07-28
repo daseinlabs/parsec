@@ -1,39 +1,197 @@
 @import "tailwindcss";
 
-/* parsec design tokens — brand/parsec-brand-kit/tokens/tokens.json is the
-   source of truth. Retro-terminal identity: phosphor green on a near-black
-   void, monospace everywhere. Dark is the only theme this app ships. */
-@theme {
+/* parsec design tokens — brand/parsecbrandkit/tokens/{tokens.json,theme.css}
+   is the source of truth. Retro-terminal identity: phosphor green on a
+   near-black void, monospace everywhere.
+
+   Dark is the default. The "Paper" light theme is the same system with
+   swapped values (BRANDING.md §2): it applies via data-theme="light" (user
+   toggle, persisted in localStorage and set pre-paint in layout.tsx) or
+   automatically from the OS preference when no explicit choice is set. */
+
+:root {
+  color-scheme: dark;
+
   /* brand */
-  --color-phosphor: #4af626;
-  --color-phosphor-hover: #64f846;
-  --color-phosphor-press: #38c41b;
-  --color-on-phosphor: #06210b;
-  --color-mint: #7cffb2;
-  --color-dim: #2e7d46;
+  --parsec-phosphor: #4af626;
+  --parsec-phosphor-hover: #64f846;
+  --parsec-phosphor-press: #38c41b;
+  --parsec-on-phosphor: #06210b;
+  --parsec-mint: #7cffb2;
+  --parsec-dim: #2e7d46;
+  /* the mark: neon phosphor on dark, brand green on light (BRANDING.md §1) */
+  --parsec-logo: #4af626;
 
   /* surfaces */
-  --color-void: #0a0e0c;
-  --color-surface: #0f1512;
-  --color-elevated: #131b17;
-  --color-overlay: #16201b;
+  --parsec-bg: #0a0e0c;
+  --parsec-surface: #0f1512;
+  --parsec-elevated: #131b17;
+  --parsec-overlay: #16201b;
 
   /* borders */
-  --color-line: #1d2a22;
-  --color-line-strong: #2e7d46;
+  --parsec-border: #1d2a22;
+  --parsec-border-strong: #2e7d46;
 
   /* text */
-  --color-ink: #d7fbe4;
-  --color-muted: #8ca897;
-  --color-faint: #556d60;
+  --parsec-text: #d7fbe4;
+  --parsec-text-muted: #8ca897;
+  --parsec-text-faint: #556d60;
 
   /* status */
-  --color-success: #4af626;
-  --color-warning: #ffb84d;
-  --color-error: #ff5c57;
-  --color-info: #4ad0e0;
-  --color-magenta: #ff5fd2;
+  --parsec-success: #4af626;
+  --parsec-warning: #ffb84d;
+  --parsec-error: #ff5c57;
+  --parsec-info: #4ad0e0;
+  --parsec-magenta: #ff5fd2;
 
+  --parsec-selection: #163a22;
+
+  /* elevation — the glow dies on light (theme.css: soft shadows instead) */
+  --parsec-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --parsec-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --parsec-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --parsec-glow: 0 0 6px rgba(74, 246, 38, 0.55), 0 0 22px rgba(74, 246, 38, 0.2);
+  --parsec-glow-strong: 0 0 8px rgba(74, 246, 38, 0.9),
+    0 0 26px rgba(74, 246, 38, 0.35);
+  --parsec-glow-mark: drop-shadow(0 0 4px rgba(74, 246, 38, 0.55));
+
+  /* theme-conditional display (used by the toggle's sun/moon icons) */
+  --parsec-when-dark: block;
+  --parsec-when-light: none;
+}
+
+/* Light theme "Paper" — same tokens, swapped values. Explicit choice… */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --parsec-phosphor: #17833a;
+  --parsec-phosphor-hover: #14712f;
+  --parsec-phosphor-press: #0f5e27;
+  --parsec-on-phosphor: #ffffff;
+  --parsec-mint: #2fa317;
+  --parsec-dim: #6e8b78;
+  --parsec-logo: #2fa317;
+
+  --parsec-bg: #f2f5f1;
+  --parsec-surface: #ffffff;
+  --parsec-elevated: #fbfdfa;
+  --parsec-overlay: #ffffff;
+
+  --parsec-border: #dce6de;
+  --parsec-border-strong: #17833a;
+
+  --parsec-text: #0c1410;
+  --parsec-text-muted: #516358;
+  --parsec-text-faint: #8a9b8f;
+
+  --parsec-success: #17833a;
+  --parsec-warning: #b7791f;
+  --parsec-error: #c6362f;
+  --parsec-info: #0e7490;
+  --parsec-magenta: #b0359c;
+
+  --parsec-selection: #d5e9dc;
+
+  --parsec-shadow-sm: 0 1px 2px rgba(20, 40, 28, 0.1);
+  --parsec-shadow-md: 0 8px 24px rgba(20, 40, 28, 0.1);
+  --parsec-shadow-lg: 0 24px 60px rgba(20, 40, 28, 0.14);
+  --parsec-glow: none;
+  --parsec-glow-strong: none;
+  --parsec-glow-mark: none;
+
+  --parsec-when-dark: none;
+  --parsec-when-light: block;
+}
+
+/* …or the OS preference when the user has not chosen (theme.css pattern:
+   a manual data-theme="dark"/"light" always wins over this block). */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --parsec-phosphor: #17833a;
+    --parsec-phosphor-hover: #14712f;
+    --parsec-phosphor-press: #0f5e27;
+    --parsec-on-phosphor: #ffffff;
+    --parsec-mint: #2fa317;
+    --parsec-dim: #6e8b78;
+    --parsec-logo: #2fa317;
+
+    --parsec-bg: #f2f5f1;
+    --parsec-surface: #ffffff;
+    --parsec-elevated: #fbfdfa;
+    --parsec-overlay: #ffffff;
+
+    --parsec-border: #dce6de;
+    --parsec-border-strong: #17833a;
+
+    --parsec-text: #0c1410;
+    --parsec-text-muted: #516358;
+    --parsec-text-faint: #8a9b8f;
+
+    --parsec-success: #17833a;
+    --parsec-warning: #b7791f;
+    --parsec-error: #c6362f;
+    --parsec-info: #0e7490;
+    --parsec-magenta: #b0359c;
+
+    --parsec-selection: #d5e9dc;
+
+    --parsec-shadow-sm: 0 1px 2px rgba(20, 40, 28, 0.1);
+    --parsec-shadow-md: 0 8px 24px rgba(20, 40, 28, 0.1);
+    --parsec-shadow-lg: 0 24px 60px rgba(20, 40, 28, 0.14);
+    --parsec-glow: none;
+    --parsec-glow-strong: none;
+    --parsec-glow-mark: none;
+
+    --parsec-when-dark: none;
+    --parsec-when-light: block;
+  }
+}
+
+/* Theme-dependent tokens: inline so utilities keep the var() reference and
+   swap with data-theme / prefers-color-scheme at paint time. */
+@theme inline {
+  /* brand */
+  --color-phosphor: var(--parsec-phosphor);
+  --color-phosphor-hover: var(--parsec-phosphor-hover);
+  --color-phosphor-press: var(--parsec-phosphor-press);
+  --color-on-phosphor: var(--parsec-on-phosphor);
+  --color-mint: var(--parsec-mint);
+  --color-dim: var(--parsec-dim);
+  --color-logo: var(--parsec-logo);
+
+  /* surfaces */
+  --color-void: var(--parsec-bg);
+  --color-surface: var(--parsec-surface);
+  --color-elevated: var(--parsec-elevated);
+  --color-overlay: var(--parsec-overlay);
+
+  /* borders */
+  --color-line: var(--parsec-border);
+  --color-line-strong: var(--parsec-border-strong);
+
+  /* text */
+  --color-ink: var(--parsec-text);
+  --color-muted: var(--parsec-text-muted);
+  --color-faint: var(--parsec-text-faint);
+
+  /* status */
+  --color-success: var(--parsec-success);
+  --color-warning: var(--parsec-warning);
+  --color-error: var(--parsec-error);
+  --color-info: var(--parsec-info);
+  --color-magenta: var(--parsec-magenta);
+
+  --shadow-sm: var(--parsec-shadow-sm);
+  --shadow-md: var(--parsec-shadow-md);
+  --shadow-lg: var(--parsec-shadow-lg);
+  --shadow-glow: var(--parsec-glow);
+  --shadow-glow-strong: var(--parsec-glow-strong);
+}
+
+/* Theme-invariant tokens. */
+@theme {
   /* type — mono is the identity; sans is the optional long-form fallback */
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "IBM Plex Mono",
     SFMono-Regular, Menlo, monospace;
@@ -65,21 +223,10 @@
   --radius-lg: 12px;
   --radius-xl: 20px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
-  --shadow-glow: 0 0 6px rgba(74, 246, 38, 0.55), 0 0 22px rgba(74, 246, 38, 0.2);
-  --shadow-glow-strong: 0 0 8px rgba(74, 246, 38, 0.9),
-    0 0 26px rgba(74, 246, 38, 0.35);
-
   --ease-parsec: cubic-bezier(0.2, 0.6, 0.2, 1);
 }
 
 @layer base {
-  :root {
-    color-scheme: dark;
-  }
-
   body {
     background: var(--color-void);
     color: var(--color-ink);
@@ -89,7 +236,7 @@
   }
 
   ::selection {
-    background: #163a22;
+    background: var(--parsec-selection);
   }
 
   :focus-visible {
@@ -99,14 +246,24 @@
 }
 
 @layer components {
-  /* The one glowing thing on the page. Used for the number that is the story. */
+  /* The one glowing thing on the page. Used for the number that is the story.
+     On light the glow resolves to none — the number stands on weight alone. */
   .glow {
-    text-shadow: var(--shadow-glow);
+    text-shadow: var(--parsec-glow);
   }
 
   /* Same phosphor bloom for the mark — drop-shadow instead of an SVG filter so
      the mark can be inlined more than once without colliding filter ids. */
   .glow-mark {
-    filter: drop-shadow(0 0 4px rgba(74, 246, 38, 0.55));
+    filter: var(--parsec-glow-mark);
+  }
+
+  /* The toggle renders both icons and CSS shows the one for the mode it
+     switches *to* — it flips with the theme without client state to hydrate. */
+  .theme-when-dark {
+    display: var(--parsec-when-dark);
+  }
+  .theme-when-light {
+    display: var(--parsec-when-light);
   }
 }

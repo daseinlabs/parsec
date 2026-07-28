@@ -1,7 +1,8 @@
-import Link from "next/link";
+// Deliberate copy of packages/frontend/src/components/brand.tsx (no JS
+// workspace root to share through — see www/README.md). Change them together.
 
 // The parsec mark: two sightlines converging on a star — the parallax angle.
-// Vector master lives at brand/parseclogo/svg/parsec-mark-flat.svg (also copied
+// Vector master lives at brand/parsecbrandkit/logo/svg/parsec-mark-flat.svg (also copied
 // to public/ for non-React consumers). Inlined here so it inherits currentColor
 // and stays symmetric about the horizontal axis at any size.
 //
@@ -40,49 +41,13 @@ export function Mark({ className = "h-8 w-auto" }: { className?: string }) {
 export function Lockup({ className = "" }: { className?: string }) {
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      {/* text-logo, not text-phosphor: on light backgrounds the mark is the
-          brand green #2FA317, never the interactive accent (BRANDING.md §1). */}
+      {/* text-logo (www-only token): #4AF626 on dark, #2FA317 on light —
+          BRANDING.md §2 "logo green". The frontend copy of this file is
+          dark-only, where text-phosphor is the same color. */}
       <Mark className="h-9 w-auto text-logo glow-mark" />
       <span className="text-xl font-extrabold tracking-display text-ink">
         parsec
       </span>
     </div>
-  );
-}
-
-export function NavLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="text-muted transition-colors duration-150 ease-parsec hover:text-phosphor"
-    >
-      {children}
-    </Link>
-  );
-}
-
-export function SignOut() {
-  return (
-    <form action="/auth/signout" method="post">
-      <button className="text-muted transition-colors duration-150 ease-parsec hover:text-phosphor">
-        sign out
-      </button>
-    </form>
-  );
-}
-
-// Page title in the terminal voice: a prompt caret, then the thing.
-export function PageTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h1 className="flex items-baseline gap-2 text-lg font-bold tracking-display">
-      <span className="text-phosphor glow">❯</span>
-      {children}
-    </h1>
   );
 }

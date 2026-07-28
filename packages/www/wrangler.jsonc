@@ -1,0 +1,16 @@
+// Static-assets-only Worker serving the `next build` export in out/.
+// No main script: every request is answered directly from the asset store.
+{
+  "name": "parsec-www",
+  "compatibility_date": "2026-07-27",
+  "routes": [
+    { "pattern": "getparsec.ai", "custom_domain": true },
+    { "pattern": "www.getparsec.ai", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./out",
+    // Matches next.config.ts `trailingSlash: true` — /blog redirects to /blog/.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}

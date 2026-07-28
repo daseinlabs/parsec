@@ -3,6 +3,8 @@ import { ledgerSummary, ledgerUsage } from "@/lib/platform";
 import type { LedgerSummary, LedgerUsage } from "@/lib/platform";
 import { supabaseServer } from "@/lib/supabase/server";
 import { Lockup, NavLink, SignOut } from "@/components/brand";
+import { Onboarding } from "@/components/onboarding";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // The app is the dashboard. Signed out, you get /login; signed in, you get the
 // savings ledger. There is no separate front door — the marketing landing page
@@ -200,6 +202,7 @@ export default async function DashboardPage() {
       <div className="mb-8 flex items-center justify-between">
         <Lockup />
         <nav className="flex items-center gap-5 text-sm">
+          <ThemeToggle />
           <NavLink href="/account">account</NavLink>
           <SignOut />
         </nav>
@@ -215,12 +218,7 @@ export default async function DashboardPage() {
           The platform API is unreachable — check PLATFORM_URL.
         </p>
       )}
-      {summary && summary.rows_count === 0 && (
-        <p className="text-sm text-muted">
-          No ledger rows yet. Mint an API key under Account and point your
-          proxy at the platform to start reporting.
-        </p>
-      )}
+      {summary && summary.rows_count === 0 && <Onboarding />}
       {summary && summary.rows_count > 0 && (
         <>
           {/* Dollars saved leads; raw token totals live in the by-model table

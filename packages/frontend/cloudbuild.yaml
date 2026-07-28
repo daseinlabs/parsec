@@ -3,7 +3,7 @@
 #
 #   gcloud builds submit packages/frontend \
 #     --config packages/frontend/cloudbuild.yaml \
-#     --substitutions=_REGION=us-central1,_REPO=dasein,_SERVICE=dasein-frontend,\
+#     --substitutions=_REGION=us-central1,_REPO=dasein-images,_SERVICE=dasein-frontend,\
 # _PLATFORM_URL=https://dasein-platform-xxxxx.run.app,\
 # _SUPABASE_URL=https://<proj>.supabase.co,_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
 #
@@ -16,7 +16,7 @@
 
 substitutions:
   _REGION: us-central1
-  _REPO: dasein
+  _REPO: dasein-images
   _SERVICE: dasein-frontend
   # Runtime: where the server-side BFF calls the platform. The platform's public
   # run.app URL (or a custom domain in front of it).

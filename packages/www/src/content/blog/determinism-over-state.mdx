@@ -1,0 +1,58 @@
+---
+title: "Determinism over state"
+description: "Prompt-cache-safe context editing is a distributed-systems problem, and the answer is serving bytes as a pure function of the conversation — not a session dict."
+date: "2026-07-27"
+tags:
+  - architecture
+  - caching
+---
+
+# Determinism over state
+
+Prompt caching bills a matched prefix at a fraction of list input price. That discount has one condition: the prefix must be byte-identical to what the provider saw last time. Editing an agent's context per turn — which is the entire job of a context curator — is therefore an attack on the very mechanism that makes long agent sessions affordable. If the bytes you serve for turn *j* ever change between calls, every cached turn after *j* is a miss.
+
+Once you say it that way, cache-safe context editing stops being a prompt-engineering problem and becomes a distributed-systems problem: two calls, possibly handled by two processes at two times, must agree on bytes. There are two ways to get agreement. Remember, or recompute.
+
+## The session-state trap
+
+The reference stack behind parsec chose *remember*. An in-process dict, keyed by conversation id, mapped each turn to the exact bytes served at its first wire appearance — "decide at birth or never" — with TTL eviction to bound memory.
+
+It worked, until anything happened. Restart the process, hit the TTL, or add a second replica, and the dict is gone. The next call re-decides the same turns with the curator's *current* opinions and serves different bytes for the same prefix. Cache bust at best; silent divergence at worst — the model now sees a history that disagrees with the one it already answered.
+
+The operational consequence is worse than the bug: state that lives in one process forces sticky routing. Every conversation is pinned to its replica; a deploy is a state migration; scale-out means a session store. You have built a stateful service to edit stateless requests.
+
+## The rule
+
+parsec chose *recompute*. The engine's freeze layer holds one rule:
+
+> Served bytes for message *j* are a pure function of **(messages[0..=j], checkpoint bundle, config)**.
+
+No session dict is ever the source of truth. Any store that exists is a transparent memo of this function — losing it changes latency, never bytes. Nothing on the serving path may read a wall clock, an RNG, or per-session state.
+
+Three design shifts make the rule actually hold:
+
+**Decisions quantize to message boundaries, not call boundaries.** The old code decided a message at its birth *call* — but which messages share a call depends on client batching, which is unrecoverable from the conversation alone. parsec decides message *j* against messages 0..=*j*, full stop. The prefix is the whole input.
+
+**Scores are fixed-point integers.** Keep/cut compares `round_half_even(score × 1000)` against an integer threshold, quantized server-side before crossing the network. Float jitter across replicas, hardware, or library versions can never flip a decision, so purity survives the hop to the scoring service.
+
+**Append-only by construction.** The decision function for *j* cannot read anything after *j*. Replay a longer prefix and every earlier turn's bytes fall out identically — not by cache lookup, by recomputation.
+
+Recomputable means restart-safe. Restart-safe means topology-free: the same engine runs as a laptop process or as N replicas behind plain round-robin, no sticky sessions, no session store. Even failure recovery inherits the property — if the scorer errors, the turn is left undecided and retried on a later call, and that recovery is byte-identical to a cold replay.
+
+## Teeth
+
+A rule without a test is a mood. Two invariants guard this one in CI from day one:
+
+The **golden replay test**: serve growing prefixes of a recorded conversation incrementally, then re-serve from a cold start at every length. Every previously-served turn must be byte-identical across both runs. This is determinism, mechanically checked — warm equals cold, always.
+
+The **cache ratio**: a per-task cache-read to cache-write ratio of roughly 10:1, which is a design target the replay test exists to make achievable, not a benchmark result. Replay proves the bytes are stable; the ratio is where stable bytes turn into money.
+
+## Bytes, not semantics
+
+The uncomfortable detail is that the provider's cache matches *bytes*, not meaning. `{"a":1,"b":2}` and `{"b":2,"a":1}` are the same JSON value and entirely different prefixes. One reordered key in one tool schema busts the cache for everything after it.
+
+So byte stability is a contract, not a habit. Serialization pins `preserve_order` — keys come out in the order they went in, every time. The Rust engine reproduces its Python reference's float formatting digit-for-digit, because the parity suite's definition of done is byte-for-byte equality on frozen output, and "semantically equal" is worthless at this layer.
+
+The same discipline decides what may not enter frozen bytes at all. The reference injected governor directives — text derived from wall-clock time and another model's verdicts — into already-served turns. Non-recomputable inputs in frozen bytes would break the pure function, so in parsec such text rides the moving tail of the conversation, where nothing is cached yet.
+
+State remembers what you served. Determinism makes it impossible to serve anything else. Only one of those survives a restart.

@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-us-central1}"
-REPO="${REPO:-dasein}"
+REPO="${REPO:-dasein-images}"
 SERVICE="${SERVICE:-dasein-frontend}"
 PLATFORM_URL="${PLATFORM_URL:-}"
 SUPABASE_URL="${SUPABASE_URL:-}"
