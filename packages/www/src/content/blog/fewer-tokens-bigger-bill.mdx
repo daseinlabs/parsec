@@ -1,0 +1,103 @@
+---
+title: "Fewer tokens, bigger bill"
+description: "Every compression tool sells you a percentage. Almost none will tell you what it costs to fix an actual bug — so we measured it: 100 SWE-bench Verified tasks, cache-aware pricing, ranked by cost per solved task."
+date: "2026-07-28"
+tags:
+  - benchmark
+---
+
+# Fewer tokens, bigger bill
+
+<p className="mb-4 text-lg text-ink">
+  Every compression tool sells you a percentage. Almost none will tell you
+  what it costs to fix an actual bug — so we measured it.
+</p>
+
+<p className="mb-8 text-xs text-faint">
+  Code-Compression Bench · run 2026-07-04 · 100 SWE-bench Verified tasks ·
+  cache-aware pricing · sponsored and operated by Dasein.
+</p>
+
+Ask a context-compression layer what it does and you get a number: 60% fewer tokens, 90% fewer tokens, context trimmed to the bone. It's a satisfying figure, and it's nearly beside the point. A team doesn't pay for tokens saved; it pays for bugs fixed. The question that matters is whether the agent still lands the patch, and what the whole run cost to get there.
+
+So we held everything else still. One agent, one model, the same 100 tasks from SWE-bench Verified, the same official grader — all fixed. The only thing that changes between runs is the compression layer, so every dollar and every solved task traces straight back to it. Arms are ranked by cost per solved task: real money over problems actually closed.
+
+| Arm | Solved / 100 | $ / solved | Total cost | vs baseline |
+| --- | --- | --- | --- | --- |
+| **Parsec** | **62** | **$1.45** | **$89.65** | **−39%** |
+| Caveman | 58 | $2.05 | $118.99 | −19% |
+| Woz | 55 | $2.33 | $128.28 | −13% |
+| Baseline (none) | 57 | $2.58 | $147.30 | — |
+| RTK | 54 | $3.07 | $165.77 | +13% |
+| Headroom | 58 | $3.66 | $212.14 | +44% |
+
+The first thing the table does is embarrass the marketing. Two of the five paid layers — RTK and Headroom — cost more than running no compression at all. Headroom, which sells itself on cutting up to 95% of your tokens, produced the single most expensive run on the board.
+
+<figure className="my-6">
+  <img
+    src="https://raw.githubusercontent.com/daseinlabs/code-compression-bench/master/results/2026-07-04/figures/2_cost_per_solved.png"
+    alt="Cost per solved task, by arm"
+    className="mx-auto w-full max-w-xl rounded-md border border-line"
+  />
+</figure>
+
+<figure className="my-6">
+  <img
+    src="https://raw.githubusercontent.com/daseinlabs/code-compression-bench/master/results/2026-07-04/figures/1_savings_vs_baseline.png"
+    alt="Total cost versus the no-compression baseline, by arm"
+    className="mx-auto w-full max-w-xl rounded-md border border-line"
+  />
+</figure>
+
+## Everyone is compressing a different thing
+
+Line the layers up by what they actually touch and the pitches stop rhyming. Caveman reshapes the model's _output_ into terse fragments and never looks at the input. RTK is a hook on _shell-command output_ — and by its own README the native Read, Grep, and Glob tools sail right past it. Headroom compresses logs, JSON, and RAG chunks but exempts code by design, so on a coding agent it barely fires. Woz swaps in AST-aware file tools and hands exploration off to a cheaper sub-agent — which does cut tokens, and adds enough round-trips to make it the slowest arm here.
+
+Every one of them trims a fixed slice by a fixed rule. The catch is that, under caching, those slices are the cheap part of the bill. An agent resends a long, mostly-cached prompt every turn, and a cached prefix is billed at a fraction of fresh input — writing the cache costs roughly twelve times as much as reading it. So the tokens that actually cost money aren't the shell output or the terse prose; they're the working context that _grows_: the file reads, search hits, and transcript the agent drags forward, turn after turn. Trim a static slice and you can even make things worse — Headroom rewrites the prompt prefix to squeeze the non-code text, re-paying that 12× write rate every single turn, which is how the most token-neutral layer became the most expensive.
+
+<figure className="my-6">
+  <img
+    src="https://raw.githubusercontent.com/daseinlabs/code-compression-bench/master/results/2026-07-04/figures/9_cache_health.png"
+    alt="Cache read-to-write ratio by arm"
+    className="mx-auto w-full max-w-xl rounded-md border border-line"
+  />
+</figure>
+
+<figure className="my-6">
+  <img
+    src="https://raw.githubusercontent.com/daseinlabs/code-compression-bench/master/results/2026-07-04/figures/7_input_tokens.png"
+    alt="Input tokens delivered to the model, by arm"
+    className="mx-auto w-full max-w-xl rounded-md border border-line"
+  />
+</figure>
+
+## What Parsec does instead
+
+Parsec aims at the slice everyone else leaves alone: the working context that grows. And it doesn't prune by category — it curates the live working set from what the agent actually uses and what its runs actually solve, keeping the context that earns its place and discarding the rest. Where the others apply one rule to one kind of token, Parsec is driven by observed usage and outcome. That is the whole reason it delivers 54% fewer input tokens than the baseline without the prefix-churn that sank Headroom: it removes the expensive, growing tokens instead of the cheap, static ones.
+
+## The metric that can't be gamed
+
+Cost per solved task is the honest yardstick because it can't be worked from one side. Strip context too hard and a layer looks cheap while quietly failing more bugs; brute-force a high solve count and it looks capable while burning a fortune. Dividing real dollars by real fixes catches both — a layer only scores well if the agent keeps solving _and_ the bill comes down. By that measure Parsec solves the most tasks of any arm, 62 of 100, five above running no compression at all, at 39% less money: cheaper and better in the same run, because it is compressing the right thing.
+
+<figure className="my-6">
+  <img
+    src="https://raw.githubusercontent.com/daseinlabs/code-compression-bench/master/results/2026-07-04/figures/8_cost_vs_success.png"
+    alt="Cost savings versus solve rate, relative to the baseline"
+    className="mx-auto w-full max-w-xl rounded-md border border-line"
+  />
+</figure>
+
+## Method
+
+Same scaffold, model, and caps for every arm. Each task runs in a checkout with its git history stripped, so the agent can't read the reference fix out of the repo. A task counts only if the failing tests pass and the passing ones stay intact under the official grader — no partial credit, no model judging itself. Every layer runs as its shipped product, and the whole run regenerates from a single results file, so anyone can rerun it and check.
+
+<p className="mt-8 text-xs text-faint">
+  Source:{" "}
+  <a
+    href="https://github.com/daseinlabs/code-compression-bench"
+    rel="noopener"
+    className="text-info underline underline-offset-2"
+  >
+    github.com/daseinlabs/code-compression-bench
+  </a>
+</p>

@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
 const withMDX = createMDX({
   options: {
     remarkPlugins: [
+      // GitHub-flavored markdown — tables, autolinks, strikethrough.
+      "remark-gfm",
       // Parse YAML frontmatter out of the document…
       "remark-frontmatter",
       // …and expose it as an exported `frontmatter` object so pages can

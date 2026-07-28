@@ -40,6 +40,10 @@
   --color-muted: #8ca897;
   --color-faint: #556d60;
 
+  /* partner brands — Antler's own red (their --swatch--red). Only the
+     "Backed by ANTLER" wordmark uses this; never for status/decoration. */
+  --color-antler: #ed4746;
+
   /* status */
   --color-success: #4af626;
   --color-warning: #ffb84d;
@@ -114,6 +118,10 @@
   --color-ink: #0c1410;
   --color-muted: #516358;
   --color-faint: #8a9b8f;
+
+  /* Antler's darker red variant (also theirs) — the bright swatch red sits
+     near 3:1 on Paper. */
+  --color-antler: #b82b35;
 
   /* Paper themes the FULL status set — the dark neons fail contrast on
      white. */

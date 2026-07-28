@@ -33,6 +33,20 @@ export function Hero() {
             Read how it works <span aria-hidden>↓</span>
           </a>
         </div>
+
+        <a
+          href="https://www.antler.co/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group mt-12 inline-flex items-baseline gap-3"
+        >
+          <span className="text-xs tracking-caps text-faint uppercase">
+            Backed by
+          </span>
+          <span className="text-sm font-bold tracking-[0.3em] text-antler transition-opacity duration-150 ease-parsec group-hover:opacity-75">
+            ANTLER
+          </span>
+        </a>
       </div>
     </section>
   );
