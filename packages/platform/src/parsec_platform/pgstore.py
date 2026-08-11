@@ -16,7 +16,13 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from parsec_platform.store import Store, _model_row, extra_fields, fold_daily
+from parsec_platform.store import (
+    Store,
+    _model_row,
+    extra_fields,
+    fold_daily,
+    fold_public,
+)
 
 try:
     from psycopg_pool import ConnectionPool
@@ -52,8 +58,12 @@ class PostgresStore(Store):
         url = url or os.environ["PARSEC_PLATFORM_DB_URL"]
         # open=True validates the URL at boot (fail fast, not on first
         # request); min_size=0 lets an idle Cloud Run instance hold nothing.
+        # prepare_threshold=None: the transaction pooler hands each txn a
+        # different server connection, so auto-prepared statements ("_pg3_n")
+        # vanish between uses and fail with SQLSTATE 26000.
         self._pool = ConnectionPool(
-            url, min_size=min_size, max_size=max_size, open=True
+            url, min_size=min_size, max_size=max_size, open=True,
+            kwargs={"prepare_threshold": None},
         )
 
     def close(self) -> None:
@@ -250,3 +260,43 @@ class PostgresStore(Store):
             "cache_write_per_mtok",
         )
         return fold_daily([dict(zip(cols, r)) for r in rows])
+
+    def savings_public(self) -> dict[str, Any]:
+        # The account-scoped by-model query minus its WHERE — grouped per model
+        # so each model's saved tokens are valued at its own blended rate.
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "SELECT l.extra->>'model' AS model, "
+                "COUNT(*) AS rows_count, "
+                "COUNT(l.counterfactual_input_tokens) AS measured_rows, "
+                "COALESCE(SUM(l.counterfactual_input_tokens - (l.billed_input_tokens "
+                "  + l.billed_cache_read_tokens + l.billed_cache_write_tokens)) "
+                "  FILTER (WHERE l.counterfactual_input_tokens IS NOT NULL), 0) "
+                "  AS tokens_saved, "
+                "COALESCE(SUM(l.billed_input_tokens), 0) AS billed_input_tokens, "
+                "COALESCE(SUM(l.billed_output_tokens), 0) AS billed_output_tokens, "
+                "COALESCE(SUM(l.billed_cache_read_tokens), 0) AS billed_cache_read_tokens, "
+                "COALESCE(SUM(l.billed_cache_write_tokens), 0) AS billed_cache_write_tokens, "
+                "p.input_per_mtok, p.output_per_mtok, p.cache_read_per_mtok, "
+                "p.cache_write_per_mtok, p.currency "
+                "FROM ledger l "
+                "LEFT JOIN model_pricing p ON p.model = l.extra->>'model' "
+                "GROUP BY l.extra->>'model', p.input_per_mtok, p.output_per_mtok, "
+                "  p.cache_read_per_mtok, p.cache_write_per_mtok, p.currency"
+            ).fetchall()
+        cols = (
+            "model",
+            "rows_count",
+            "measured_rows",
+            "tokens_saved",
+            "billed_input_tokens",
+            "billed_output_tokens",
+            "billed_cache_read_tokens",
+            "billed_cache_write_tokens",
+            "input_per_mtok",
+            "output_per_mtok",
+            "cache_read_per_mtok",
+            "cache_write_per_mtok",
+            "currency",
+        )
+        return fold_public([dict(zip(cols, r)) for r in rows])

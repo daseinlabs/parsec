@@ -389,6 +389,9 @@ pub fn uninstall() -> anyhow::Result<()> {
     save_state(&st)?;
     let port = routed_port();
     strip_managed_settings()?;
+    // The opencode shim routes at the same proxy — a full uninstall must not
+    // leave it pointing at a port nothing will listen on again.
+    crate::setup_opencode::remove_if_managed();
     println!("{}", stop_proxy(port));
     let home = parsec_home();
     let (removed, failed) = purge_data_files(&home);

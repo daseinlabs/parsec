@@ -45,6 +45,9 @@ class LedgerRow(BaseModel):
     # Client harness session identity (an id, never content) — groups the
     # conv_ids one session mints via compaction/subagents.
     session_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{1,64}$")
+    # Calling-tool attribution (x-parsec-tool header from non-Claude-Code
+    # shims, e.g. opencode). Absent = Claude Code.
+    tool: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,32}$")
     checkpoint_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     brain_ms: float | None = Field(default=None, ge=0)
     scorer_fail_opens: int | None = Field(default=None, ge=0)

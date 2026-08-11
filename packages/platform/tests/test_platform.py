@@ -285,6 +285,9 @@ def test_cache_tokens_are_not_free_savings(client: TestClient) -> None:
         example,
         request_id="req_" + "a" * 32,
         model="claude-sonnet-5",  # the contracts example omits it; by_model needs it
+        # The example's fixed ts ages out of the 30-day usage window; the
+        # cross-check below needs the row to land in the series.
+        ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         counterfactual_input_tokens=100_000,
         billed_input_tokens=500,
         billed_cache_read_tokens=60_000,
@@ -307,6 +310,103 @@ def test_cache_tokens_are_not_free_savings(client: TestClient) -> None:
     assert by_model[row["model"]]["tokens_saved"] == 30_000
     usage = client.get("/ledger/usage", headers=auth(mint_jwt())).json()
     assert sum(d["tokens_saved"] for d in usage["days"]) == 30_000
+
+
+def test_savings_endpoint(client: TestClient) -> None:
+    """/savings is a projection of /ledger/summary — same §8.4-honest
+    aggregation, so the two can never disagree — and NULL-counterfactual rows
+    count toward rows_count but never toward measured_rows or tokens_saved."""
+    assert client.get("/savings").status_code == 401
+
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    measured = dict(
+        example,
+        request_id="req_" + "b" * 32,
+        model="claude-sonnet-5",
+        counterfactual_input_tokens=100_000,
+        billed_input_tokens=500,
+        billed_cache_read_tokens=60_000,
+        billed_cache_write_tokens=9_500,
+    )
+    hole = dict(
+        example,
+        request_id="req_" + "c" * 32,
+        counterfactual_input_tokens=None,  # probe failed: a hole, not a zero
+    )
+    for row in (measured, hole):
+        assert (
+            client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+            == 201
+        )
+
+    savings = client.get("/savings", headers=auth(mint_jwt())).json()
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    assert savings["tokens_saved"] == summary["tokens_saved"]
+    assert savings["cost_saved_usd"] == summary["cost_saved_usd"]
+    assert savings["rows_count"] == summary["rows_count"] == 2
+    assert savings["measured_rows"] == summary["measured_rows"] == 1
+    assert savings["currency"] == "USD"
+
+    # Another account has saved nothing.
+    other = client.get("/savings", headers=auth(mint_jwt("acct-other"))).json()
+    assert other["tokens_saved"] == 0
+    assert other["cost_saved_usd"] == 0
+    assert other["rows_count"] == 0
+
+
+def test_cost_helpers_return_floats_for_decimal_prices() -> None:
+    """Postgres NUMERIC pricing columns arrive as Decimal, and a Decimal cost
+    JSON-serializes as a string, not a number (seen live on /savings/public).
+    The helpers must coerce to float; SQLite feeds them floats, so only this
+    test exercises the Decimal path without a Postgres instance."""
+    from decimal import Decimal
+
+    from parsec_platform.store import cost_saved_usd, cost_usd
+
+    prices = (Decimal("3.0"), Decimal("15.0"), Decimal("0.3"), Decimal("3.75"))
+    sums = (500, 100, 60_000, 9_500)
+    assert isinstance(cost_usd(sums, prices), float)
+    assert isinstance(cost_saved_usd(30_000, sums, prices), float)
+
+
+def test_savings_public(client: TestClient) -> None:
+    """/savings/public is the landing page's counter: unauthenticated,
+    aggregated across ALL accounts, and exposes no per-account detail. CORS
+    headers let the static www fetch it from the browser (no BFF there)."""
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    for acct, fill in (("acct-a", "d"), ("acct-b", "e")):
+        key = client.post("/keys", headers=auth(mint_jwt(acct))).json()["key"]
+        row = dict(
+            example,
+            request_id="req_" + fill * 32,
+            model="claude-sonnet-5",  # 3 / 15 / 0.3 / 3.75 per MTok
+            counterfactual_input_tokens=100_000,
+            billed_input_tokens=500,
+            billed_cache_read_tokens=60_000,
+            billed_cache_write_tokens=9_500,
+        )
+        assert (
+            client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+            == 201
+        )
+
+    resp = client.get(
+        "/savings/public", headers={"Origin": "https://getparsec.ai"}
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "https://getparsec.ai"
+    public = resp.json()
+    # Both accounts' savings, valued at the model's blended input-side rate.
+    assert public["tokens_saved"] == 60_000
+    blended = (500 * 3.0 + 60_000 * 0.3 + 9_500 * 3.75) / 70_000
+    assert public["cost_saved_usd"] == pytest.approx(
+        round(2 * 30_000 * blended / 1_000_000, 6)
+    )
+    assert public["measured_rows"] == 2
+    assert public["currency"] == "USD"
+    # Nothing per-account leaks through the public shape.
+    assert "by_model" not in public and "account_id" not in public
 
 
 def test_ledger_accepts_pre_rename_key_and_header(client: TestClient) -> None:
@@ -403,6 +503,8 @@ def test_cost_saved_is_blended_not_list_input_price(client: TestClient) -> None:
         example,
         request_id="req_" + "b" * 32,
         model="claude-sonnet-5",  # 3 / 15 / 0.3 / 3.75 per MTok
+        # Fresh ts: the per-day cross-check needs the row inside the 30-day window.
+        ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         counterfactual_input_tokens=100_000,
         billed_input_tokens=500,
         billed_cache_read_tokens=60_000,

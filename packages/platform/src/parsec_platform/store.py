@@ -55,7 +55,9 @@ def cost_usd(
     if prices is None or any(p is None for p in prices):
         return None
     bi, bo, br, bw = sums
-    pi, po, pr, pw = prices  # type: ignore[misc]
+    # float() each price: Postgres NUMERIC columns arrive as Decimal, and a
+    # Decimal result would JSON-serialize as a string instead of a number.
+    pi, po, pr, pw = (float(p) for p in prices)  # type: ignore[arg-type]
     return round((bi * pi + bo * po + br * pr + bw * pw) / 1_000_000, 6)
 
 
@@ -82,7 +84,8 @@ def cost_saved_usd(
     if prices is None or any(p is None for p in prices):
         return None
     bi, _bo, br, bw = sums
-    pi, _po, pr, pw = prices  # type: ignore[misc]
+    # float() for the same Decimal-vs-JSON reason as cost_usd.
+    pi, _po, pr, pw = (float(p) for p in prices)  # type: ignore[arg-type]
     input_side = bi + br + bw
     # No input-side tokens billed at all ⇒ no observed mix to blend. Nothing was
     # served from cache, so list input price is the honest rate.
@@ -120,6 +123,27 @@ def _model_row(r: dict[str, Any]) -> dict[str, Any]:
         "cost_usd": cost_usd(sums, prices),
         "cost_saved_usd": cost_saved_usd(tokens_saved, sums, prices),
         "currency": r.get("currency") or "USD",
+    }
+
+
+def fold_public(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Roll by-model grouped rows (same column shape as the by-model queries)
+    up to the site-wide public totals. Savings are valued per model at its own
+    blended input-side rate before summing (same rule as `fold_daily`);
+    unpriced models add tokens but no cost — a hole, never a fabricated zero."""
+    shaped = [_model_row(r) for r in rows]
+    return {
+        "rows_count": sum(m["rows_count"] for m in shaped),
+        "measured_rows": sum(m["measured_rows"] for m in shaped),
+        "tokens_saved": sum(m["tokens_saved"] for m in shaped),
+        "cost_saved_usd": round(
+            sum(
+                m["cost_saved_usd"]
+                for m in shaped
+                if m["cost_saved_usd"] is not None
+            ),
+            6,
+        ),
     }
 
 
@@ -278,6 +302,12 @@ class Store(abc.ABC):
     def usage_daily(self, account_id: str, days: int) -> list[dict[str, Any]]:
         """Per-day usage buckets over the last `days` days (oldest first), each
         with summed tokens, tokens_saved (§8.4-honest), and cost."""
+
+    @abc.abstractmethod
+    def savings_public(self) -> dict[str, Any]:
+        """Site-wide savings totals across ALL accounts — the landing page's
+        public counter. Same §8.4 aggregation as ledger_summary minus the
+        account filter; must expose nothing per-account."""
 
 
 class SQLiteStore(Store):
@@ -438,6 +468,32 @@ class SQLiteStore(Store):
             ).fetchall()
         summary["by_model"] = [_model_row(dict(r)) for r in by_model]
         return summary
+
+    def savings_public(self) -> dict[str, Any]:
+        # The account-scoped by-model query minus its WHERE — grouped per model
+        # so each model's saved tokens are valued at its own blended rate.
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT json_extract(l.extra, '$.model') AS model, "
+                "COUNT(*) AS rows_count, "
+                "COUNT(l.counterfactual_input_tokens) AS measured_rows, "
+                "COALESCE(SUM(CASE WHEN l.counterfactual_input_tokens IS NOT NULL "
+                "  THEN l.counterfactual_input_tokens - (l.billed_input_tokens "
+                "    + l.billed_cache_read_tokens + l.billed_cache_write_tokens) END), 0) "
+                "  AS tokens_saved, "
+                "COALESCE(SUM(l.billed_input_tokens), 0) AS billed_input_tokens, "
+                "COALESCE(SUM(l.billed_output_tokens), 0) AS billed_output_tokens, "
+                "COALESCE(SUM(l.billed_cache_read_tokens), 0) AS billed_cache_read_tokens, "
+                "COALESCE(SUM(l.billed_cache_write_tokens), 0) AS billed_cache_write_tokens, "
+                "p.input_per_mtok, p.output_per_mtok, p.cache_read_per_mtok, "
+                "p.cache_write_per_mtok, p.currency "
+                "FROM ledger l "
+                "LEFT JOIN model_pricing p ON p.model = json_extract(l.extra, '$.model') "
+                "GROUP BY json_extract(l.extra, '$.model'), p.input_per_mtok, "
+                "  p.output_per_mtok, p.cache_read_per_mtok, p.cache_write_per_mtok, "
+                "  p.currency"
+            ).fetchall()
+        return fold_public([dict(r) for r in rows])
 
     def usage_daily(self, account_id: str, days: int) -> list[dict[str, Any]]:
         with self._lock:

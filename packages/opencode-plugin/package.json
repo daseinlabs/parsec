@@ -1,0 +1,20 @@
+{
+  "name": "parsec-opencode",
+  "version": "0.2.0",
+  "description": "opencode shim for the parsec curating proxy: routes the Anthropic provider at the local proxy (BYOK only), tags requests for per-tool savings attribution, toasts session savings, and registers the /parsec-* commands.",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daseinlabs/learner"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "parsec"
+  ]
+}

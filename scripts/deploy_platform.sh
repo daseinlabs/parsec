@@ -27,7 +27,7 @@ cd "$(dirname "$0")/.."
 
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-us-central1}"
-REPO="${REPO:-dasein}"
+REPO="${REPO:-dasein-images}"
 SERVICE="${SERVICE:-dasein-platform}"
 # Secret Manager refs (name:version). DB URL is required.
 DB_URL_SECRET="${DB_URL_SECRET:-dasein-platform-db-url:latest}"

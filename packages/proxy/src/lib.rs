@@ -27,6 +27,7 @@ pub mod noreread;
 pub mod providers;
 pub mod server;
 pub mod setup;
+pub mod setup_opencode;
 pub mod splice;
 pub mod statusline;
 pub mod supervisor;

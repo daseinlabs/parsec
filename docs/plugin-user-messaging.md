@@ -188,7 +188,7 @@ A git repo with `.claude-plugin/marketplace.json` cataloging plugins:
 ```json
 {
   "name": "parsec-marketplace",
-  "owner": { "name": "Dasein Labs", "email": "support@getparsec.ai" },
+  "owner": { "name": "Dasein Labs", "email": "support@daseinlabs.ai" },
   "plugins": [
     {
       "name": "parsec",

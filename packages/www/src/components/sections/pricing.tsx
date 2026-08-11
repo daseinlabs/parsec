@@ -104,7 +104,7 @@ export function Pricing() {
               {tier.contact && (
                 <div className="mt-auto pt-6">
                   <a
-                    href="mailto:hello@dasein.rocks"
+                    href="mailto:hello@daseinlabs.ai"
                     rel="noopener"
                     className="block rounded-md border border-line px-3 py-2 text-center text-sm font-bold text-ink transition-colors ease-parsec hover:border-line-strong hover:text-phosphor"
                   >

@@ -103,6 +103,6 @@ keep clones small.
 <div align="center">
 
 [getparsec.ai](https://getparsec.ai) · [dashboard](https://app.getparsec.ai) ·
-built by [Dasein Labs](mailto:support@getparsec.ai)
+built by [Dasein Labs](mailto:support@daseinlabs.ai)
 
 </div>

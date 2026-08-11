@@ -64,6 +64,31 @@ and the weights into the image, and deploys with `--gpu 1 --gpu-type nvidia-l4
 | `--min-instances` | `1` | The proxy path is latency-sensitive; keep one instance warm so no request eats a cold start. Scale-to-zero is fine for dev/staging. |
 | `PARSEC_SERVE_TAU` | *unset* | Serve at the checkpoint's **calibrated** tau, not a forced demo tau. |
 
+## Future work: idle cost of the warm brain instance
+
+`--min-instances 1` + `--no-cpu-throttling` on a 4 vCPU / 16 GiB instance bills
+the **full active rate 24/7** regardless of traffic: ~$9/day ≈ $270/month
+(verified in the billing console, 2026-07-28 — Cloud Run was $214.53 for July
+with near-zero traffic, currently absorbed by promo credits). The frontend and
+platform services' warm instances bill at the idle rate (~$0.25/day each) and
+don't matter.
+
+Options when we care (in increasing latency cost):
+
+1. **Enable CPU throttling, keep `min-instances 1`** (`gcloud run services
+   update dasein-brain --cpu-throttling`): the warm instance drops to the idle
+   rate, ~$36/month, and still avoids cold starts. Caveat: the container gets
+   ~no CPU between requests, so this must wait until we're sure the brain does
+   no background work outside the request path (today it shouldn't — it's a
+   pure scorer).
+2. **Right-size**: if the checkpoint + bge fit in less than 4 vCPU / 16 GiB,
+   halving the box halves the always-on cost.
+3. **Scale-to-zero** (`--min-instances 0`): free when idle, but a multi-second
+   cold start on the first proxy request — fine for dev/staging, contradicts
+   the latency reasoning above for prod.
+
+Revisit once real traffic exists or credits run out, whichever comes first.
+
 ## The embedder: in-process bge (`local`)
 
 `PARSEC_EMBED_BACKEND=local` (`vendored/local_embed.py`) loads bge-large-en-v1.5

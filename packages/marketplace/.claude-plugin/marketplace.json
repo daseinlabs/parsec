@@ -1,6 +1,6 @@
 {
   "name": "parsec-marketplace",
-  "owner": { "name": "Dasein Labs", "email": "support@getparsec.ai" },
+  "owner": { "name": "Dasein Labs", "email": "support@daseinlabs.ai" },
   "plugins": [
     {
       "name": "parsec",

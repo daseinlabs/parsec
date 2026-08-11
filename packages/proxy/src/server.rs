@@ -505,6 +505,20 @@ fn session_id_from_metadata(body: &Value) -> Option<String> {
     id_shaped.then_some(sid)
 }
 
+/// Calling-tool attribution from the `x-parsec-tool` header — set by the
+/// shim a non-Claude-Code client installs (e.g. the opencode plugin), so the
+/// ledger can report savings per tool. Charset-gated like session_id: the
+/// contract must stay unable to carry raw text through this path. Absent or
+/// malformed → None, and the row omits the field (Claude Code default).
+fn tool_from_headers(headers: &HeaderMap) -> Option<String> {
+    let t = headers.get("x-parsec-tool")?.to_str().ok()?.trim();
+    let id_shaped = !t.is_empty()
+        && t.len() <= 32
+        && t.bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-'));
+    id_shaped.then(|| t.to_string())
+}
+
 fn sha8_of_fps<'a>(fps: impl Iterator<Item = &'a str>) -> String {
     let mut h = Sha256::new();
     for f in fps {
@@ -1456,6 +1470,9 @@ struct RowCtx {
     /// cross-conversation grouping conv_id can't provide: compaction and
     /// subagents mint new conv_ids inside one session.
     session_id: Option<String>,
+    /// Calling-tool attribution (`x-parsec-tool` header, set by non-Claude-
+    /// Code shims like the opencode plugin). None = Claude Code.
+    tool: Option<String>,
     model: Option<String>,
     cache_prefix_sha8: String,
     fail_open: bool,
@@ -1540,6 +1557,9 @@ fn write_ledger(
         }
         if let Some(sid) = &ctx.session_id {
             o.insert("session_id".into(), json!(sid));
+        }
+        if let Some(t) = &ctx.tool {
+            o.insert("tool".into(), json!(t));
         }
         if let Some(ck) = &stats.checkpoint_id {
             o.insert("checkpoint_id".into(), json!(ck));
@@ -1959,6 +1979,7 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
                 .unwrap_or_default()
         }),
         session_id: body.as_ref().and_then(session_id_from_metadata),
+        tool: tool_from_headers(&headers),
         model: body
             .as_ref()
             .and_then(|b| b.get("model"))
@@ -2145,6 +2166,36 @@ mod tests {
         ] {
             assert_eq!(session_id_from_metadata(&body), None);
         }
+    }
+
+    #[test]
+    fn tool_header_accepts_slugs_never_text() {
+        let hdr = |v: &str| {
+            let mut h = HeaderMap::new();
+            h.insert("x-parsec-tool", HeaderValue::from_str(v).unwrap());
+            h
+        };
+        assert_eq!(
+            tool_from_headers(&hdr("opencode")).as_deref(),
+            Some("opencode")
+        );
+        assert_eq!(tool_from_headers(&hdr("cline")).as_deref(), Some("cline"));
+        // Whitespace is trimmed; anything outside the slug charset — or too
+        // long to be an identifier — is dropped, never sanitized into a row.
+        assert_eq!(
+            tool_from_headers(&hdr(" opencode ")).as_deref(),
+            Some("opencode")
+        );
+        for bad in [
+            "",
+            "Open Code",
+            "rm -rf /",
+            "UPPER",
+            "x".repeat(33).as_str(),
+        ] {
+            assert_eq!(tool_from_headers(&hdr(bad)), None, "{bad:?}");
+        }
+        assert_eq!(tool_from_headers(&HeaderMap::new()), None);
     }
 
     #[test]

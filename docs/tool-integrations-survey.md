@@ -1,6 +1,7 @@
 # Multi-tool integration survey — Cursor, Codex CLI, opencode, Gemini CLI, Cline, Windsurf
 
-**Status:** research/design note, 2026-07-28. No implementation. Question: how hard is it to
+**Status:** research/design note, 2026-07-28. Phase 1 (opencode) implemented 2026-07-29 —
+see `docs/opencode-integration.md`. Question: how hard is it to
 bring parsec (local curating proxy + free-tier UX plugin) to agents other than Claude Code?
 Findings from official docs + source inspection (openai/codex and anomalyco/opencode read at
 HEAD). Claims below marked *(doc)*, *(src)*, or *(inference)* where it matters.

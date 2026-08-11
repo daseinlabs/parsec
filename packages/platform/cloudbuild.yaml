@@ -3,7 +3,7 @@
 #
 #   gcloud builds submit . \
 #     --config packages/platform/cloudbuild.yaml \
-#     --substitutions=_REGION=us-central1,_REPO=dasein,_SERVICE=dasein-platform,\
+#     --substitutions=_REGION=us-central1,_REPO=dasein-images,_SERVICE=dasein-platform,\
 # _DB_URL_SECRET=dasein-platform-db-url:latest,\
 # _SUPABASE_JWKS_URL=https://<proj>.supabase.co/auth/v1/.well-known/jwks.json,\
 # _STRIPE_WEBHOOK_SECRET=dasein-stripe-webhook:latest
@@ -22,7 +22,7 @@
 
 substitutions:
   _REGION: us-central1
-  _REPO: dasein                 # Artifact Registry repo (shared with the brain)
+  _REPO: dasein-images          # Artifact Registry repo (shared with the brain)
   _SERVICE: dasein-platform
   # Secret Manager refs (name:version). _DB_URL_SECRET is REQUIRED — the deploy
   # step fails loudly if it is empty (an unset DB URL would silently fall back

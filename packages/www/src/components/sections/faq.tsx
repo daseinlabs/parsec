@@ -29,12 +29,11 @@ export function Faq() {
   return (
     <section id="faq" aria-labelledby="faq-h" className="border-t border-line">
       <div className="mx-auto w-full max-w-6xl px-6 py-20">
-        <p className="text-xs tracking-caps text-faint uppercase">faq</p>
         <h2
           id="faq-h"
-          className="mt-2 text-xl font-bold tracking-display text-ink sm:text-2xl"
+          className="text-xl font-bold tracking-display text-ink sm:text-2xl"
         >
-          Straight answers
+          FAQ
         </h2>
 
         <div className="mt-8 max-w-3xl divide-y divide-line border-y border-line">

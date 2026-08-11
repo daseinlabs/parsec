@@ -168,6 +168,11 @@ jobs:
           rm -rf publish && mkdir -p publish/plugins
           cp -R packages/marketplace/. publish/
           cp -R dist/parsec publish/plugins/parsec
+          # The opencode one-line installer (`curl …/install-opencode.sh |
+          # bash`) ships beside the binaries it downloads, from the same
+          # commit, so the URL layout it assumes can never drift from the
+          # tree it lives in.
+          install -m 755 scripts/install-opencode.sh publish/install-opencode.sh
           # plugin.json `version` is the update channel — stamp it from the tag.
           jq --arg v "$VERSION" '.version = $v' \
             publish/plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
@@ -175,7 +180,7 @@ jobs:
           cd publish
           git init -b main
           git config user.name "dasein-release"
-          git config user.email "release@dasein.rocks"
+          git config user.email "release@daseinlabs.ai"
           git add -A
           git commit -m "parsec v$VERSION"
           git push --force \

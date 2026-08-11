@@ -12,6 +12,7 @@
  "conv_id": "run-7:ab12cd34ef56ab12cd34ef56",
  "model": "claude-sonnet-5",
  "session_id": "8068d98c-4176-4b0e-8e2b-a543aa24f204",
+ "tool": "opencode",
  "checkpoint_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
  "brain_ms": 41.3,
  "freeze_cut_tokens": 1873,

@@ -58,17 +58,24 @@ enum Command {
     SubagentStatusline,
     /// Human-readable savings report across recent sessions (/parsec:savings).
     Savings,
-    /// One-time activation: download the local embedder, write Claude Code
-    /// routing env, start the proxy. Runs automatically on first session.
+    /// One-time activation. Default (no TOOL): write Claude Code routing env
+    /// and start the proxy; runs automatically on first session. With a TOOL
+    /// (`parsec setup opencode`): install that tool's shim instead.
     Setup {
         /// Hook-spawned first-run mode: respects terminal states (disable,
         /// unsupported) and never races a live download. Manual runs retry.
         #[arg(long)]
         auto: bool,
+        /// Tool to set up: `opencode` (default: Claude Code).
+        tool: Option<String>,
     },
-    /// Undo setup: remove the parsec-managed env keys from Claude Code
-    /// settings and stop auto-setup from re-running.
-    Disable,
+    /// Undo setup. Default (no TOOL): remove the parsec-managed env keys from
+    /// Claude Code settings and stop auto-setup from re-running. With a TOOL
+    /// (`parsec disable opencode`): remove that tool's managed shim.
+    Disable {
+        /// Tool to disable: `opencode` (default: Claude Code).
+        tool: Option<String>,
+    },
     /// Full local cleanup ahead of `claude plugin uninstall`: disable, stop
     /// the proxy, and delete downloaded models/logs/ledger.
     Uninstall,
@@ -121,8 +128,16 @@ fn main() -> anyhow::Result<()> {
         Command::Statusline => parsec_proxy::statusline::run(),
         Command::SubagentStatusline => parsec_proxy::statusline::subagent_statusline(),
         Command::Savings => parsec_proxy::statusline::savings_report(),
-        Command::Setup { auto } => parsec_proxy::setup::run(auto),
-        Command::Disable => parsec_proxy::setup::disable(),
+        Command::Setup { auto, tool } => match tool.as_deref() {
+            None => parsec_proxy::setup::run(auto),
+            Some("opencode") => parsec_proxy::setup_opencode::setup(),
+            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode"),
+        },
+        Command::Disable { tool } => match tool.as_deref() {
+            None => parsec_proxy::setup::disable(),
+            Some("opencode") => parsec_proxy::setup_opencode::disable(),
+            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode"),
+        },
         Command::Uninstall => parsec_proxy::setup::uninstall(),
         Command::Up => parsec_proxy::setup::up(),
         Command::Key { action } => match action {

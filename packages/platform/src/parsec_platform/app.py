@@ -13,13 +13,22 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import time
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from parsec_platform.auth import hash_key, require_account, require_key_account
 from parsec_platform.models import LedgerRow
 from parsec_platform.store import SQLiteStore, Store
 from parsec_platform.stripe_webhook import verify_stripe_signature
+
+
+def _priced_sum(by_model: list[dict], key: str) -> float:
+    """Sum a per-model cost column across priced models — an unpriced model's
+    cost is None (a hole, never zero) and contributes nothing."""
+    return round(sum(m[key] for m in by_model if m[key] is not None), 6)
 
 
 def create_app(store: Store | None = None) -> FastAPI:
@@ -35,6 +44,22 @@ def create_app(store: Store | None = None) -> FastAPI:
         else:
             store = SQLiteStore()
     app.state.store = store
+    # /savings/public is the only route a browser calls cross-origin: the
+    # getparsec.ai landing page is a static export with no BFF (unlike the
+    # dashboard, which proxies server-side). GET-only CORS for the marketing
+    # origins; every authenticated route is server-to-server and unaffected.
+    # Local dev overrides via PARSEC_CORS_ORIGINS in the repo-root .env.local
+    # (compose loads it via env_file; bare uvicorn needs --env-file).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=os.environ.get(
+            "PARSEC_CORS_ORIGINS",
+            "https://getparsec.ai,https://www.getparsec.ai,"
+            "https://daseinlabs.ai,https://www.daseinlabs.ai,"
+            "https://daseinlabs.github.io",
+        ).split(","),
+        allow_methods=["GET"],
+    )
     # Pre-billing measure: until Stripe is wired, grant entitlement the moment a
     # user mints their key (the onboarding step) so we can gather usage patterns.
     # Off by default — the correct long-term behavior is Stripe-gated — the
@@ -142,19 +167,54 @@ def create_app(store: Store | None = None) -> FastAPI:
         blended input-side rate (see `store.cost_saved_usd`)."""
         summary = app.state.store.ledger_summary(account_id)
         by_model = summary.get("by_model", [])
-        summary["cost_usd"] = round(
-            sum(m["cost_usd"] for m in by_model if m["cost_usd"] is not None), 6
-        )
-        summary["cost_saved_usd"] = round(
-            sum(
-                m["cost_saved_usd"]
-                for m in by_model
-                if m["cost_saved_usd"] is not None
-            ),
-            6,
-        )
+        summary["cost_usd"] = _priced_sum(by_model, "cost_usd")
+        summary["cost_saved_usd"] = _priced_sum(by_model, "cost_saved_usd")
         summary["currency"] = "USD"
         return summary
+
+    @app.get("/savings")
+    def savings(account_id: str = Depends(require_account)) -> dict:
+        """Current total savings for the account: the savings fields of
+        /ledger/summary without the usage/billing detail. Deliberately a
+        projection of the same ledger aggregation — not a running counter —
+        so the number is always recomputable from per-request count_tokens
+        counterfactual rows (§8.4) and cannot drift from the summary.
+        tokens_saved is the primary figure; cost_saved_usd is derived from it
+        via each model's blended input-side rate (see store.cost_saved_usd)
+        and sums only priced models."""
+        summary = app.state.store.ledger_summary(account_id)
+        return {
+            "tokens_saved": summary["tokens_saved"],
+            "cost_saved_usd": _priced_sum(summary.get("by_model", []), "cost_saved_usd"),
+            "currency": "USD",
+            "rows_count": summary["rows_count"],
+            "measured_rows": summary["measured_rows"],
+        }
+
+    # (value, monotonic deadline) for /savings/public — one cached dict per
+    # process is enough; replicas each warming their own copy is fine.
+    public_cache: dict[str, Any] = {"value": None, "until": 0.0}
+
+    @app.get("/savings/public")
+    def savings_public() -> dict:
+        """Site-wide savings counter for the landing page: aggregate across
+        ALL accounts, unauthenticated by design, exposing nothing per-account.
+        Same §8.4 ledger aggregation as /savings (real count_tokens
+        counterfactuals only — the www copy rule forbids invented numbers).
+        Cached ~60s in-process so anonymous traffic can't hammer the
+        full-ledger scan; staleness of a minute is irrelevant to a counter
+        that only grows."""
+        now = time.monotonic()
+        if public_cache["value"] is None or now >= public_cache["until"]:
+            totals = app.state.store.savings_public()
+            public_cache["value"] = {
+                "tokens_saved": totals["tokens_saved"],
+                "cost_saved_usd": totals["cost_saved_usd"],
+                "measured_rows": totals["measured_rows"],
+                "currency": "USD",
+            }
+            public_cache["until"] = now + 60
+        return public_cache["value"]
 
     @app.get("/ledger/usage")
     def ledger_usage(

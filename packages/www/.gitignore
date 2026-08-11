@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# committed: dev/prod defaults for the hero savings stat's platform URL
+# (no secrets — public URLs only)
+!.env.development
+!.env.production
 
 # vercel
 .vercel
