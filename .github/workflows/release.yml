@@ -175,6 +175,7 @@ jobs:
           # that URL shipped in earlier releases and must keep working.
           install -m 755 scripts/install.sh publish/install.sh
           install -m 755 scripts/install-opencode.sh publish/install-opencode.sh
+          install -m 644 scripts/install.ps1 publish/install.ps1
           # plugin.json `version` is the update channel — stamp it from the tag.
           jq --arg v "$VERSION" '.version = $v' \
             publish/plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp

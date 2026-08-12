@@ -105,6 +105,18 @@ codex/opencode get the platform binary downloaded into
 by `parsec setup <tool>`; the download is skipped when Claude Code is the
 only tool found (the plugin ships its own binary). release.yml publishes it
 beside the binaries from the same commit.
+
+`scripts/install.ps1` — the Windows twin (PowerShell 5.1+, pure ASCII for
+BOM-less 5.1 parsing): same detect→install flow; downloads win-x64
+`parsec.exe` to `%USERPROFILE%\.parsec\bin\` and adds that dir to the user
+PATH (no symlink alias on Windows — the exe sits at the probe path
+directly). Setup artifacts are platform-aware (`setup_codex.rs`
+cfg-branches): the SessionStart hook is `cmd /c` with the absolute exe path
+baked as a TOML literal string, and the skills reference
+`%USERPROFILE%\...\parsec.exe`. **Not yet validated on real Windows** —
+the win-x64 binary ships for the Claude Code plugin, but the codex/opencode
+setup paths need one smoke run on a Windows machine before this is
+advertised beyond the README line.
 `install-opencode.sh` remains as a compat stub (that URL shipped 2026-08-11)
 forwarding to `install.sh` pinned to opencode. Claude Code plugin users skip
 the download entirely: `parsec setup codex` from the installed binary.

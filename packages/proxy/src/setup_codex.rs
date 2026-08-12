@@ -131,15 +131,32 @@ fn head_block(mode: Mode, port: u16) -> String {
     )
 }
 
+/// The SessionStart hook's `command = …` TOML line, per platform. Unix:
+/// `$HOME` expands in the hook's own `sh`, so a space-containing home
+/// survives, with a PATH fallback. Windows: no `/bin/sh` — the resolved
+/// absolute exe path is baked at setup time as a TOML LITERAL string
+/// (single quotes: backslashes survive; the install.ps1 places parsec.exe
+/// at exactly this path).
+fn hook_command_line() -> String {
+    #[cfg(unix)]
+    {
+        "command = \"/bin/sh -c '\\\"$HOME\\\"/.parsec/bin/parsec up || parsec up'\"".to_string()
+    }
+    #[cfg(windows)]
+    {
+        let exe = crate::setup::parsec_home().join("bin").join("parsec.exe");
+        format!("command = 'cmd /c \"\"{}\" up\"'", exe.display())
+    }
+}
+
 /// The tail block: the BYOK provider table (inert unless the head selects
 /// it) and the SessionStart proxy-revival hook. `wire_api = "responses"` is
 /// the only wire Codex still speaks; the attribution header rides Codex's
 /// own `http_headers` surface (subscription mode is attributed by its route
-/// namespace instead). The hook command expands `$HOME` in its own `sh`, so
-/// a space-containing home survives; `parsec up` is idempotent and detached.
-/// Deliberately SYNCHRONOUS: codex 0.147.0 rejects `async = true` by
-/// skipping the whole hook ("async hooks are not supported yet") — and
-/// `parsec up` returns immediately anyway (the proxy detaches).
+/// namespace instead). `parsec up` is idempotent and detached. Deliberately
+/// SYNCHRONOUS: codex 0.147.0 rejects `async = true` by skipping the whole
+/// hook ("async hooks are not supported yet") — and `parsec up` returns
+/// immediately anyway (the proxy detaches).
 fn tail_block(port: u16) -> String {
     format!(
         "{TAIL_BEGIN} — do not edit; `parsec disable codex` removes this block >>>\n\
@@ -155,10 +172,11 @@ fn tail_block(port: u16) -> String {
          \n\
          [[hooks.SessionStart.hooks]]\n\
          type = \"command\"\n\
-         command = \"/bin/sh -c '\\\"$HOME\\\"/.parsec/bin/parsec up || parsec up'\"\n\
+         {hook_command}\n\
          statusMessage = \"parsec: reviving proxy\"\n\
          timeout = 30\n\
-         {TAIL_END}\n"
+         {TAIL_END}\n",
+        hook_command = hook_command_line()
     )
 }
 
@@ -177,7 +195,15 @@ fn skill_files(port: u16) -> Vec<(&'static str, String)> {
         "<!-- {SKILL_SENTINEL}: written by `parsec setup codex`; \
          removed by `parsec disable codex`. -->"
     );
+    // The binary path the skills tell the agent to run. Unix: the stable
+    // alias (refresh_bin_alias keeps it current), PATH fallback in the
+    // templates. Windows: no symlink alias — install.ps1 puts parsec.exe at
+    // this path AND on the user PATH, so the env-var form works from any
+    // shell the agent picks.
+    #[cfg(unix)]
     let run = "~/.parsec/bin/parsec";
+    #[cfg(windows)]
+    let run = "%USERPROFILE%\\.parsec\\bin\\parsec.exe";
     let skill = |name: &'static str, description: &str, body: String| {
         (
             name,
@@ -192,7 +218,7 @@ fn skill_files(port: u16) -> Vec<(&'static str, String)> {
             "Show parsec context-compression savings for recent sessions",
             format!(
                 "Run this shell command and show the user its FULL output in a code block:\n\n\
-                 ```\n{run} savings 2>/dev/null || parsec savings\n```\n\n\
+                 ```\n{run} savings || parsec savings\n```\n\n\
                  Do not summarize the numbers away — the table is the answer. If both \
                  invocations fail, say the parsec binary is missing and suggest re-running \
                  `parsec setup codex`.\n"
@@ -642,10 +668,14 @@ mod tests {
             "wire_api = \"responses\"",
             "\"x-parsec-tool\" = \"codex\"",
             "[[hooks.SessionStart]]",
-            "parsec up",
         ] {
             assert!(tail.contains(needle), "{needle} missing from tail block");
         }
+        // The revival hook command is platform-specific.
+        #[cfg(unix)]
+        assert!(tail.contains("/bin/sh -c") && tail.contains("parsec up"));
+        #[cfg(windows)]
+        assert!(tail.contains("cmd /c") && tail.contains("parsec.exe\" up"));
     }
 
     #[test]

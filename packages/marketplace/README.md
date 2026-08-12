@@ -51,6 +51,12 @@ OpenAI Codex CLI, opencode — and activates parsec for each:
 curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.sh | bash
 ```
 
+Windows (PowerShell; or run the `curl | bash` line inside WSL):
+
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.ps1 | iex"
+```
+
 - **Claude Code**: installs this plugin (identical to the two `claude
   plugin` commands above).
 - **Codex CLI**: every codex session then routes through parsec with your
