@@ -155,9 +155,10 @@ the download entirely: `parsec setup codex` from the installed binary.
 
 ```
 cargo build -p parsec-proxy
-target/debug/parsec setup codex          # provider block + profile + warm proxy
-# restart any already-running proxy so the new /openai route is live:
-curl -X POST http://127.0.0.1:8082/shutdown && target/debug/parsec up
+target/debug/parsec setup codex          # routing blocks + skills + warm proxy
+# restart any already-running proxy so the freshly built binary serves
+# (identity-checked; the install scripts do this automatically):
+target/debug/parsec up --restart
 OPENAI_API_KEY=sk-… codex --profile parsec   # any session
 tail -f ~/.parsec/proxy.log                  # per-request relay lines
 grep '"tool":"codex"' ~/.parsec/ledger.jsonl | tail

@@ -94,6 +94,11 @@ if printf '%s' "$tools" | grep -qwE 'codex|opencode'; then
   "$tmp" --version >/dev/null # refuse to install a binary that cannot run
   mv "$tmp" "$dest"
   trap - EXIT
+  # A proxy that predates this install keeps serving the OLD binary —
+  # restart so the fresh one owns the port (identity-checked: a foreign
+  # process on the port is never killed). In-flight requests from other
+  # sessions see one brief blip and recover on their next request.
+  "$dest" up --restart
 fi
 
 # ── per-tool setup ───────────────────────────────────────────────────────────

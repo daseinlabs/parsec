@@ -85,7 +85,13 @@ enum Command {
     Uninstall,
     /// Bring the proxy back on the routed port if it died mid-session
     /// (detached; no-op when it is already listening).
-    Up,
+    Up {
+        /// Stop a running parsec proxy first, then start fresh — used by the
+        /// install scripts so a just-installed binary actually serves.
+        /// Foreign processes on the port are never killed.
+        #[arg(long)]
+        restart: bool,
+    },
     /// Set/show/clear the per-account API key the proxy reports savings with
     /// (from the dashboard). Stored in ~/.parsec/credentials.json.
     Key {
@@ -154,7 +160,7 @@ fn main() -> anyhow::Result<()> {
             Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode, codex"),
         },
         Command::Uninstall => parsec_proxy::setup::uninstall(),
-        Command::Up => parsec_proxy::setup::up(),
+        Command::Up { restart } => parsec_proxy::setup::up(restart),
         Command::Key { action } => match action {
             KeyAction::Set { key, platform_url } => parsec_proxy::setup::key_set(key, platform_url),
             KeyAction::Show => parsec_proxy::setup::key_show(),

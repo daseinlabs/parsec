@@ -207,12 +207,41 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
 /// (A dead *worker* needs no intervention — the supervisor respawns it and
 /// falls back to Anthropic in the gap.) Idempotent —
 /// a live proxy (ours or the user's own) is never double-spawned.
-pub fn up() -> anyhow::Result<()> {
+pub fn up(restart: bool) -> anyhow::Result<()> {
     let port = routed_port();
     let log = parsec_home().join("proxy.log");
     if crate::hook::port_listening(port) {
-        println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
-        return Ok(());
+        if !restart {
+            println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
+            return Ok(());
+        }
+        // `--restart` (used by the install scripts): a freshly installed
+        // binary must actually serve — a proxy that predates the install
+        // keeps running the OLD image otherwise. Only something that
+        // identifies itself as a parsec proxy is ever shut down; a foreign
+        // process on the port is left alone.
+        if !shutdown_parsec_on(port) {
+            anyhow::bail!(
+                "127.0.0.1:{port} is listening but is not a parsec proxy (or would not \
+                 shut down) — not killing a foreign process; free the port and re-run"
+            );
+        }
+        let mut freed = false;
+        for _ in 0..40 {
+            if !crate::hook::port_listening(port) {
+                freed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        if !freed {
+            anyhow::bail!(
+                "old proxy on 127.0.0.1:{port} acknowledged shutdown but never released \
+                 the port — check {}",
+                log.display()
+            );
+        }
+        println!("old proxy on 127.0.0.1:{port} stopped — starting the installed binary");
     }
     // Nothing to re-derive: the proxy needs no embedder env since the
     // embedder moved server-side (docs/server-side-embedding.md).
@@ -233,6 +262,32 @@ pub fn up() -> anyhow::Result<()> {
         "proxy spawned for 127.0.0.1:{port} but never started listening — check {}",
         log.display()
     )
+}
+
+/// Identity-checked shutdown: GET /health must answer as a parsec proxy
+/// before POST /shutdown is sent (the supervisor's own uninstall probe uses
+/// the same identity rule). false ⇒ nothing was shut down.
+fn shutdown_parsec_on(port: u16) -> bool {
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    else {
+        return false;
+    };
+    let is_parsec = client
+        .get(format!("http://127.0.0.1:{port}/health"))
+        .send()
+        .ok()
+        .filter(|r| r.status().is_success())
+        .and_then(|r| r.text().ok())
+        .is_some_and(|t| t.contains("parsec-proxy"));
+    if !is_parsec {
+        return false;
+    }
+    client
+        .post(format!("http://127.0.0.1:{port}/shutdown"))
+        .send()
+        .is_ok()
 }
 
 /// The port a routed Claude Code session is actually pointed at: this shell's

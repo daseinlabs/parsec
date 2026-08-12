@@ -48,6 +48,28 @@ function Test-Cmd([string]$Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+# Identity-checked stop of a running parsec proxy (never kills a foreign
+# process). Needed BEFORE replacing the exe: Windows locks a running binary.
+function Stop-ParsecProxy {
+    $port = 8082
+    $statePath = Join-Path $env:USERPROFILE ".parsec\setup_state.json"
+    if (Test-Path $statePath) {
+        try {
+            $st = Get-Content -Raw $statePath | ConvertFrom-Json
+            if ($st.port -gt 0) { $port = $st.port }
+        }
+        catch {}
+    }
+    try {
+        $h = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2
+        if ("$($h.service)" -ne "parsec-proxy") { return }
+        Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/shutdown" -TimeoutSec 2 | Out-Null
+        Write-Host "stopped the running parsec proxy on port $port (old binary)"
+        Start-Sleep -Milliseconds 800
+    }
+    catch {}
+}
+
 # -- auto-detect --------------------------------------------------------------
 if (-not $Tools) {
     # Claude Code needs its CLI present (the plugin installs through it).
@@ -83,17 +105,24 @@ if (($Tools -contains "codex") -or ($Tools -contains "opencode")) {
         Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/parsec.exe" -OutFile $tmp -UseBasicParsing
         & $tmp --version | Out-Null # refuse to install a binary that cannot run
         if ($LASTEXITCODE -ne 0) { throw "downloaded binary failed --version" }
+        # Windows locks a running exe -- stop an old proxy BEFORE the swap.
+        Stop-ParsecProxy
         try {
             Move-Item -Force $tmp $dest
         }
         catch {
-            # Windows locks a running exe -- a live proxy blocks the upgrade.
-            Write-Error "could not replace $dest (is the parsec proxy running? stop it and re-run): $_"
+            Write-Error "could not replace $dest (something still holds it -- close it and re-run): $_"
         }
     }
     finally {
         if (Test-Path $tmp) { Remove-Item -Force $tmp }
     }
+    # A proxy that predates this install keeps serving the OLD binary --
+    # restart so the fresh one owns the port (identity-checked: a foreign
+    # process on the port is never killed). In-flight requests from other
+    # sessions see one brief blip and recover on their next request.
+    & $dest up --restart
+    if ($LASTEXITCODE -ne 0) { Write-Error "proxy restart failed" }
     # Stable PATH entry so the skills/shims' `parsec` fallback resolves
     # (user-scope; no admin). Current session too.
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
