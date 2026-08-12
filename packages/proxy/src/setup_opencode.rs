@@ -136,9 +136,10 @@ pub fn setup() -> anyhow::Result<()> {
 /// Point `~/.parsec/bin/parsec` at the running binary. Only a symlink is
 /// ever replaced (a symlink there is ours by construction); a real file is
 /// the user's and is left alone. `parsec uninstall` purges the whole dir,
-/// so no separate removal path is needed.
+/// so no separate removal path is needed. Shared with the codex installer:
+/// its prompt files probe the same stable path.
 #[cfg(unix)]
-fn refresh_bin_alias() -> anyhow::Result<()> {
+pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
     let alias = crate::setup::parsec_home().join("bin").join("parsec");
     match std::fs::symlink_metadata(&alias) {

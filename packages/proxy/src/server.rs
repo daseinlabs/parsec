@@ -112,6 +112,12 @@ fn evict_stale(
 /// non-async (lock is never held across an await).
 pub struct AppState {
     pub upstream_base: String,
+    /// OpenAI platform upstream for `/openai/*` (Codex BYOK);
+    /// env-overridable, see [`crate::openai::upstream_from_env`].
+    pub openai_upstream: String,
+    /// ChatGPT backend upstream for `/chatgpt/*` (Codex subscription mode);
+    /// env-overridable, see [`crate::openai::chatgpt_upstream_from_env`].
+    pub chatgpt_upstream: String,
     pub client: reqwest::Client,
     pub convs: Mutex<HashMap<String, ConvState>>,
     /// §8.3: fail-open is a first-class metric, not a silent branch.
@@ -174,6 +180,8 @@ impl AppState {
     ) -> Self {
         Self {
             upstream_base,
+            openai_upstream: crate::openai::upstream_from_env(),
+            chatgpt_upstream: crate::openai::chatgpt_upstream_from_env(),
             client: reqwest::Client::new(),
             convs: Mutex::new(HashMap::new()),
             fail_open_count: AtomicU64::new(0),
@@ -201,9 +209,9 @@ impl AppState {
 /// RAII in-flight marker so the idle-exit sweep never kills a request that
 /// is mid-relay; owns an Arc so it can ride inside a streaming body and keep
 /// the proxy alive until the last SSE byte.
-struct InFlight(Arc<AppState>);
+pub(crate) struct InFlight(Arc<AppState>);
 impl InFlight {
-    fn enter(st: &Arc<AppState>) -> Self {
+    pub(crate) fn enter(st: &Arc<AppState>) -> Self {
         st.touch();
         st.in_flight.fetch_add(1, Ordering::SeqCst);
         InFlight(st.clone())
@@ -383,12 +391,19 @@ pub fn run() -> anyhow::Result<()> {
     })
 }
 
-/// Route table: the two Anthropic POST endpoints we speak; everything else
-/// 404s (we are a messages proxy, not a general gateway).
+/// Route table: the two Anthropic POST endpoints we speak, plus the
+/// `/openai/*` Responses passthrough (Codex); everything else 404s (we are a
+/// model-traffic proxy, not a general gateway).
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/messages", post(messages))
         .route("/v1/messages/count_tokens", post(count_tokens_passthrough))
+        // OpenAI Responses wire, namespaced so the wires can never be
+        // confused: `/openai/v1` is the BYOK provider base_url, `/chatgpt`
+        // the subscription-mode `openai_base_url` (upstream chatgpt.com's
+        // codex backend). Same handler, same curation.
+        .route("/openai/{*rest}", axum::routing::any(crate::openai::relay))
+        .route("/chatgpt/{*rest}", axum::routing::any(crate::openai::relay))
         // Liveness only: answered locally, never contacts upstream, so a
         // 200 here means "proxy is up", not "upstream is reachable".
         .route(
@@ -510,7 +525,7 @@ fn session_id_from_metadata(body: &Value) -> Option<String> {
 /// ledger can report savings per tool. Charset-gated like session_id: the
 /// contract must stay unable to carry raw text through this path. Absent or
 /// malformed → None, and the row omits the field (Claude Code default).
-fn tool_from_headers(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn tool_from_headers(headers: &HeaderMap) -> Option<String> {
     let t = headers.get("x-parsec-tool")?.to_str().ok()?.trim();
     let id_shaped = !t.is_empty()
         && t.len() <= 32
@@ -519,7 +534,7 @@ fn tool_from_headers(headers: &HeaderMap) -> Option<String> {
     id_shaped.then(|| t.to_string())
 }
 
-fn sha8_of_fps<'a>(fps: impl Iterator<Item = &'a str>) -> String {
+pub(crate) fn sha8_of_fps<'a>(fps: impl Iterator<Item = &'a str>) -> String {
     let mut h = Sha256::new();
     for f in fps {
         h.update(f.as_bytes());
@@ -527,7 +542,7 @@ fn sha8_of_fps<'a>(fps: impl Iterator<Item = &'a str>) -> String {
     format!("{:x}", h.finalize())[..8].to_string()
 }
 
-fn note_fail_open(st: &AppState, why: &str) {
+pub(crate) fn note_fail_open(st: &AppState, why: &str) {
     let n = st.fail_open_count.fetch_add(1, Ordering::Relaxed) + 1;
     tracing::warn!(
         fail_open_total = n,
@@ -575,45 +590,45 @@ fn record_inbound(headers: &HeaderMap, body: &Value, raw: &[u8]) {
 /// Capture-seam telemetry for the ledger row (docs/brain-serving-v0.md);
 /// zero-valued fields are omitted from the row.
 #[derive(Default, Clone)]
-struct PlanStats {
-    checkpoint_id: Option<String>,
-    brain_ms: f64,
-    scorer_fail_opens: u64,
+pub(crate) struct PlanStats {
+    pub(crate) checkpoint_id: Option<String>,
+    pub(crate) brain_ms: f64,
+    pub(crate) scorer_fail_opens: u64,
     /// Internal-view chars/4 the freezer trimmed THIS call (uncut − rendered)
     /// — a diagnostic, never a savings claim (§8.4).
-    freeze_cut_tokens: i64,
+    pub(crate) freeze_cut_tokens: i64,
     /// Insist-valve fires THIS call: the agent re-asked for content the
     /// curator had cut, and the valve served it full. The per-request
     /// over-cut (regret) signal — 0 on a well-calibrated cut.
-    curator_insists: u64,
-    tools_total: Option<usize>,
-    tools_kept: Option<usize>,
+    pub(crate) curator_insists: u64,
+    pub(crate) tools_total: Option<usize>,
+    pub(crate) tools_kept: Option<usize>,
     /// Pruned tools re-added THIS request because the prefix called them
     /// (reactive unfreeze) — Some only on the request that unfroze them.
-    tools_unfrozen: Option<usize>,
+    pub(crate) tools_unfrozen: Option<usize>,
     /// Pruned tools served as name+note stubs THIS request
     /// (PARSEC_TOOL_STUB) — Some only when > 0.
-    tools_stubbed: Option<usize>,
-    tools_pre_prune_sha8: Option<String>,
+    pub(crate) tools_stubbed: Option<usize>,
+    pub(crate) tools_pre_prune_sha8: Option<String>,
     // ── detailed-tracing seams (contract Track B item 6) ───────────────────
     /// Conversation turn = assistant messages in the internal view.
-    turn: i64,
+    pub(crate) turn: i64,
     /// Fold-map size after this call / folds newly recorded this call.
-    folds_total: usize,
-    folds_new: usize,
+    pub(crate) folds_total: usize,
+    pub(crate) folds_new: usize,
     /// Brain trace round trips this request (birth steps scored/replayed).
-    births_scored: u64,
+    pub(crate) births_scored: u64,
     /// Message indices carrying a cache anchor in the served body.
-    anchors: Vec<usize>,
-    curate_ms: f64,
+    pub(crate) anchors: Vec<usize>,
+    pub(crate) curate_ms: f64,
     /// Governor seams — Some only when PARSEC_GOVERNOR != off.
-    gov: Option<GovStats>,
+    pub(crate) gov: Option<GovStats>,
 }
 
 /// Ledger seams for the governor (contract Track B item 5) — recorded in
 /// advise AND on; absent when off so existing rows stay byte-identical.
 #[derive(Clone)]
-struct GovStats {
+pub(crate) struct GovStats {
     mode: &'static str,
     runaway_factor: f64,
     loop_frac: f64,
@@ -656,7 +671,7 @@ struct Plan {
 }
 
 /// Internal-view token mass (reference _PROMPT diag: Σ len(_text(m))//4).
-fn internal_mass(msgs: &[Value]) -> i64 {
+pub(crate) fn internal_mass(msgs: &[Value]) -> i64 {
     msgs.iter()
         .map(|m| {
             let t = match m.get("content") {
@@ -1464,21 +1479,21 @@ fn rfc3339_now() -> String {
 /// when the probe failed — measurement honesty (§8.4) forbids estimating.
 /// Row identity, owned so the streaming finalizer can carry it to stream end.
 #[derive(Clone)]
-struct RowCtx {
-    conv_id: String,
+pub(crate) struct RowCtx {
+    pub(crate) conv_id: String,
     /// Claude Code session the request belongs to (metadata.user_id) — the
     /// cross-conversation grouping conv_id can't provide: compaction and
     /// subagents mint new conv_ids inside one session.
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     /// Calling-tool attribution (`x-parsec-tool` header, set by non-Claude-
     /// Code shims like the opencode plugin). None = Claude Code.
-    tool: Option<String>,
-    model: Option<String>,
-    cache_prefix_sha8: String,
-    fail_open: bool,
+    pub(crate) tool: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) cache_prefix_sha8: String,
+    pub(crate) fail_open: bool,
 }
 
-fn write_ledger(
+pub(crate) fn write_ledger(
     st: &AppState,
     ctx: &RowCtx,
     counterfactual: Option<i64>,
@@ -1755,7 +1770,7 @@ async fn relay_buffered(st: &AppState, path: &str, headers: &HeaderMap, raw: Byt
     }
 }
 
-fn respond(status: StatusCode, ct: Option<HeaderValue>, body: Body) -> Response {
+pub(crate) fn respond(status: StatusCode, ct: Option<HeaderValue>, body: Body) -> Response {
     let mut b = Response::builder().status(status);
     if let Some(ct) = ct {
         b = b.header(header::CONTENT_TYPE, ct);
@@ -1764,7 +1779,7 @@ fn respond(status: StatusCode, ct: Option<HeaderValue>, body: Body) -> Response 
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
 }
 
-fn bad_gateway(e: &reqwest::Error) -> Response {
+pub(crate) fn bad_gateway(e: &reqwest::Error) -> Response {
     // Upstream unreachable is not "our own logic" failing — surface it as a
     // gateway error rather than fabricating an Anthropic-shaped response.
     tracing::warn!("upstream unreachable: {e}");

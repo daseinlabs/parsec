@@ -66,14 +66,18 @@ enum Command {
         /// unsupported) and never races a live download. Manual runs retry.
         #[arg(long)]
         auto: bool,
-        /// Tool to set up: `opencode` (default: Claude Code).
+        /// codex only: use an OPENAI_API_KEY custom provider instead of the
+        /// default ChatGPT-subscription routing.
+        #[arg(long)]
+        byok: bool,
+        /// Tool to set up: `opencode` | `codex` (default: Claude Code).
         tool: Option<String>,
     },
     /// Undo setup. Default (no TOOL): remove the parsec-managed env keys from
     /// Claude Code settings and stop auto-setup from re-running. With a TOOL
-    /// (`parsec disable opencode`): remove that tool's managed shim.
+    /// (`parsec disable opencode|codex`): remove that tool's managed artifacts.
     Disable {
-        /// Tool to disable: `opencode` (default: Claude Code).
+        /// Tool to disable: `opencode` | `codex` (default: Claude Code).
         tool: Option<String>,
     },
     /// Full local cleanup ahead of `claude plugin uninstall`: disable, stop
@@ -128,15 +132,26 @@ fn main() -> anyhow::Result<()> {
         Command::Statusline => parsec_proxy::statusline::run(),
         Command::SubagentStatusline => parsec_proxy::statusline::subagent_statusline(),
         Command::Savings => parsec_proxy::statusline::savings_report(),
-        Command::Setup { auto, tool } => match tool.as_deref() {
-            None => parsec_proxy::setup::run(auto),
-            Some("opencode") => parsec_proxy::setup_opencode::setup(),
-            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode"),
-        },
+        Command::Setup { auto, byok, tool } => {
+            if byok && tool.as_deref() != Some("codex") {
+                anyhow::bail!("--byok only applies to `parsec setup codex`");
+            }
+            match tool.as_deref() {
+                None => parsec_proxy::setup::run(auto),
+                Some("opencode") => parsec_proxy::setup_opencode::setup(),
+                Some("codex") => parsec_proxy::setup_codex::setup(if byok {
+                    parsec_proxy::setup_codex::Mode::Byok
+                } else {
+                    parsec_proxy::setup_codex::Mode::Subscription
+                }),
+                Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode, codex"),
+            }
+        }
         Command::Disable { tool } => match tool.as_deref() {
             None => parsec_proxy::setup::disable(),
             Some("opencode") => parsec_proxy::setup_opencode::disable(),
-            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode"),
+            Some("codex") => parsec_proxy::setup_codex::disable(),
+            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode, codex"),
         },
         Command::Uninstall => parsec_proxy::setup::uninstall(),
         Command::Up => parsec_proxy::setup::up(),

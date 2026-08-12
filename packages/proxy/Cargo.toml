@@ -26,4 +26,6 @@ tokio.workspace = true
 axum.workspace = true
 reqwest.workspace = true
 futures-util.workspace = true
+zstd = "0.13.3"
+flate2 = "1.1.9"
 # planned: rmcp (MCP) — added with the port

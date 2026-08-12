@@ -45,14 +45,15 @@
 
 ## Not done yet (follow-ups)
 
-- ~~Distribution for opencode-only users~~ shipped 2026-08-11:
-  `scripts/install-opencode.sh` (`curl …/install-opencode.sh | bash`) downloads
-  the platform binary from the public marketplace repo into
-  `~/.parsec/bin/parsec` (the shim's probe path) and runs `parsec setup
-  opencode`; release.yml publishes the script beside the binaries so both
-  always ship from the same commit. npm publish of `parsec-opencode` remains
-  an optional alternative install path (`"plugin": [...]` config entry), not
-  a prerequisite.
+- ~~Distribution for opencode-only users~~ shipped 2026-08-11; unified
+  2026-08-12 into `scripts/install.sh` (`curl …/install.sh | bash`), which
+  auto-detects codex + opencode and sets up each — the original
+  `install-opencode.sh` URL lives on as a compat stub forwarding to it.
+  Downloads the platform binary from the public marketplace repo into
+  `~/.parsec/bin/parsec` (the shim's probe path); release.yml publishes the
+  scripts beside the binaries so both always ship from the same commit. npm
+  publish of `parsec-opencode` remains an optional alternative install path
+  (`"plugin": [...]` config entry), not a prerequisite.
 - Free-tier UX ports: explore/map agent md → `.opencode/agents/`, no-reread
   via `tool.execute.before` (survey §3.4). Commands shipped 2026-08-11 via
   config-hook injection (see table above), deliberately not as
@@ -62,6 +63,10 @@
   share skill nor an opencode `/parsec-share` command has anything to call.
 - Per-tool savings split in `parsec savings` / statusline / dashboard (rows
   carry `tool` now; nothing reads it yet).
+- ~~Supervisor stripped `x-parsec-tool` on the worker hop, so routed opencode
+  requests lost their ledger attribution~~ fixed 2026-08-11 (`worker_headers`
+  in supervisor.rs, found during the codex passthrough work — the tag now
+  survives supervisor→worker and still never reaches Anthropic).
 - Cline (survey Phase 1 second target): base-URL instruction flow.
 - Verify shim hook names against opencode at install-time version pinning —
   `config` and `event` hooks and `client.tui.showToast` are wrapped in

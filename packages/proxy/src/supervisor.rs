@@ -64,6 +64,10 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 pub struct SupState {
     /// Fallback upstream when the worker is down (default api.anthropic.com).
     upstream: String,
+    /// Fallback upstreams for the OpenAI-wire namespaces (`/openai/*` BYOK,
+    /// `/chatgpt/*` subscription) — the Anthropic fallback would 404 them.
+    openai_upstream: String,
+    chatgpt_upstream: String,
     client: reqwest::Client,
     /// Ephemeral loopback port of a HEALTHY worker; 0 = none (go direct).
     worker_port: AtomicU16,
@@ -79,6 +83,8 @@ impl SupState {
     fn new(upstream: String) -> Self {
         SupState {
             upstream,
+            openai_upstream: crate::openai::upstream_from_env(),
+            chatgpt_upstream: crate::openai::chatgpt_upstream_from_env(),
             client: reqwest::Client::new(),
             worker_port: AtomicU16::new(0),
             child: Mutex::new(None),
@@ -339,11 +345,24 @@ async fn shutdown_handler(State(st): State<Arc<SupState>>) -> Response {
 
 /// The reverse-proxy path. Forward to the worker when one is healthy; on a
 /// worker transport error (it died between the probe and now), or when no
-/// worker is up, forward the SAME request straight to Anthropic. Pure byte
-/// transport — no curation, no ledger (an un-curated fallback has nothing to
-/// measure; §8.4 forbids fabricating a row).
+/// worker is up, forward the SAME request straight to the wire's upstream —
+/// api.anthropic.com for the Anthropic paths, api.openai.com for `/openai/*`
+/// (the Anthropic fallback would 404 that wire, wedging Codex exactly when
+/// fail-open matters). Pure byte transport — no curation, no ledger (an
+/// un-curated fallback has nothing to measure; §8.4 forbids fabricating a
+/// row).
 async fn forward(State(st): State<Arc<SupState>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
+    let is_openai =
+        parts.uri.path().starts_with("/openai/") || parts.uri.path().starts_with("/chatgpt/");
+    // WebSocket deflection belongs at the routed port too: a wedged worker
+    // must not turn an Upgrade attempt into a confusing forwarded error —
+    // 426 here means the client falls back to HTTP SSE either way. The
+    // subscription path NEEDS this: Codex's built-in provider tries
+    // Responses-over-WebSocket first.
+    if is_openai && parts.headers.contains_key(header::UPGRADE) {
+        return crate::openai::reject_upgrade();
+    }
     let bytes = match axum::body::to_bytes(body, MAX_BODY).await {
         Ok(b) => b,
         Err(_) => return (StatusCode::BAD_REQUEST, "request body too large").into_response(),
@@ -358,11 +377,20 @@ async fn forward(State(st): State<Arc<SupState>>, req: Request) -> Response {
     let worker_port = st.worker_port.load(Ordering::Relaxed);
     if worker_port != 0 {
         let base = format!("http://127.0.0.1:{worker_port}");
-        match send(&st, &base, &parts, &path_q, bytes.clone()).await {
+        match send(
+            &st,
+            &base,
+            &parts,
+            &path_q,
+            worker_headers(&parts.headers, is_openai),
+            bytes.clone(),
+        )
+        .await
+        {
             Ok(resp) => return stream_back(resp),
             Err(e) => {
                 tracing::warn!(
-                    "worker at {base} unreachable ({e}) — falling back to Anthropic; \
+                    "worker at {base} unreachable ({e}) — falling back to upstream; \
                      monitor will respawn it"
                 );
                 st.worker_port.store(0, Ordering::Relaxed);
@@ -372,10 +400,56 @@ async fn forward(State(st): State<Arc<SupState>>, req: Request) -> Response {
 
     st.fallbacks.fetch_add(1, Ordering::Relaxed);
     tracing::debug!(path = %path_q, "worker down — forwarding direct to upstream");
-    match send(&st, &st.upstream, &parts, &path_q, bytes).await {
+    // Direct fallback: pick the wire's upstream and, for the OpenAI-wire
+    // namespaces, drop our routing prefix and any x-parsec-* internals
+    // (they never leave the machine's parsec hops).
+    let (base, path, headers) = if let Some(p) = path_q.strip_prefix("/chatgpt") {
+        (
+            st.chatgpt_upstream.as_str(),
+            p.to_string(),
+            crate::openai::forward_headers(&parts.headers, true),
+        )
+    } else if is_openai {
+        (
+            st.openai_upstream.as_str(),
+            path_q
+                .strip_prefix("/openai")
+                .unwrap_or(path_q.as_str())
+                .to_string(),
+            crate::openai::forward_headers(&parts.headers, true),
+        )
+    } else {
+        (
+            st.upstream.as_str(),
+            path_q.clone(),
+            crate::server::forward_auth_headers(&parts.headers),
+        )
+    };
+    match send(&st, base, &parts, &path, headers, bytes).await {
         Ok(resp) => stream_back(resp),
         Err(e) => bad_gateway(&e),
     }
+}
+
+/// Headers for the supervisor→worker hop. Anthropic paths keep the narrow
+/// auth allowlist plus the charset-gated `x-parsec-tool` attribution tag —
+/// without the re-add, a shim's tag died at this hop and every routed
+/// opencode request lost its ledger attribution. `/openai/*` forwards the
+/// verbatim-minus-hop-by-hop set the passthrough needs (Codex sends
+/// provider headers an allowlist would break); the WORKER strips x-parsec-*
+/// before anything goes upstream.
+fn worker_headers(inbound: &axum::http::HeaderMap, is_openai: bool) -> axum::http::HeaderMap {
+    if is_openai {
+        return crate::openai::forward_headers(inbound, false);
+    }
+    let mut h = crate::server::forward_auth_headers(inbound);
+    if let Some(tag) = crate::server::tool_from_headers(inbound) {
+        // The gate guarantees a slug ⇒ always a valid header value.
+        if let Ok(v) = axum::http::HeaderValue::from_str(&tag) {
+            h.insert("x-parsec-tool", v);
+        }
+    }
+    h
 }
 
 async fn send(
@@ -383,15 +457,16 @@ async fn send(
     base: &str,
     parts: &axum::http::request::Parts,
     path_q: &str,
+    // Prepared by the caller per hop: the worker hop keeps the attribution
+    // tag; upstream hops carry the wire's auth surface only, never logged or
+    // stored (§3).
+    headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> reqwest::Result<reqwest::Response> {
     let url = format!("{}{}", base.trim_end_matches('/'), path_q);
     st.client
         .request(parts.method.clone(), url)
-        // Reuse the worker's exact auth-forwarding discipline: only the auth
-        // surface (x-api-key / authorization / anthropic-* / x-ccb-run-id) +
-        // content-type crosses, never logged or stored (§3).
-        .headers(crate::server::forward_auth_headers(&parts.headers))
+        .headers(headers)
         .body(body)
         .send()
         .await

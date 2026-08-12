@@ -42,6 +42,27 @@ clones over SSH, which fails for anyone without a GitHub SSH key.
 
 </details>
 
+## Using OpenAI Codex or opencode instead?
+
+parsec speaks those wires too — one line, no Claude Code required. It
+auto-detects the coding agents on your machine and activates each:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.sh | bash
+```
+
+- **Codex CLI**: every codex session then routes through parsec with your
+  existing ChatGPT sign-in (the token never leaves your machine). API-key
+  mode instead: `… | bash -s -- codex --byok`.
+- **opencode**: Anthropic API-key providers.
+- Pick explicitly instead of auto-detecting: `… | bash -s -- codex` or
+  `… | bash -s -- opencode`.
+
+Already have the Claude Code plugin? Skip the download — just run
+`parsec setup codex` (or `parsec setup opencode`). In codex, type `$` and
+pick `parsec-savings` to see the ledger; in opencode it's `/parsec-savings`.
+Undo anytime: `parsec disable codex|opencode`.
+
 ---
 
 ## What you get

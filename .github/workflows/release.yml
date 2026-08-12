@@ -168,10 +168,12 @@ jobs:
           rm -rf publish && mkdir -p publish/plugins
           cp -R packages/marketplace/. publish/
           cp -R dist/parsec publish/plugins/parsec
-          # The opencode one-line installer (`curl …/install-opencode.sh |
-          # bash`) ships beside the binaries it downloads, from the same
-          # commit, so the URL layout it assumes can never drift from the
-          # tree it lives in.
+          # The one-line installer (`curl …/install.sh | bash`, auto-detects
+          # codex + opencode) ships beside the binaries it downloads, from
+          # the same commit, so the URL layout it assumes can never drift
+          # from the tree it lives in. install-opencode.sh is a compat stub:
+          # that URL shipped in earlier releases and must keep working.
+          install -m 755 scripts/install.sh publish/install.sh
           install -m 755 scripts/install-opencode.sh publish/install-opencode.sh
           # plugin.json `version` is the update channel — stamp it from the tag.
           jq --arg v "$VERSION" '.version = $v' \
