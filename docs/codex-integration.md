@@ -88,18 +88,23 @@ http_headers = { "x-parsec-tool" = "codex" }
 ## Distribution (added 2026-08-12)
 
 `scripts/install.sh` — ONE unified installer that auto-detects the coding
-agents on the machine (codex via `command -v`/`$CODEX_HOME`, opencode via
-`command -v`/XDG config dir) and runs `parsec setup <tool>` for each:
+agents on the machine (claude via `command -v`; codex via
+`command -v`/`$CODEX_HOME`; opencode via `command -v`/XDG config dir) and
+activates each:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.sh | bash
-# explicit: … | bash -s -- codex [--byok]   /   … | bash -s -- opencode
+# explicit: … | bash -s -- claude | codex [--byok] | opencode
 ```
 
-Downloads the platform binary into `~/.parsec/bin/parsec` (fresh-inode
-rename, macOS code-sign safe) once, then sets up every detected tool; a
-detected Claude Code gets a pointer to the plugin instead. release.yml
-publishes it beside the binaries from the same commit.
+Claude Code gets the plugin (`claude plugin marketplace add` +
+`claude plugin install parsec@parsec-marketplace` — the full surface:
+statusline, hooks, skills; manual instructions printed on failure).
+codex/opencode get the platform binary downloaded into
+`~/.parsec/bin/parsec` (fresh-inode rename, macOS code-sign safe) followed
+by `parsec setup <tool>`; the download is skipped when Claude Code is the
+only tool found (the plugin ships its own binary). release.yml publishes it
+beside the binaries from the same commit.
 `install-opencode.sh` remains as a compat stub (that URL shipped 2026-08-11)
 forwarding to `install.sh` pinned to opencode. Claude Code plugin users skip
 the download entirely: `parsec setup codex` from the installed binary.
