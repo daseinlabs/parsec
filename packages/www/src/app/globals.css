@@ -44,6 +44,14 @@
      "Backed by ANTLER" wordmark uses this; never for status/decoration. */
   --color-antler: #ed4746;
 
+  /* tool marks ("works with" row) — the logos keep their ORIGINAL brand
+     colors, never our palette. Claude is Anthropic's terracotta; OpenAI and
+     opencode are monochrome per their guidelines: white on dark, black on
+     light (flipped below). */
+  --color-brand-claude: #d97757;
+  --color-brand-openai: #ffffff;
+  --color-brand-opencode: #ffffff;
+
   /* status */
   --color-success: #4af626;
   --color-warning: #ffb84d;
@@ -122,6 +130,11 @@
   /* Antler's darker red variant (also theirs) — the bright swatch red sits
      near 3:1 on Paper. */
   --color-antler: #b82b35;
+
+  /* Monochrome tool marks flip to their black variant on Paper; Claude's
+     terracotta is the same in both themes (inherited from @theme). */
+  --color-brand-openai: #000000;
+  --color-brand-opencode: #000000;
 
   /* Paper themes the FULL status set — the dark neons fail contrast on
      white. */

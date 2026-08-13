@@ -100,6 +100,11 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             if let Some(m) = maybe_autosetup() {
                 msgs.push(m);
             }
+            // Order matters: upgrade first frees the port, so autostart
+            // right after it spawns (and reports) the installed binary.
+            if let Some(m) = maybe_upgrade_proxy() {
+                msgs.push(m);
+            }
             if let Some(m) = maybe_autostart_proxy() {
                 msgs.push(m);
             }
@@ -311,6 +316,74 @@ fn unix_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Post-update proxy replacement — the `claude plugin update` half of what
+/// install.sh's `parsec up --restart` does for the curl route: a proxy that
+/// predates the update keeps serving the OLD binary forever, because the
+/// supervisor never idle-exits and autostart stands down on a live port.
+/// When the listener on the routed port identifies as a parsec proxy whose
+/// /health version differs from this (freshly installed) binary, replace it:
+/// the same identity-checked shutdown as `parsec up --restart`, then spawn
+/// the installed binary and report the whole swap as ONE message (leaving
+/// the respawn to `maybe_autostart_proxy` read as two disjointed notices).
+/// Fail open at every step: an unreadable /health, a foreign listener, or a
+/// refused shutdown leaves the proxy alone — a working old proxy beats no
+/// proxy — and a failed spawn falls through silently to autostart, the
+/// single owner of spawn-failure messaging. Shares autostart's
+/// PARSEC_PROXY_AUTOSTART=0 opt-out (both are "the hook manages the proxy
+/// for me").
+fn maybe_upgrade_proxy() -> Option<String> {
+    if std::env::var("PARSEC_PROXY_AUTOSTART").ok().as_deref() == Some("0") {
+        return None;
+    }
+    let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
+    let port = local_proxy_port(&base)?;
+    if !port_listening(port) {
+        return None; // nothing to replace — autostart spawns the new binary
+    }
+    let running = crate::setup::proxy_health_version(port)?;
+    let installed = env!("CARGO_PKG_VERSION");
+    // Any mismatch (downgrade included) restarts: the binary on disk is what
+    // the plugin cache says this machine should be running.
+    if running == installed {
+        return None;
+    }
+    if !crate::setup::shutdown_parsec_on(port) {
+        return None; // refused or vanished between probes — leave it alone
+    }
+    let mut freed = false;
+    for _ in 0..40 {
+        if !port_listening(port) {
+            freed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if !freed {
+        // Acked the shutdown but held the port: autostart will stand down,
+        // so this must not be silent — the session keeps riding the old
+        // binary.
+        return Some(format!(
+            "⌁ parsec: proxy on 127.0.0.1:{port} runs version {running} (installed: \
+             {installed}) and did not release the port when asked — run `parsec up --restart`"
+        ));
+    }
+    if crate::setup::spawn_proxy_detached(port, &[]).is_err() {
+        return None; // port is free — autostart retries the spawn and reports
+    }
+    for _ in 0..40 {
+        if port_listening(port) {
+            return Some(format!(
+                "⌁ parsec: plugin updated — proxy {running} → {installed} restarted on \
+                 127.0.0.1:{port}"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    // Spawned but never listened: autostart sees a dead port and re-spawns;
+    // its loud failure path covers the persistent case.
+    None
 }
 
 /// The Pro flip-on (DIRECTION.md §7: "plugin → proxy (manages)"): when this

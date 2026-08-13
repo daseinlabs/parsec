@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # parsec — one-line installer:
 #
-#   curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/daseinlabs/plugins/main/install.sh | bash
 #
 # Auto-detects the coding agents on this machine (Claude Code, Codex CLI,
 # opencode) and activates parsec for each. Claude Code gets the plugin
@@ -25,8 +25,8 @@
 # always ship from the same commit.
 set -euo pipefail
 
-BASE="${PARSEC_INSTALL_BASE:-https://raw.githubusercontent.com/daseinlabs/claude-plugins/main}"
-MARKETPLACE_URL="${PARSEC_MARKETPLACE_URL:-https://github.com/daseinlabs/claude-plugins}"
+BASE="${PARSEC_INSTALL_BASE:-https://raw.githubusercontent.com/daseinlabs/plugins/main}"
+MARKETPLACE_URL="${PARSEC_MARKETPLACE_URL:-https://github.com/daseinlabs/plugins}"
 
 # ── arguments ────────────────────────────────────────────────────────────────
 tools="" # space-separated; empty ⇒ auto-detect

@@ -487,14 +487,23 @@ pub fn adjudicate(messages: &[Value]) -> Adjudication {
 /// tree; `None` = probe unavailable (no git / not a repo / timeout / error).
 pub fn disk_probe(cwd: &str) -> Option<bool> {
     use std::io::Read as _;
-    let mut child = std::process::Command::new("git")
-        .args(["diff", "HEAD", "--stat"])
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["diff", "HEAD", "--stat"])
         .current_dir(cwd)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        // Same console-window suppression as the worker/detached spawns
+        // (supervisor::spawn_worker, setup::spawn_detached): the Stop hook that
+        // calls this can run under a no-console parent, and a bare `git` spawn
+        // would then pop a visible console window. Output is piped/nulled, so
+        // CREATE_NO_WINDOW hides nothing we want.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn().ok()?;
     // Drain stdout on a thread so a huge diff can never deadlock the pipe.
     let mut stdout = child.stdout.take()?;
     let reader = std::thread::spawn(move || {

@@ -47,7 +47,7 @@ export function Onboarding() {
       <ol className="flex flex-col gap-6">
         <Step n={1} title="Install the plugin">
           <Command>
-            {"claude plugin marketplace add daseinlabs/claude-plugins\nclaude plugin install parsec@parsec-marketplace"}
+            {"claude plugin marketplace add daseinlabs/plugins\nclaude plugin install parsec@parsec-marketplace"}
           </Command>
         </Step>
 

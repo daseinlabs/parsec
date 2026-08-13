@@ -1,6 +1,6 @@
 # parsec -- one-line installer for Windows (PowerShell 5.1+):
 #
-#   powershell -c "irm https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.ps1 | iex"
+#   powershell -c "irm https://raw.githubusercontent.com/daseinlabs/plugins/main/install.ps1 | iex"
 #
 # Auto-detects the coding agents on this machine (Claude Code, Codex CLI,
 # opencode) and activates parsec for each. Claude Code gets the plugin
@@ -31,8 +31,8 @@ $ErrorActionPreference = "Stop"
 # PowerShell 5.1 defaults to TLS 1.0 -- GitHub requires 1.2+.
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$Base = if ($env:PARSEC_INSTALL_BASE) { $env:PARSEC_INSTALL_BASE } else { "https://raw.githubusercontent.com/daseinlabs/claude-plugins/main" }
-$MarketplaceUrl = if ($env:PARSEC_MARKETPLACE_URL) { $env:PARSEC_MARKETPLACE_URL } else { "https://github.com/daseinlabs/claude-plugins" }
+$Base = if ($env:PARSEC_INSTALL_BASE) { $env:PARSEC_INSTALL_BASE } else { "https://raw.githubusercontent.com/daseinlabs/plugins/main" }
+$MarketplaceUrl = if ($env:PARSEC_MARKETPLACE_URL) { $env:PARSEC_MARKETPLACE_URL } else { "https://github.com/daseinlabs/plugins" }
 
 # -- arguments (param, or env fallbacks for the plain irm|iex form) -----------
 if (-not $Tools -and $env:PARSEC_TOOLS) { $Tools = $env:PARSEC_TOOLS -split "[ ,]+" }

@@ -1,33 +1,24 @@
-// Tiers from DIRECTION.md §3 — what each tier runs is settled; prices are not.
+// Tiers from DIRECTION.md §3 — what each tier runs is settled. Pro's list
+// price is $40/mo, offered free for now (struck through via wasPrice).
 
 type Tier = {
   name: string;
   stack: string;
   price: string;
+  // List price shown struck through ahead of `price` (e.g. "$40/mo" → Free).
+  wasPrice?: string;
   points: string[];
   featured?: boolean;
   contact?: boolean;
 };
 
-// TODO(pricing): dollar figures are an open question (DIRECTION.md §10) — do not invent them here.
 const TIERS: Tier[] = [
-  {
-    name: "Free",
-    stack: "The plugin",
-    price: "Free",
-    featured: true,
-    points: [
-      "Exploration maps",
-      "No-reread hook",
-      "Savings status line",
-      "Runs on your plan or key",
-    ],
-  },
   {
     name: "Pro",
     stack: "Plugin + local proxy",
-    price: "Coming soon",
-    contact: true,
+    price: "Free",
+    wasPrice: "$40/mo",
+    featured: true,
     points: [
       "The full learned curator via the hosted scoring API",
       "Tool-schema prune",
@@ -62,23 +53,22 @@ export function Pricing() {
   return (
     <section id="pricing" aria-labelledby="pricing-h" className="border-t border-line">
       <div className="mx-auto w-full max-w-6xl px-6 py-20">
-        <p className="text-xs tracking-caps text-faint uppercase">tiers</p>
         <h2
           id="pricing-h"
-          className="mt-2 text-xl font-bold tracking-display text-ink sm:text-2xl"
+          className="text-xl font-bold tracking-display text-ink sm:text-2xl"
         >
-          Start free. The learned curator is the upgrade.
+          Pricing
         </h2>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {TIERS.map((tier) => (
             <div
               key={tier.name}
-              className={`flex flex-col rounded-lg border bg-surface p-5 ${
+              className={`flex min-h-[28rem] flex-col rounded-lg border bg-surface p-6 ${
                 tier.featured ? "border-line-strong" : "border-line"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-md font-bold tracking-display text-ink">
+                <h3 className="text-lg font-bold tracking-display text-ink">
                   {tier.name}
                 </h3>
                 {tier.featured && (
@@ -88,7 +78,14 @@ export function Pricing() {
                 )}
               </div>
               <p className="mt-1 text-sm text-muted">{tier.stack}</p>
-              <p className="mt-4 text-lg font-bold tracking-display text-ink">
+              <p className="mt-5 text-2xl font-bold tracking-display text-ink">
+                {tier.wasPrice && (
+                  <>
+                    <span className="text-lg text-faint line-through">
+                      {tier.wasPrice}
+                    </span>{" "}
+                  </>
+                )}
                 {tier.price}
               </p>
               <ul className="mt-4 space-y-2 text-sm text-muted">

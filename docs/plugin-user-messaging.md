@@ -169,7 +169,7 @@ MCP servers) plus a context-cost estimate.
 CLI equivalents:
 
 ```bash
-claude plugin marketplace add daseinlabs/claude-plugins   # GitHub shorthand; also git URLs, local paths, raw marketplace.json URLs, @tag pinning
+claude plugin marketplace add daseinlabs/plugins   # GitHub shorthand; also git URLs, local paths, raw marketplace.json URLs, @tag pinning
 claude plugin install parsec@parsec-marketplace --scope user|project|local
 claude plugin list / enable / disable / uninstall / update / details
 /reload-plugins                                            # activate in current session
@@ -289,7 +289,7 @@ Ref: https://code.claude.com/docs/en/settings.md#workspace-trust
 
 ## Recommended onboarding flow
 
-1. User: `claude plugin marketplace add daseinlabs/claude-plugins` (one time).
+1. User: `claude plugin marketplace add daseinlabs/plugins` (one time).
 2. `claude plugin install parsec@parsec-marketplace` (or via `/plugin` UI).
 3. Enable-time `userConfig` prompts: proxy port/endpoint, BYOK key (optional,
    `sensitive: true`).

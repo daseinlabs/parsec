@@ -93,7 +93,7 @@ agents on the machine (claude via `command -v`; codex via
 activates each:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/daseinlabs/plugins/main/install.sh | bash
 # explicit: … | bash -s -- claude | codex [--byok] | opencode
 ```
 

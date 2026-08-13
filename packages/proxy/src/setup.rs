@@ -267,7 +267,7 @@ pub fn up(restart: bool) -> anyhow::Result<()> {
 /// Identity-checked shutdown: GET /health must answer as a parsec proxy
 /// before POST /shutdown is sent (the supervisor's own uninstall probe uses
 /// the same identity rule). false ⇒ nothing was shut down.
-fn shutdown_parsec_on(port: u16) -> bool {
+pub(crate) fn shutdown_parsec_on(port: u16) -> bool {
     let Ok(client) = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
@@ -375,6 +375,25 @@ fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
     let mut buf = String::new();
     s.read_to_string(&mut buf).ok()?;
     Some(buf)
+}
+
+/// The version a parsec proxy on `port` reports via GET /health, or None
+/// when nothing parsec-shaped answers. Lets the SessionStart hook spot a
+/// proxy left serving by a pre-update binary.
+pub(crate) fn proxy_health_version(port: u16) -> Option<String> {
+    parse_health_version(&proxy_request(port, "GET", "/health")?)
+}
+
+/// Extract `version` from a raw /health HTTP exchange, but only when the
+/// body identifies as ours — a foreign server's response never yields a
+/// version, so callers can't be tricked into managing it. Pure for tests.
+fn parse_health_version(resp: &str) -> Option<String> {
+    let (_, body) = resp.split_once("\r\n\r\n")?;
+    let v: Value = serde_json::from_str(body.trim()).ok()?;
+    if v.get("service").and_then(Value::as_str) != Some("parsec-proxy") {
+        return None;
+    }
+    v.get("version").and_then(Value::as_str).map(String::from)
 }
 
 /// Stop a proxy on `port`, but only after /health proves the listener is OURS
@@ -1163,6 +1182,29 @@ mod tests {
         // The scan range is preferred+1.., so it can never return the squatted
         // port — the point is that it did NOT mistake the squatter for ours.
         assert_ne!(chosen, port);
+    }
+
+    #[test]
+    fn health_version_parses_ours_and_rejects_foreign() {
+        let ours = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n\
+                    {\"ok\":true,\"service\":\"parsec-proxy\",\"role\":\"supervisor\",\
+                    \"version\":\"0.1.3\"}";
+        assert_eq!(parse_health_version(ours).as_deref(), Some("0.1.3"));
+
+        // A foreign server on the port must never yield a version, whatever
+        // it answers — that is the identity gate for the hook's restart.
+        let foreign = "HTTP/1.1 200 OK\r\n\r\n{\"service\":\"my-gateway\",\"version\":\"9.9\"}";
+        assert_eq!(parse_health_version(foreign), None);
+        assert_eq!(
+            parse_health_version("HTTP/1.1 200 OK\r\n\r\nnot json"),
+            None
+        );
+        assert_eq!(parse_health_version(""), None);
+
+        // Ours but versionless (a pre-/health-version build): None — the
+        // caller treats it as "cannot compare, leave alone".
+        let old = "HTTP/1.1 200 OK\r\n\r\n{\"ok\":true,\"service\":\"parsec-proxy\"}";
+        assert_eq!(parse_health_version(old), None);
     }
 
     #[test]

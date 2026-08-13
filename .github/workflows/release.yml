@@ -1,13 +1,13 @@
 name: release
 
 # Builds the per-platform `parsec` binaries and publishes the assembled plugin
-# to the public marketplace repo daseinlabs/claude-plugins (DIRECTION.md §7b:
+# to the public marketplace repo daseinlabs/plugins (DIRECTION.md §7b:
 # distribution is git-clone with no build step, so binaries ship prebuilt).
 # Publishes on every push to main (dev version stamped from git describe) and
 # on v* tags (version stamped from the tag; also attached to a GitHub Release).
 # The marketplace repo's history is force-pushed as a single squashed commit
 # per publish so user clones stay small. Requires the PLUGIN_PUBLISH_TOKEN
-# secret: a fine-grained PAT with contents:write on daseinlabs/claude-plugins.
+# secret: a fine-grained PAT with contents:write on daseinlabs/plugins.
 
 on:
   push:
@@ -146,9 +146,9 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
           gh release upload "$GITHUB_REF_NAME" dist/parsec-plugin.zip --clobber
       # Publish the marketplace repo users actually install from:
-      #   claude plugin marketplace add https://github.com/daseinlabs/claude-plugins
+      #   claude plugin marketplace add https://github.com/daseinlabs/plugins
       #   claude plugin install parsec@parsec-marketplace
-      - name: Publish to daseinlabs/claude-plugins
+      - name: Publish to daseinlabs/plugins
         # Tag pushes and main pushes publish; workflow_dispatch stays a dry
         # run of the build matrix.
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -187,5 +187,5 @@ jobs:
           git add -A
           git commit -m "parsec v$VERSION"
           git push --force \
-            "https://x-access-token:${PUBLISH_TOKEN}@github.com/daseinlabs/claude-plugins.git" \
+            "https://x-access-token:${PUBLISH_TOKEN}@github.com/daseinlabs/plugins.git" \
             main

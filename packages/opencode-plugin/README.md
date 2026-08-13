@@ -20,7 +20,7 @@ No parsec binary yet (opencode-only users) — one line, no npm, no sudo;
 writes only `~/.parsec` and `~/.config/opencode`:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install-opencode.sh | bash
+curl -fsSL https://raw.githubusercontent.com/daseinlabs/plugins/main/install-opencode.sh | bash
 ```
 
 Already have the parsec binary (Claude Code plugin users):

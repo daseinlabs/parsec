@@ -4,5 +4,5 @@
 # this forwards to it pinned to opencode. Both files publish side by side
 # from the same commit (release.yml).
 set -euo pipefail
-BASE="${PARSEC_INSTALL_BASE:-https://raw.githubusercontent.com/daseinlabs/claude-plugins/main}"
+BASE="${PARSEC_INSTALL_BASE:-https://raw.githubusercontent.com/daseinlabs/plugins/main}"
 curl -fsSL "$BASE/install.sh" | bash -s -- opencode

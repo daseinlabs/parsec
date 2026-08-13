@@ -6,7 +6,8 @@
 
 ### 2× the context. ½ the cost.
 
-Context savings for Claude Code — **measured, never modeled.**
+Context savings for coding agents — **Claude Code · Codex CLI · opencode** —
+measured, never modeled.
 
 </div>
 
@@ -14,63 +15,63 @@ Context savings for Claude Code — **measured, never modeled.**
 
 ## Install
 
-```sh
-claude plugin marketplace add https://github.com/daseinlabs/claude-plugins
-claude plugin install parsec@parsec-marketplace
-```
-
-Then get a key at **[app.getparsec.ai](https://app.getparsec.ai)** and paste it
-into a Claude Code session:
-
-```
-/parsec:key
-```
-
-That's the whole setup. No build step, no postinstall, no model download — the
-`parsec` binary ships prebuilt and the next session starts saving.
-
-> **Until a key is set, parsec saves nothing.** Claude Code keeps working
-> exactly as before; parsec stays pure passthrough until it is entitled.
-
-<details>
-<summary>Prefer the interactive installer?</summary>
-
-`/plugin` → **Marketplaces** → add `daseinlabs/claude-plugins`.
-
-Use the full HTTPS URL rather than the `owner/repo` shorthand — the shorthand
-clones over SSH, which fails for anyone without a GitHub SSH key.
-
-</details>
-
-## One-line install (any tool)
-
-The installer auto-detects the coding agents on your machine — Claude Code,
-OpenAI Codex CLI, opencode — and activates parsec for each:
+One line. The installer auto-detects the coding agents on your machine and
+activates parsec for each — no build step, no npm, no sudo; nothing is written
+outside `~/.parsec` and the tools' own config dirs:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/daseinlabs/plugins/main/install.sh | bash
 ```
 
 Windows (PowerShell; or run the `curl | bash` line inside WSL):
 
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/daseinlabs/claude-plugins/main/install.ps1 | iex"
+powershell -c "irm https://raw.githubusercontent.com/daseinlabs/plugins/main/install.ps1 | iex"
 ```
 
-- **Claude Code**: installs this plugin (identical to the two `claude
-  plugin` commands above).
-- **Codex CLI**: every codex session then routes through parsec with your
-  existing ChatGPT sign-in (the token never leaves your machine). API-key
-  mode instead: `… | bash -s -- codex --byok`.
-- **opencode**: Anthropic API-key providers.
-- Pick explicitly instead of auto-detecting: `… | bash -s -- claude`,
-  `… | bash -s -- codex`, or `… | bash -s -- opencode`.
+Then get a key at **[app.getparsec.ai](https://app.getparsec.ai)** and hand it
+to parsec — `/parsec:key` inside a Claude Code session, or from any shell:
 
-Already have the plugin? For the other tools just run `parsec setup codex`
-(or `parsec setup opencode`) — no download needed. In codex, type `$` and
-pick `parsec-savings` to see the ledger; in opencode it's `/parsec-savings`.
-Undo anytime: `parsec disable codex|opencode`, `claude plugin uninstall
-parsec`.
+```sh
+parsec key set psc_…
+```
+
+> **Until a key is set, parsec saves nothing.** Your tools keep working
+> exactly as before; parsec stays pure passthrough until it is entitled.
+
+Prefer to pick instead of auto-detecting? `… | bash -s -- claude`,
+`… | bash -s -- codex`, or `… | bash -s -- opencode`.
+
+### What each tool gets
+
+- **Claude Code**: the full plugin — scout tools, hooks, skills, status-line
+  savings (see [What you get](#what-you-get) below).
+- **Codex CLI**: every codex session routes through parsec with your existing
+  ChatGPT sign-in (the token never leaves your machine). API-key mode instead:
+  `… | bash -s -- codex --byok`. Type `$` and pick `parsec-savings` for the
+  ledger.
+- **opencode**: Anthropic API-key providers; `/parsec-savings` shows the
+  ledger.
+
+Undo anytime: `parsec disable codex|opencode`,
+`claude plugin uninstall parsec`.
+
+<details>
+<summary>Claude Code only, via the plugin marketplace?</summary>
+
+```sh
+claude plugin marketplace add https://github.com/daseinlabs/plugins
+claude plugin install parsec@parsec-marketplace
+```
+
+Or interactively: `/plugin` → **Marketplaces** → add `daseinlabs/plugins`.
+Use the full HTTPS URL rather than the `owner/repo` shorthand — the shorthand
+clones over SSH, which fails for anyone without a GitHub SSH key.
+
+Already have the plugin and want the other tools too? Just run
+`parsec setup codex` (or `parsec setup opencode`) — no download needed.
+
+</details>
 
 ---
 
@@ -85,8 +86,9 @@ dumping whole files into your context.
 file ranges already in context and breaks repeated identical commands, with an
 insist valve for when the file really did change.
 
-**See the number.** Every save is written to a local ledger and rolled up in
-your status line. Ask for it any time:
+**See the number.** Every save is written to a local ledger — rolled up in the
+Claude Code status line, codex's `$parsec-savings`, and opencode's
+`/parsec-savings`. In Claude Code, ask for it any time:
 
 | Skill | What it does |
 |---|---|
@@ -110,8 +112,8 @@ is empty, the report says so.
 
 - **Telemetry is off by default.** The product is fully functional with it off —
   consent by degradation is not consent.
-- **Model traffic never leaves your machine.** Requests to Anthropic ride your
-  own credentials, from your own machine.
+- **Model traffic never touches our cloud.** Requests ride your own
+  credentials, straight from your own machine to your model provider.
 - `/parsec:share --preview` dumps the exact bytes that would ever be uploaded,
   locally and human-readable, before anything is sent.
 
@@ -124,7 +126,8 @@ is empty, the report says so.
 ## What's in this repo
 
 `plugins/parsec` — the plugin's markdown/JSON surfaces plus the prebuilt
-per-platform `parsec` binaries.
+per-platform `parsec` binaries, along with the installers that ship beside
+them.
 
 This repo is assembled and force-pushed by CI on every release of the private
 monorepo. **Do not commit here by hand** — history is intentionally squashed to

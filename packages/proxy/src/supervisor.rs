@@ -148,6 +148,19 @@ impl SupState {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::from(log.try_clone()?))
             .stderr(std::process::Stdio::from(log));
+        #[cfg(windows)]
+        {
+            // `parsec.exe` is a console-subsystem binary. The supervisor that
+            // spawns this worker is itself detached (no console — see
+            // `setup::spawn_detached`), so without a flag here Windows would
+            // allocate a fresh, VISIBLE console window for the worker. Suppress
+            // it: stdout/stderr already go to proxy.log, so the worker never
+            // needs a console. CREATE_NO_WINDOW (not DETACHED_PROCESS) because
+            // the worker stays our managed child — we remain its parent to reap
+            // and kill it.
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            std::os::windows::process::CommandExt::creation_flags(&mut cmd, CREATE_NO_WINDOW);
+        }
         let child = cmd.spawn()?;
         *lock(&self.child) = Some(child);
 

@@ -1,12 +1,14 @@
 import { Mark } from "@/components/brand";
+import { InstallCommand } from "@/components/install-command";
 import { SavingsStat } from "@/components/savings-stat";
-import { INSTALL_COMMANDS } from "@/lib/site";
+import { WorksWith } from "@/components/tool-icons";
 
 // Top of the landing page — the one place the page glows: the mark carries
 // .glow-mark. Every other section stays flat. Server component; the install
 // command is copyable via `select-all` (one click selects the whole line).
-// The only client island is SavingsStat — the live site-wide counter on the
-// right, which renders nothing until real numbers arrive.
+// Two client islands: SavingsStat — the live site-wide counter on the right,
+// which renders nothing until real numbers arrive — and InstallCommand,
+// whose OS toggle defaults from the visitor's user agent.
 export function Hero() {
   return (
     <section aria-label="parsec">
@@ -16,8 +18,10 @@ export function Hero() {
               green on light while interactive greens darken to emerald. */}
           <Mark className="h-16 w-auto text-logo glow-mark sm:h-20" />
 
+          <WorksWith className="mt-6" />
+
           <h1 className="mt-10 text-2xl font-extrabold tracking-display text-ink sm:text-3xl">
-            Double your Claude Code limit, while improving accuracy
+            Double your coding agent&apos;s limit, while improving accuracy
           </h1>
 
           <p className="mt-4 max-w-2xl text-sm text-muted">
@@ -34,21 +38,8 @@ export function Hero() {
             </a>
           </p>
 
-          <div className="mt-10 flex flex-col items-start gap-5 sm:flex-row sm:items-center">
-            <div className="flex max-w-full items-center gap-3 overflow-x-auto rounded-md border border-line bg-surface px-4 py-3">
-              <span aria-hidden className="select-none text-phosphor">
-                ❯
-              </span>
-              <code className="select-all text-sm whitespace-nowrap text-ink">
-                {INSTALL_COMMANDS[0]}
-              </code>
-            </div>
-            <a
-              href="#how"
-              className="text-sm text-muted transition-colors duration-150 ease-parsec hover:text-phosphor"
-            >
-              Read how it works <span aria-hidden>↓</span>
-            </a>
+          <div className="mt-10">
+            <InstallCommand />
           </div>
 
           <a
