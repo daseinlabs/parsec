@@ -36,6 +36,9 @@ to parsec — `/parsec:key` inside a Claude Code session, or from any shell:
 parsec key set psc_…
 ```
 
+No slash command in your agent (Codex CLI, opencode)? Just paste the key in
+chat and ask the agent to set it — it runs the same `parsec key set` for you.
+
 > **Until a key is set, parsec saves nothing.** Your tools keep working
 > exactly as before; parsec stays pure passthrough until it is entitled.
 

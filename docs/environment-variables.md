@@ -47,6 +47,17 @@ Undo with `parsec disable`.
 | `PARSEC_TOKENIZER_SHA256` | unset (dev); baked release value | Same for `tokenizer.json`. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's own config-relocation knob; setup honors it when writing `settings.json`. |
 
+## 1c. Client — trim staging (`parsec trim`, `/parsec:trim`)
+
+Read in `packages/proxy/src/trim.rs`; asserted by `tests/trim_cli.rs`. Full
+user-facing doc: `docs/trim.md`.
+
+| Var | Default | Effect |
+|---|---|---|
+| `PARSEC_TRIM_LEVEL` | `3` | Default aggressiveness 1 (low trimming) – 5 (very high) when no `--level`/skill argument is given. 3 is the only measured, parity-locked configuration. |
+| `PARSEC_TRIM_TTL_SECS` | `1800` | Staged trim payloads expire after this many seconds (stale trims must never inject into unrelated work). |
+| `PARSEC_TRIM_MAX_EST_TOKENS` | unset | Cap on the trim body's estimated (chars/4) tokens; staging refuses — never truncates — when exceeded. |
+
 ## 2. Client proxy — brain connection
 
 Read in `packages/proxy/src/brain.rs` (`BrainConfig::from_env`).

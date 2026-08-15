@@ -8,8 +8,10 @@
 # (`claude plugin install parsec@parsec-marketplace` — the same binary plus
 # status line, hooks, and skills); codex/opencode get this platform's parsec
 # binary downloaded into ~/.parsec/bin/parsec — the stable path the shims,
-# skills, and hooks probe — followed by `parsec setup <tool>`. Nothing is
-# written outside ~/.parsec and the tools' own config dirs; no npm, no sudo.
+# skills, and hooks probe — followed by `parsec setup <tool>`. Also puts
+# ~/.parsec/bin on PATH (one guarded line appended to your shell rc) so
+# `parsec` is callable from anywhere. Nothing else is written outside
+# ~/.parsec and the tools' own config dirs; no npm, no sudo.
 # Undo: `parsec disable codex|opencode`, `claude plugin uninstall parsec`.
 #
 # Explicit selection instead of auto-detect, and Codex API-key mode:
@@ -72,6 +74,7 @@ fi
 # ── platform binary (codex/opencode only — the Claude Code plugin ships its
 #    own) ────────────────────────────────────────────────────────────────────
 dest="$HOME/.parsec/bin/parsec"
+path_hint=""
 if printf '%s' "$tools" | grep -qwE 'codex|opencode'; then
   case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) plat=darwin-arm64 ;;
@@ -99,6 +102,32 @@ if printf '%s' "$tools" | grep -qwE 'codex|opencode'; then
   # process on the port is never killed). In-flight requests from other
   # sessions see one brief blip and recover on their next request.
   "$dest" up --restart
+
+  # ── put ~/.parsec/bin on PATH so `parsec` works from any shell ────────────
+  bin_dir="$HOME/.parsec/bin"
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;; # already on PATH — nothing to do
+    *)
+      # $SHELL, not the shell running this script — `curl | bash` is always
+      # bash even for zsh/fish users.
+      case "$(basename "${SHELL:-sh}")" in
+        zsh) rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
+        bash) rc="$HOME/.bashrc" ;;
+        fish) rc="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/parsec.fish" ;;
+        *) rc="$HOME/.profile" ;;
+      esac
+      if ! grep -qs '\.parsec/bin' "$rc"; then
+        mkdir -p "$(dirname "$rc")"
+        if [ "${rc##*.}" = fish ]; then
+          printf '\n# parsec\nfish_add_path --prepend "%s"\n' "$bin_dir" >>"$rc"
+        else
+          printf '\n# parsec\nexport PATH="%s:$PATH"\n' "$bin_dir" >>"$rc"
+        fi
+        echo "added $bin_dir to PATH in $rc"
+      fi
+      path_hint="restart your shell (or: export PATH=\"$bin_dir:\$PATH\") to use \`parsec\` directly."
+      ;;
+  esac
 fi
 
 # ── per-tool setup ───────────────────────────────────────────────────────────
@@ -138,4 +167,5 @@ case "$tools" in *codex* | *opencode*) echo "installed $("$dest" --version) at $
 case "$tools" in *claude*) echo "claude: restart Claude Code (or start a new session) — setup runs automatically." ;; esac
 case "$tools" in *codex*) echo "codex: start (or restart) codex — every session routes through parsec; type \$ and pick parsec-savings." ;; esac
 case "$tools" in *opencode*) echo "opencode: restart opencode to activate (Anthropic API-key providers only); /parsec-savings shows the ledger." ;; esac
+[ -n "$path_hint" ] && echo "$path_hint"
 echo "undo: parsec disable codex|opencode · claude plugin uninstall parsec"
