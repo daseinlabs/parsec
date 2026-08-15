@@ -49,6 +49,10 @@ pub fn run(event: &str) -> anyhow::Result<()> {
                 return Ok(());
             }
             let mut st = load_session(&session_id);
+            // Curator visibility (defect 3): what the proxy elided from the
+            // served context this session — the gate never denies a re-read
+            // of content the model cannot actually see above.
+            st.elided = crate::visibility::load(&session_id);
             let gate = match tool {
                 "Read" => match read_tool_range(&tool_input, &cwd) {
                     Some((path, rng)) => st.gate_read(&path, rng),
@@ -87,7 +91,20 @@ pub fn run(event: &str) -> anyhow::Result<()> {
         "SessionStart" => {
             prune_sessions(7);
             let mut msgs = Vec::new();
-            let is_startup = payload.get("source").and_then(Value::as_str) == Some("startup");
+            let source = payload.get("source").and_then(Value::as_str).unwrap_or("");
+            let is_startup = source == "startup";
+            // Native compaction (and /clear) removes prior content wholesale
+            // — an elision source the proxy cannot report — so everything the
+            // hook recorded as "in the messages above" is void. Reset reads
+            // and loop counts; the file identities on disk are unchanged, so
+            // only a fresh read re-arms the gate.
+            if matches!(source, "compact" | "clear") {
+                let mut st = load_session(&session_id);
+                if !st.reads.is_empty() || !st.cmd_counts.is_empty() {
+                    st.evict_all();
+                    let _ = save_session(&session_id, &st);
+                }
+            }
             // Top of the session (and the install flow — first run is a
             // startup): if there is no API key, parsec saves nothing — show the
             // prominent get-a-key banner. Fresh startups only (resume/clear/

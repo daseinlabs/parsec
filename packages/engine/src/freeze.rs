@@ -427,6 +427,14 @@ impl<S: ChunkScorer> Freezer<S> {
         &self.dropped_ranges
     }
 
+    /// Ranges served in FULL at least once (insist valve restores land
+    /// here) — with `dropped_ranges`, the serving layer's visibility export
+    /// for the no-reread hook: dropped-and-never-served content is NOT in
+    /// the model's context, so a re-read of it must not be denied.
+    pub fn served_ranges(&self) -> &HashMap<String, Vec<(i64, i64)>> {
+        &self.served_ranges
+    }
+
     pub fn dropped_count(&self) -> usize {
         self.dropped.len()
     }

@@ -1,5 +1,13 @@
 # Bug: no-reread hook blocks re-reads of content the curator already elided
 
+> **Status 2026-08-14: fixed.** Suggested fixes 1/3 landed as the curator→hook visibility
+> channel (`packages/proxy/src/visibility.rs` + `noreread.rs` gate check); fix 2 landed as
+> per-file cross-surface escape grants that survive compound commands; fix 4 was resolved by
+> stage-aware shell parsing (network fetches no longer produce read records); fix 5 by
+> refunding booked savings whenever a denial is escaped. Native compaction is handled by
+> resetting hook state on `SessionStart source=compact`. Full accounting in
+> `NOREREAD_HOOK_DEFECT.md`.
+
 **Date:** 2026-08-06
 **Source:** live Claude Code session (Fable 5) with the parsec plugin active, reported by the agent itself mid-session
 **Severity:** high — puts agents in a workaround loop and burns more tokens than the hook saves

@@ -777,6 +777,10 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         let internal_in = internal.clone();
         let bcfg2 = bcfg.clone();
         let conv2 = conv_id.clone();
+        let conv_for_vis = conv_id.clone();
+        // Visibility export target (defect 3): the Claude Code session this
+        // request belongs to, so the no-reread hook can see what was elided.
+        let vis_sid = session_id_from_metadata(body);
         let attach_gf = st.governor.mode != GovMode::Off;
         // Freezer (and its blocking HTTP scorer) is built AND driven on a
         // blocking thread — reqwest::blocking panics on async runtime threads.
@@ -820,6 +824,23 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                     chunks: (fz.dropped_count().saturating_sub(chunks_before)) as u64,
                     ranges,
                 };
+                // Visibility export (docs/NOREREAD_HOOK_DEFECT.md defect 3):
+                // the FULL current registries — dropped (invisible upstream)
+                // and served (restored, visible again) — so the no-reread
+                // hook never denies a re-read of content the model cannot
+                // see. Written on the blocking thread while fz is in hand;
+                // fail-open (record swallows every IO error).
+                if let Some(sid) = &vis_sid {
+                    let mut vis: std::collections::BTreeMap<String, crate::visibility::FileVis> =
+                        std::collections::BTreeMap::new();
+                    for (f, r) in fz.dropped_ranges() {
+                        vis.entry(f.to_lowercase()).or_default().dropped = r.clone();
+                    }
+                    for (f, r) in fz.served_ranges() {
+                        vis.entry(f.to_lowercase()).or_default().served = r.clone();
+                    }
+                    crate::visibility::record(sid, &conv_for_vis, vis);
+                }
                 (fz, served, fails_before, calls_before, cut_delta)
             })
             .await
