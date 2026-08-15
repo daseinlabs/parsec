@@ -86,6 +86,12 @@ dumping whole files into your context.
 file ranges already in context and breaks repeated identical commands, with an
 insist valve for when the file really did change.
 
+**Compact without losing the plot.** `/parsec:trim` stages a better `/compact`:
+a deterministic trim keeping only the parts of the session that were actually
+re-read, edited, or used later, plus a standing-directives block so your
+rulings keep governing after compaction. Run it, then `/clear` — the trimmed
+context is injected into the next session automatically.
+
 **See the number.** Every save is written to a local ledger — rolled up in the
 Claude Code status line, codex's `$parsec-savings`, and opencode's
 `/parsec-savings`. In Claude Code, ask for it any time:
@@ -93,6 +99,7 @@ Claude Code status line, codex's `$parsec-savings`, and opencode's
 | Skill | What it does |
 |---|---|
 | `/parsec:savings` | Measured savings — by request, conversation, and session |
+| `/parsec:trim` | A better `/compact`: stage a deterministic trim of the transcript (what was actually re-read, edited, or used later) plus your standing directives, injected automatically after `/clear`. `--level 1–5` sets aggressiveness (default 3) |
 | `/parsec:setup` | Activate parsec: routing env, status line, proxy — or retry a failed first run |
 | `/parsec:proxy` | Restart the local proxy if it was killed mid-session |
 | `/parsec:key` | Set, show, or clear your `psc_…` API key |
