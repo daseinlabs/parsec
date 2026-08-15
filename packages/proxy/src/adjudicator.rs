@@ -253,6 +253,115 @@ pub fn parse_transcript(text: &str, max_msgs: usize, obs_cap: usize) -> Vec<Valu
     out.split_off(skip)
 }
 
+// ── full-fidelity transcript parsing for /trim ──────────────────────────────
+//
+// A SEPARATE conversion, NOT a flag on parse_transcript: the trim label needs
+// local_plugin_corpus.convert_agent's exact message shape, which differs from
+// the adjudicator's in ways that change the chunk set — thinking stays OUT of
+// the visible content (it becomes reasoning_content/thinking_blocks, the
+// reasoning chunk's source), tool_result array parts join with "" (not " "),
+// user text blocks become their own user messages instead of being dropped,
+// there are no message/observation caps and no tail truncation, and action
+// commands carry the bash-twin projection (internal::actions_from_tool_use —
+// the same projection deps/trace_graph.py::_project_contract applies before
+// labeling). The Stop-hook path above stays byte-identical to today.
+
+/// Uncapped, full-fidelity read of a Claude Code session JSONL for /trim.
+/// Unreadable file → `[]` (fail-open), like the capped reader.
+pub fn messages_from_transcript_full(path: &str) -> Vec<Value> {
+    use std::io::BufRead;
+    let Ok(f) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let reader = std::io::BufReader::new(f);
+    parse_transcript_full(reader.lines().map_while(Result::ok))
+}
+
+/// convert_agent's per-entry conversion over transcript lines. Skips
+/// `isSidechain: true` entries (subagent traffic is not part of the parent
+/// session's compactable window — documented deviation from convert_agent,
+/// which reads main-session files where subagents live in separate files).
+pub fn parse_transcript_full<I, S>(lines: I) -> Vec<Value>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out: Vec<Value> = Vec::new();
+    for line in lines {
+        let Ok(e) = serde_json::from_str::<Value>(line.as_ref()) else {
+            continue;
+        };
+        if e.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let ty = e.get("type").and_then(Value::as_str);
+        if !matches!(ty, Some("user") | Some("assistant")) {
+            continue;
+        }
+        let msg = e
+            .get("message")
+            .filter(|v| py_truthy(v))
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        // convert_agent._blocks: a plain-string content becomes one text block.
+        let blocks: Vec<Value> = match msg.get("content") {
+            Some(Value::String(s)) => vec![json!({"type": "text", "text": s})],
+            Some(Value::Array(parts)) => parts.iter().filter(|p| p.is_object()).cloned().collect(),
+            _ => Vec::new(),
+        };
+        if ty == Some("assistant") {
+            let mut text = String::new();
+            let mut reasoning = String::new();
+            let mut tblocks: Vec<Value> = Vec::new();
+            for b in &blocks {
+                match b.get("type").and_then(Value::as_str) {
+                    Some("text") => {
+                        text.push_str(b.get("text").and_then(Value::as_str).unwrap_or(""))
+                    }
+                    Some("thinking") => {
+                        let t = b.get("thinking").and_then(Value::as_str).unwrap_or("");
+                        reasoning.push_str(t);
+                        tblocks.push(json!({"type": "thinking", "thinking": t}));
+                    }
+                    _ => {}
+                }
+            }
+            let actions = crate::internal::actions_from_tool_use(msg.get("content"));
+            out.push(json!({
+                "role": "assistant",
+                "content": text,
+                "reasoning_content": reasoning,
+                "thinking_blocks": tblocks,
+                "extra": {"actions": actions},
+            }));
+        } else {
+            for b in &blocks {
+                match b.get("type").and_then(Value::as_str) {
+                    Some("tool_result") => {
+                        let c = match b.get("content") {
+                            Some(Value::Array(xs)) => xs
+                                .iter()
+                                .filter_map(Value::as_object)
+                                .map(|x| x.get("text").and_then(Value::as_str).unwrap_or(""))
+                                .collect::<Vec<_>>()
+                                .join(""),
+                            Some(Value::Null) | None => String::new(),
+                            Some(v) => str_lite(v),
+                        };
+                        out.push(json!({"role": "tool", "content": c, "extra": {}}));
+                    }
+                    Some("text") => {
+                        let t = b.get("text").and_then(Value::as_str).unwrap_or("");
+                        out.push(json!({"role": "user", "content": t, "extra": {}}));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
 // ── views (adjudicator_v3.py:63-92) ─────────────────────────────────────────
 
 /// adjudicator_v3._find_diff: most recent NON-EMPTY unified diff the agent
@@ -597,4 +706,63 @@ pub fn append_row(row: &Value) -> std::io::Result<()> {
         .append(true)
         .open(path)?;
     writeln!(f, "{row}")
+}
+
+#[cfg(test)]
+mod trim_parse_tests {
+    use super::*;
+
+    #[test]
+    fn full_parse_matches_convert_agent_shape() {
+        let lines = vec![
+            // sidechain entries are skipped entirely
+            r#"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"sub"}]}}"#.to_string(),
+            r#"{"type":"assistant","message":{"role":"assistant","content":[
+                {"type":"thinking","thinking":"private thought"},
+                {"type":"text","text":"visible answer"},
+                {"type":"tool_use","name":"Read","input":{"file_path":"/a/b/q.py","offset":5,"limit":10}}
+            ]}}"#.replace('\n', " "),
+            r#"{"type":"user","message":{"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"part1"},{"type":"text","text":"part2"}]},
+                {"type":"text","text":"a user aside"}
+            ]}}"#.replace('\n', " "),
+            r#"{"type":"user","message":{"role":"user","content":"plain string turn"}}"#.to_string(),
+            r#"{"type":"system","subtype":"other"}"#.to_string(),
+        ];
+        let out = parse_transcript_full(lines);
+        assert_eq!(out.len(), 4);
+        // assistant: thinking OUT of content, into reasoning fields
+        assert_eq!(out[0]["role"], "assistant");
+        assert_eq!(out[0]["content"], "visible answer");
+        assert_eq!(out[0]["reasoning_content"], "private thought");
+        assert_eq!(out[0]["thinking_blocks"][0]["thinking"], "private thought");
+        // action carries the bash-twin projection (Read+offset+limit -> sed)
+        assert_eq!(
+            out[0]["extra"]["actions"][0]["command"],
+            "sed -n '5,14p' /a/b/q.py"
+        );
+        // tool_result parts join with NO separator; each block its own message
+        assert_eq!(out[1]["role"], "tool");
+        assert_eq!(out[1]["content"], "part1part2");
+        assert_eq!(out[2]["role"], "user");
+        assert_eq!(out[2]["content"], "a user aside");
+        // plain-string user content becomes one text block -> one user msg
+        assert_eq!(out[3]["role"], "user");
+        assert_eq!(out[3]["content"], "plain string turn");
+    }
+
+    #[test]
+    fn full_parse_has_no_caps() {
+        let big = "x".repeat(50_000);
+        let line = format!(
+            r#"{{"type":"user","message":{{"role":"user","content":[{{"type":"tool_result","content":"{big}"}}]}}}}"#
+        );
+        let mut lines = Vec::new();
+        for _ in 0..100 {
+            lines.push(line.clone());
+        }
+        let out = parse_transcript_full(lines);
+        assert_eq!(out.len(), 100); // no MAX_MSGS tail-truncation
+        assert_eq!(out[0]["content"].as_str().unwrap().len(), 50_000); // no OBS_CAP
+    }
 }

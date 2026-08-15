@@ -58,9 +58,10 @@ enum Command {
     SubagentStatusline,
     /// Human-readable savings report across recent sessions (/parsec:savings).
     Savings,
-    /// One-time activation. Default (no TOOL): write Claude Code routing env
-    /// and start the proxy; runs automatically on first session. With a TOOL
-    /// (`parsec setup opencode`): install that tool's shim instead.
+    /// One-time activation. `claude` (or no TOOL): write Claude Code routing
+    /// env and start the proxy; runs automatically on first session. With
+    /// another TOOL (`parsec setup opencode|codex`): install that tool's
+    /// shim instead.
     Setup {
         /// Hook-spawned first-run mode: respects terminal states (disable,
         /// unsupported) and never races a live download. Manual runs retry.
@@ -70,14 +71,15 @@ enum Command {
         /// default ChatGPT-subscription routing.
         #[arg(long)]
         byok: bool,
-        /// Tool to set up: `opencode` | `codex` (default: Claude Code).
+        /// Tool to set up: `claude` | `opencode` | `codex` (default: claude).
         tool: Option<String>,
     },
-    /// Undo setup. Default (no TOOL): remove the parsec-managed env keys from
-    /// Claude Code settings and stop auto-setup from re-running. With a TOOL
-    /// (`parsec disable opencode|codex`): remove that tool's managed artifacts.
+    /// Undo setup. `claude` (or no TOOL): remove the parsec-managed env keys
+    /// from Claude Code settings and stop auto-setup from re-running. With
+    /// another TOOL (`parsec disable opencode|codex`): remove that tool's
+    /// managed artifacts.
     Disable {
-        /// Tool to disable: `opencode` | `codex` (default: Claude Code).
+        /// Tool to disable: `claude` | `opencode` | `codex` (default: claude).
         tool: Option<String>,
     },
     /// Full local cleanup ahead of `claude plugin uninstall`: disable, stop
@@ -97,6 +99,38 @@ enum Command {
     Key {
         #[command(subcommand)]
         action: KeyAction,
+    },
+    /// Stage a det+dir compaction of the current session (/parsec:trim):
+    /// compute the deterministic needed-set trim of the transcript and stage
+    /// it under ~/.parsec/trim/; the SessionStart hook injects it after
+    /// /clear. Exit 2: session too short / no transcript.
+    Trim {
+        /// Session transcript JSONL (default: newest for cwd under
+        /// ~/.claude/projects).
+        #[arg(long)]
+        transcript: Option<std::path::PathBuf>,
+        /// Session id recorded in the staged payload (informational).
+        #[arg(long)]
+        session_id: Option<String>,
+        /// Stage to this path instead of ~/.parsec/trim/<project-key>.json.
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Union a unified diff into the needed label as a gold stand-in
+        /// (default: off — the label is purely the session's own future use).
+        #[arg(long)]
+        patch_file: Option<std::path::PathBuf>,
+        /// Machine-readable stats on stdout.
+        #[arg(long)]
+        json: bool,
+        /// Read the STANDING DIRECTIVES from stdin and mark the staged
+        /// payload ready for injection.
+        #[arg(long)]
+        finalize: bool,
+        /// Trim aggressiveness: 1 (low trimming, keep more) to 5 (very high).
+        /// Default 3 — the measured, parity-locked configuration; other
+        /// levels are unmeasured presets. Env fallback: PARSEC_TRIM_LEVEL.
+        #[arg(long, value_parser = clap::value_parser!(u8).range(1..=5))]
+        level: Option<u8>,
     },
 }
 
@@ -125,7 +159,7 @@ fn init_service_tracing() {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Mcp => parsec_mapgen::mcp::serve_stdio(),
+        Command::Mcp => parsec_mapgen::mcp::serve_stdio_with(parsec_proxy::mcp_ext::tools()),
         Command::Hook { event } => parsec_proxy::hook::run(&event),
         Command::Proxy => {
             init_service_tracing();
@@ -143,24 +177,41 @@ fn main() -> anyhow::Result<()> {
                 anyhow::bail!("--byok only applies to `parsec setup codex`");
             }
             match tool.as_deref() {
-                None => parsec_proxy::setup::run(auto),
+                None | Some("claude") => parsec_proxy::setup::run(auto),
                 Some("opencode") => parsec_proxy::setup_opencode::setup(),
                 Some("codex") => parsec_proxy::setup_codex::setup(if byok {
                     parsec_proxy::setup_codex::Mode::Byok
                 } else {
                     parsec_proxy::setup_codex::Mode::Subscription
                 }),
-                Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode, codex"),
+                Some(t) => anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex"),
             }
         }
         Command::Disable { tool } => match tool.as_deref() {
-            None => parsec_proxy::setup::disable(),
+            None | Some("claude") => parsec_proxy::setup::disable(),
             Some("opencode") => parsec_proxy::setup_opencode::disable(),
             Some("codex") => parsec_proxy::setup_codex::disable(),
-            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: opencode, codex"),
+            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex"),
         },
         Command::Uninstall => parsec_proxy::setup::uninstall(),
         Command::Up { restart } => parsec_proxy::setup::up(restart),
+        Command::Trim {
+            transcript,
+            session_id,
+            out,
+            patch_file,
+            json,
+            finalize,
+            level,
+        } => parsec_proxy::trim::run(parsec_proxy::trim::TrimArgs {
+            transcript,
+            session_id,
+            out,
+            patch_file,
+            json,
+            finalize,
+            level,
+        }),
         Command::Key { action } => match action {
             KeyAction::Set { key, platform_url } => parsec_proxy::setup::key_set(key, platform_url),
             KeyAction::Show => parsec_proxy::setup::key_show(),

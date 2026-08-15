@@ -90,6 +90,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
         }
         "SessionStart" => {
             prune_sessions(7);
+            crate::trim::prune_pending(24 * 3600);
             let mut msgs = Vec::new();
             let source = payload.get("source").and_then(Value::as_str).unwrap_or("");
             let is_startup = source == "startup";
@@ -103,6 +104,24 @@ pub fn run(event: &str) -> anyhow::Result<()> {
                 if !st.reads.is_empty() || !st.cmd_counts.is_empty() {
                     st.evict_all();
                     let _ = save_session(&session_id, &st);
+                }
+            }
+            // /parsec:trim pickup: a staged trim for this project is injected
+            // ONE-SHOT as additionalContext on `clear` (the designed path) or
+            // a fresh `startup` (the user quit instead). Never on `resume`
+            // (the live context would duplicate it) or `compact` (it would
+            // stack on the native summary). consume_pending is fail-open:
+            // every error path returns None and deletes-before-injecting so a
+            // payload can never replay. Deliberately NOT gated on
+            // apikey::enabled() — trim is local deterministic compute, like
+            // savings/statusline.
+            let mut additional_context: Option<String> = None;
+            if matches!(source, "clear" | "startup") {
+                if let Some(ctx) = crate::trim::consume_pending(&cwd) {
+                    additional_context = Some(ctx);
+                    msgs.push(
+                        "injected the /parsec:trim payload from your previous session".into(),
+                    );
                 }
             }
             // Top of the session (and the install flow — first run is a
@@ -133,14 +152,22 @@ pub fn run(event: &str) -> anyhow::Result<()> {
                     msgs.push(m);
                 }
             }
+            let mut out = serde_json::Map::new();
             if !msgs.is_empty() {
-                println!(
-                    "{}",
+                out.insert("systemMessage".into(), json!(crate::brand::notice(&msgs)));
+                out.insert("suppressOutput".into(), json!(true));
+            }
+            if let Some(ctx) = additional_context {
+                out.insert(
+                    "hookSpecificOutput".into(),
                     json!({
-                        "systemMessage": crate::brand::notice(&msgs),
-                        "suppressOutput": true
-                    })
+                        "hookEventName": "SessionStart",
+                        "additionalContext": ctx,
+                    }),
                 );
+            }
+            if !out.is_empty() {
+                println!("{}", Value::Object(out));
             }
         }
         "Stop" => {

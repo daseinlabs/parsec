@@ -1,0 +1,2971 @@
+[
+ {
+  "name": "refetch_kill",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' q.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' ctrl.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' q.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '3,4p' ctrl.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ctrl_source_line_3\nctrl_source_line_4",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 1,
+     "kind": "read",
+     "tokens": 52
+    },
+    {
+     "text": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10",
+     "file": "ctrl.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 2,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 5,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 6,
+     "kind": "read",
+     "tokens": 52
+    },
+    {
+     "text": "ctrl_source_line_3\nctrl_source_line_4",
+     "file": "ctrl.py",
+     "lo": 3,
+     "hi": 4,
+     "step": 7,
+     "kind": "read",
+     "tokens": 9
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 8,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 9,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    7
+   ],
+   "rendered": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10"
+  }
+ },
+ {
+  "name": "patch_exemption",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' q.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' ctrl.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' q.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '3,4p' ctrl.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ctrl_source_line_3\nctrl_source_line_4",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "--- a/q.py\n+++ b/q.py\n@@ -4,3 +4,4 @@\n",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 1,
+     "kind": "read",
+     "tokens": 52
+    },
+    {
+     "text": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10",
+     "file": "ctrl.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 2,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 5,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10",
+     "file": "q.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 6,
+     "kind": "read",
+     "tokens": 52
+    },
+    {
+     "text": "ctrl_source_line_3\nctrl_source_line_4",
+     "file": "ctrl.py",
+     "lo": 3,
+     "hi": 4,
+     "step": 7,
+     "kind": "read",
+     "tokens": 9
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 8,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 9,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    6,
+    7,
+    11
+   ],
+   "rendered": "alpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10\nctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10\nalpha_content_line_1\nalpha_content_line_2\nalpha_content_line_3\nalpha_content_line_4\nalpha_content_line_5\nalpha_content_line_6\nalpha_content_line_7\nalpha_content_line_8\nalpha_content_line_9\nalpha_content_line_10"
+  }
+ },
+ {
+  "name": "rare_token_trigger",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "python -m pytest -x",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "FAILED tests/test_q.py\nTypeError: zorblefrazzle_mode unsupported\nnoise_output_row_1\nnoise_output_row_2\nnoise_output_row_3\nnoise_output_row_4\nnoise_output_row_5\nnoise_output_row_6\nnoise_output_row_7\nnoise_output_row_8",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "grep -rn zorblefrazzle_mode src/",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "src/q.py:7: zorblefrazzle_mode = 1",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "FAILED tests/test_q.py\nTypeError: zorblefrazzle_mode unsupported\nnoise_output_row_1\nnoise_output_row_2\nnoise_output_row_3\nnoise_output_row_4\nnoise_output_row_5\nnoise_output_row_6\nnoise_output_row_7\nnoise_output_row_8",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "other",
+     "tokens": 54
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "src/q.py:7: zorblefrazzle_mode = 1",
+     "file": "q.py",
+     "lo": 7,
+     "hi": 7,
+     "step": 5,
+     "kind": "grep",
+     "tokens": 8
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 7,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    6
+   ],
+   "rendered": "FAILED tests/test_q.py\nTypeError: zorblefrazzle_mode unsupported\nnoise_output_row_1\nnoise_output_row_2\nnoise_output_row_3\nnoise_output_row_4\nnoise_output_row_5\nnoise_output_row_6\nnoise_output_row_7\nnoise_output_row_8"
+  }
+ },
+ {
+  "name": "sup_at_admission",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' w.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "wcontent_line_1\nwcontent_line_2\nwcontent_line_3\nwcontent_line_4\nwcontent_line_5\nwcontent_line_6\nwcontent_line_7\nwcontent_line_8\nwcontent_line_9\nwcontent_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,9p' w.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "wcontent_line_1\nwcontent_line_2\nwcontent_line_3\nwcontent_line_4\nwcontent_line_5\nwcontent_line_6\nwcontent_line_7\nwcontent_line_8\nwcontent_line_9",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n 5p w.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "wcontent_line_5",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "--- a/w.py\n+++ b/w.py\n@@ -2,3 +2,3 @@\n",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "wcontent_line_1\nwcontent_line_2\nwcontent_line_3\nwcontent_line_4\nwcontent_line_5\nwcontent_line_6\nwcontent_line_7\nwcontent_line_8\nwcontent_line_9\nwcontent_line_10",
+     "file": "w.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 1,
+     "kind": "read",
+     "tokens": 40
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "wcontent_line_1\nwcontent_line_2\nwcontent_line_3\nwcontent_line_4\nwcontent_line_5\nwcontent_line_6\nwcontent_line_7\nwcontent_line_8\nwcontent_line_9",
+     "file": "w.py",
+     "lo": 1,
+     "hi": 9,
+     "step": 5,
+     "kind": "read",
+     "tokens": 35
+    },
+    {
+     "text": "wcontent_line_5",
+     "file": "w.py",
+     "lo": 5,
+     "hi": 5,
+     "step": 6,
+     "kind": "read",
+     "tokens": 3
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 7,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 8,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    6,
+    10
+   ],
+   "rendered": "wcontent_line_1\nwcontent_line_2\nwcontent_line_3\nwcontent_line_4\nwcontent_line_5\nwcontent_line_6\nwcontent_line_7\nwcontent_line_8\nwcontent_line_9\nwcontent_line_10\nwcontent_line_1\nwcontent_line_2\nwcontent_line_3\nwcontent_line_4\nwcontent_line_5\nwcontent_line_6\nwcontent_line_7\nwcontent_line_8\nwcontent_line_9"
+  }
+ },
+ {
+  "name": "planning_doc",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat sprint-plans.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "sprint_goal_entry_1\nsprint_goal_entry_2\nsprint_goal_entry_3\nsprint_goal_entry_4\nsprint_goal_entry_5\nsprint_goal_entry_6\nsprint_goal_entry_7\nsprint_goal_entry_8\nsprint_goal_entry_9\nsprint_goal_entry_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat planet.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "planet_body_row_1\nplanet_body_row_2\nplanet_body_row_3\nplanet_body_row_4\nplanet_body_row_5\nplanet_body_row_6\nplanet_body_row_7\nplanet_body_row_8\nplanet_body_row_9\nplanet_body_row_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fill_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fill_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fill_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fill_3",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fill_4",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fill_5",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "sprint_goal_entry_1\nsprint_goal_entry_2\nsprint_goal_entry_3\nsprint_goal_entry_4\nsprint_goal_entry_5\nsprint_goal_entry_6\nsprint_goal_entry_7\nsprint_goal_entry_8\nsprint_goal_entry_9\nsprint_goal_entry_10",
+     "file": "sprint-plans.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 1,
+     "kind": "read",
+     "tokens": 50
+    },
+    {
+     "text": "planet_body_row_1\nplanet_body_row_2\nplanet_body_row_3\nplanet_body_row_4\nplanet_body_row_5\nplanet_body_row_6\nplanet_body_row_7\nplanet_body_row_8\nplanet_body_row_9\nplanet_body_row_10",
+     "file": "planet.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 2,
+     "kind": "read",
+     "tokens": 45
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 5,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 7,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 8,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    6
+   ],
+   "rendered": "sprint_goal_entry_1\nsprint_goal_entry_2\nsprint_goal_entry_3\nsprint_goal_entry_4\nsprint_goal_entry_5\nsprint_goal_entry_6\nsprint_goal_entry_7\nsprint_goal_entry_8\nsprint_goal_entry_9\nsprint_goal_entry_10"
+  }
+ },
+ {
+  "name": "whole_file_reread_ignored",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' r.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "rcontent_line_1\nrcontent_line_2\nrcontent_line_3\nrcontent_line_4\nrcontent_line_5\nrcontent_line_6\nrcontent_line_7\nrcontent_line_8\nrcontent_line_9\nrcontent_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,10p' ctrl.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat r.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "rcontent_line_1\nrcontent_line_2\nrcontent_line_3\nrcontent_line_4\nrcontent_line_5\nrcontent_line_6\nrcontent_line_7\nrcontent_line_8\nrcontent_line_9\nrcontent_line_10",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '3,4p' ctrl.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ctrl_source_line_3\nctrl_source_line_4",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "rcontent_line_1\nrcontent_line_2\nrcontent_line_3\nrcontent_line_4\nrcontent_line_5\nrcontent_line_6\nrcontent_line_7\nrcontent_line_8\nrcontent_line_9\nrcontent_line_10",
+     "file": "r.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 1,
+     "kind": "read",
+     "tokens": 40
+    },
+    {
+     "text": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10",
+     "file": "ctrl.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 2,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 5,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "rcontent_line_1\nrcontent_line_2\nrcontent_line_3\nrcontent_line_4\nrcontent_line_5\nrcontent_line_6\nrcontent_line_7\nrcontent_line_8\nrcontent_line_9\nrcontent_line_10",
+     "file": "r.py",
+     "lo": 1,
+     "hi": 10,
+     "step": 6,
+     "kind": "read",
+     "tokens": 40
+    },
+    {
+     "text": "ctrl_source_line_3\nctrl_source_line_4",
+     "file": "ctrl.py",
+     "lo": 3,
+     "hi": 4,
+     "step": 7,
+     "kind": "read",
+     "tokens": 9
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 8,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 9,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    7
+   ],
+   "rendered": "ctrl_source_line_1\nctrl_source_line_2\nctrl_source_line_3\nctrl_source_line_4\nctrl_source_line_5\nctrl_source_line_6\nctrl_source_line_7\nctrl_source_line_8\nctrl_source_line_9\nctrl_source_line_10"
+  }
+ },
+ {
+  "name": "grep_line_targeting",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "grep -rn needle_token src/",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "src/g.py:14: needle_token here\nsrc/h.py:99: needle_token there",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '10,20p' g.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "gcontent_line_10\ngcontent_line_11\ngcontent_line_12\ngcontent_line_13\ngcontent_line_14\ngcontent_line_15\ngcontent_line_16\ngcontent_line_17\ngcontent_line_18\ngcontent_line_19\ngcontent_line_20",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "--- a/g.py\n+++ b/g.py\n@@ -14,2 +14,2 @@\n",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "src/g.py:14: needle_token here",
+     "file": "g.py",
+     "lo": 14,
+     "hi": 14,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 7
+    },
+    {
+     "text": "src/h.py:99: needle_token there",
+     "file": "h.py",
+     "lo": 99,
+     "hi": 99,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 7
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "gcontent_line_10\ngcontent_line_11\ngcontent_line_12\ngcontent_line_13\ngcontent_line_14\ngcontent_line_15\ngcontent_line_16\ngcontent_line_17\ngcontent_line_18\ngcontent_line_19",
+     "file": "g.py",
+     "lo": 10,
+     "hi": 19,
+     "step": 5,
+     "kind": "read",
+     "tokens": 42
+    },
+    {
+     "text": "gcontent_line_20",
+     "file": "g.py",
+     "lo": 20,
+     "hi": 20,
+     "step": 5,
+     "kind": "read",
+     "tokens": 4
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 7,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    6,
+    11
+   ],
+   "rendered": "src/g.py:14: needle_token here\ngcontent_line_10\ngcontent_line_11\ngcontent_line_12\ngcontent_line_13\ngcontent_line_14\ngcontent_line_15\ngcontent_line_16\ngcontent_line_17\ngcontent_line_18\ngcontent_line_19"
+  }
+ },
+ {
+  "name": "asst_and_reasoning",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "The bug is in quuxplex_handler; check its callers next.",
+    "extra": {
+     "actions": [
+      {
+       "command": "grep -n quuxplex_handler src/",
+       "query": ""
+      }
+     ]
+    },
+    "reasoning_content": "considering the dispatch paths before editing"
+   },
+   {
+    "role": "tool",
+    "content": "src/m.py:3: def quuxplex_handler():",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo fillone_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '1,5p' m.py && echo quuxplex_handler",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "mcontent_line_1\nmcontent_line_2\nmcontent_line_3\nmcontent_line_4\nmcontent_line_5",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo filltwo_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "src/m.py:3: def quuxplex_handler():",
+     "file": "m.py",
+     "lo": 3,
+     "hi": 3,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 8
+    },
+    {
+     "text": "The bug is in quuxplex_handler; check its callers next.",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "asst",
+     "tokens": 13
+    },
+    {
+     "text": "considering the dispatch paths before editing",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 1,
+     "kind": "reasoning",
+     "tokens": 11
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 2,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 4,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "mcontent_line_1\nmcontent_line_2\nmcontent_line_3\nmcontent_line_4\nmcontent_line_5",
+     "file": "m.py",
+     "lo": 1,
+     "hi": 5,
+     "step": 5,
+     "kind": "read",
+     "tokens": 19
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 6,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 7,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    7
+   ],
+   "rendered": "The bug is in quuxplex_handler; check its callers next."
+  }
+ },
+ {
+  "name": "too_short",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat f0.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "short_body_line_1\nshort_body_line_2\nshort_body_line_3",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat f1.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "short_body_line_1\nshort_body_line_2\nshort_body_line_3",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat f2.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "short_body_line_1\nshort_body_line_2\nshort_body_line_3",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat f3.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "short_body_line_1\nshort_body_line_2\nshort_body_line_3",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat f4.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "short_body_line_1\nshort_body_line_2\nshort_body_line_3",
+    "extra": {}
+   }
+  ],
+  "patch": "",
+  "expected": {
+   "skip": "steps",
+   "n": 5
+  }
+ },
+ {
+  "name": "mixed_session",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "cat plan.md",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10\nplan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20\nplan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30\nplan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40\nplan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50\nplan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "grep -rn frobnicate_impl src/",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "src/core.py:41: def frobnicate_impl(x):\nsrc/util.py:9: from core import frobnicate_impl",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '35,60p' core.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "core_source_line_35\ncore_source_line_36\ncore_source_line_37\ncore_source_line_38\ncore_source_line_39\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42\ncore_source_line_43\ncore_source_line_44\ncore_source_line_45\ncore_source_line_46\ncore_source_line_47\ncore_source_line_48\ncore_source_line_49\ncore_source_line_50\ncore_source_line_51\ncore_source_line_52\ncore_source_line_53\ncore_source_line_54\ncore_source_line_55\ncore_source_line_56\ncore_source_line_57\ncore_source_line_58\ncore_source_line_59\ncore_source_line_60",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "python -m pytest tests/ -x",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "<returncode>1</returncode>\npytest_noise_row_1\npytest_noise_row_2\npytest_noise_row_3\npytest_noise_row_4\npytest_noise_row_5\npytest_noise_row_6\npytest_noise_row_7\npytest_noise_row_8\npytest_noise_row_9\npytest_noise_row_10\npytest_noise_row_11\npytest_noise_row_12\nAssertionError: gribblewock_state mismatch",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "grep -rn gribblewock_state src/ tests/",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "tests/test_core.py:77: assert gribblewock_state == 3",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '70,85p' test_core.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "testcore_src_line_70\ntestcore_src_line_71\ntestcore_src_line_72\ntestcore_src_line_73\ntestcore_src_line_74\ntestcore_src_line_75\ntestcore_src_line_76\ntestcore_src_line_77\ntestcore_src_line_78\ntestcore_src_line_79\ntestcore_src_line_80\ntestcore_src_line_81\ntestcore_src_line_82\ntestcore_src_line_83\ntestcore_src_line_84\ntestcore_src_line_85",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '35,44p' core.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "core_source_line_35\ncore_source_line_36\ncore_source_line_37\ncore_source_line_38\ncore_source_line_39\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42\ncore_source_line_43\ncore_source_line_44",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo tailfill_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo tailfill_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo tailfill_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo tailfill_3",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "sed -n '40,42p' core.py",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "core_source_line_40\ncore_source_line_41\ncore_source_line_42",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo postfill_0",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo postfill_1",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "extra": {
+     "actions": [
+      {
+       "command": "echo postfill_2",
+       "query": ""
+      }
+     ]
+    }
+   },
+   {
+    "role": "tool",
+    "content": "ok",
+    "extra": {}
+   }
+  ],
+  "patch": "--- a/core.py\n+++ b/core.py\n@@ -41,2 +41,3 @@\n",
+  "expected": {
+   "chunks": [
+    {
+     "text": "plan_item_number_1\nplan_item_number_2\nplan_item_number_3\nplan_item_number_4\nplan_item_number_5\nplan_item_number_6\nplan_item_number_7\nplan_item_number_8\nplan_item_number_9\nplan_item_number_10",
+     "file": "plan.md",
+     "lo": 1,
+     "hi": 10,
+     "step": 0,
+     "kind": "read",
+     "tokens": 47
+    },
+    {
+     "text": "plan_item_number_11\nplan_item_number_12\nplan_item_number_13\nplan_item_number_14\nplan_item_number_15\nplan_item_number_16\nplan_item_number_17\nplan_item_number_18\nplan_item_number_19\nplan_item_number_20",
+     "file": "plan.md",
+     "lo": 11,
+     "hi": 20,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_21\nplan_item_number_22\nplan_item_number_23\nplan_item_number_24\nplan_item_number_25\nplan_item_number_26\nplan_item_number_27\nplan_item_number_28\nplan_item_number_29\nplan_item_number_30",
+     "file": "plan.md",
+     "lo": 21,
+     "hi": 30,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_31\nplan_item_number_32\nplan_item_number_33\nplan_item_number_34\nplan_item_number_35\nplan_item_number_36\nplan_item_number_37\nplan_item_number_38\nplan_item_number_39\nplan_item_number_40",
+     "file": "plan.md",
+     "lo": 31,
+     "hi": 40,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_41\nplan_item_number_42\nplan_item_number_43\nplan_item_number_44\nplan_item_number_45\nplan_item_number_46\nplan_item_number_47\nplan_item_number_48\nplan_item_number_49\nplan_item_number_50",
+     "file": "plan.md",
+     "lo": 41,
+     "hi": 50,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "plan_item_number_51\nplan_item_number_52\nplan_item_number_53\nplan_item_number_54\nplan_item_number_55\nplan_item_number_56\nplan_item_number_57\nplan_item_number_58\nplan_item_number_59\nplan_item_number_60",
+     "file": "plan.md",
+     "lo": 51,
+     "hi": 60,
+     "step": 0,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "src/core.py:41: def frobnicate_impl(x):",
+     "file": "core.py",
+     "lo": 41,
+     "hi": 41,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 9
+    },
+    {
+     "text": "src/util.py:9: from core import frobnicate_impl",
+     "file": "util.py",
+     "lo": 9,
+     "hi": 9,
+     "step": 1,
+     "kind": "grep",
+     "tokens": 11
+    },
+    {
+     "text": "core_source_line_35\ncore_source_line_36\ncore_source_line_37\ncore_source_line_38\ncore_source_line_39\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42\ncore_source_line_43\ncore_source_line_44",
+     "file": "core.py",
+     "lo": 35,
+     "hi": 44,
+     "step": 2,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "core_source_line_45\ncore_source_line_46\ncore_source_line_47\ncore_source_line_48\ncore_source_line_49\ncore_source_line_50\ncore_source_line_51\ncore_source_line_52\ncore_source_line_53\ncore_source_line_54",
+     "file": "core.py",
+     "lo": 45,
+     "hi": 54,
+     "step": 2,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "core_source_line_55\ncore_source_line_56\ncore_source_line_57\ncore_source_line_58\ncore_source_line_59\ncore_source_line_60",
+     "file": "core.py",
+     "lo": 55,
+     "hi": 60,
+     "step": 2,
+     "kind": "read",
+     "tokens": 29
+    },
+    {
+     "text": "<returncode>1</returncode>\npytest_noise_row_1\npytest_noise_row_2\npytest_noise_row_3\npytest_noise_row_4\npytest_noise_row_5\npytest_noise_row_6\npytest_noise_row_7\npytest_noise_row_8\npytest_noise_row_9\npytest_noise_row_10\npytest_noise_row_11\npytest_noise_row_12\nAssertionError: gribblewock_state mismatch",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 3,
+     "kind": "other",
+     "tokens": 75
+    },
+    {
+     "text": "tests/test_core.py:77: assert gribblewock_state == 3",
+     "file": "test_core.py",
+     "lo": 77,
+     "hi": 77,
+     "step": 4,
+     "kind": "grep",
+     "tokens": 13
+    },
+    {
+     "text": "testcore_src_line_70\ntestcore_src_line_71\ntestcore_src_line_72\ntestcore_src_line_73\ntestcore_src_line_74\ntestcore_src_line_75\ntestcore_src_line_76\ntestcore_src_line_77\ntestcore_src_line_78\ntestcore_src_line_79",
+     "file": "test_core.py",
+     "lo": 70,
+     "hi": 79,
+     "step": 5,
+     "kind": "read",
+     "tokens": 52
+    },
+    {
+     "text": "testcore_src_line_80\ntestcore_src_line_81\ntestcore_src_line_82\ntestcore_src_line_83\ntestcore_src_line_84\ntestcore_src_line_85",
+     "file": "test_core.py",
+     "lo": 80,
+     "hi": 85,
+     "step": 5,
+     "kind": "read",
+     "tokens": 31
+    },
+    {
+     "text": "core_source_line_35\ncore_source_line_36\ncore_source_line_37\ncore_source_line_38\ncore_source_line_39\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42\ncore_source_line_43\ncore_source_line_44",
+     "file": "core.py",
+     "lo": 35,
+     "hi": 44,
+     "step": 6,
+     "kind": "read",
+     "tokens": 49
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 7,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 8,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 9,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 10,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "core_source_line_40\ncore_source_line_41\ncore_source_line_42",
+     "file": "core.py",
+     "lo": 40,
+     "hi": 42,
+     "step": 11,
+     "kind": "read",
+     "tokens": 14
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 12,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 13,
+     "kind": "other",
+     "tokens": 1
+    },
+    {
+     "text": "ok",
+     "file": null,
+     "lo": null,
+     "hi": null,
+     "step": 14,
+     "kind": "other",
+     "tokens": 1
+    }
+   ],
+   "keep_idx": [
+    6,
+    8,
+    11,
+    15,
+    20
+   ],
+   "rendered": "src/core.py:41: def frobnicate_impl(x):\ncore_source_line_35\ncore_source_line_36\ncore_source_line_37\ncore_source_line_38\ncore_source_line_39\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42\ncore_source_line_43\ncore_source_line_44\n<returncode>1</returncode>\npytest_noise_row_1\npytest_noise_row_2\npytest_noise_row_3\npytest_noise_row_4\npytest_noise_row_5\npytest_noise_row_6\npytest_noise_row_7\npytest_noise_row_8\npytest_noise_row_9\npytest_noise_row_10\npytest_noise_row_11\npytest_noise_row_12\nAssertionError: gribblewock_state mismatch\ncore_source_line_35\ncore_source_line_36\ncore_source_line_37\ncore_source_line_38\ncore_source_line_39\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42\ncore_source_line_43\ncore_source_line_44\ncore_source_line_40\ncore_source_line_41\ncore_source_line_42"
+  }
+ }
+]

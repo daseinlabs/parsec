@@ -13,6 +13,16 @@ use std::path::PathBuf;
 
 const PROTOCOL: &str = "2025-06-18";
 
+/// A tool contributed by the binary crate (mapgen must not depend on the
+/// crates that implement them — dependency direction). `spec` is the MCP
+/// tool descriptor (name/description/inputSchema); the handler returns the
+/// text content (Err -> isError response, loop keeps running).
+pub struct ExtraTool {
+    pub spec: Value,
+    #[allow(clippy::type_complexity)]
+    pub handler: Box<dyn Fn(&Value) -> Result<String, String>>,
+}
+
 fn tools() -> Value {
     json!([
         {
@@ -59,7 +69,7 @@ fn root_of(args: &Value) -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
-fn call_tool(name: &str, args: &Value) -> Result<String, String> {
+fn call_tool(name: &str, args: &Value, extra: &[ExtraTool]) -> Result<String, String> {
     let root = root_of(args);
     match name {
         "repo_map" => Ok(crate::scan::repo_map(&root, 200)),
@@ -77,7 +87,10 @@ fn call_tool(name: &str, args: &Value) -> Result<String, String> {
                 .ok_or("missing 'name'")?;
             Ok(crate::scan::find_symbol(&root, sym, 3))
         }
-        other => Err(format!("unknown tool: {other}")),
+        other => match extra.iter().find(|t| t.spec["name"] == other) {
+            Some(t) => (t.handler)(args),
+            None => Err(format!("unknown tool: {other}")),
+        },
     }
 }
 
@@ -100,6 +113,10 @@ fn respond_err(out: &mut impl Write, id: &Value, code: i64, msg: &str) {
 }
 
 pub fn serve_stdio() -> anyhow::Result<()> {
+    serve_stdio_with(Vec::new())
+}
+
+pub fn serve_stdio_with(extra: Vec<ExtraTool>) -> anyhow::Result<()> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -132,7 +149,13 @@ pub fn serve_stdio() -> anyhow::Result<()> {
                 );
             }
             "ping" => respond(&mut stdout, &id, json!({})),
-            "tools/list" => respond(&mut stdout, &id, json!({"tools": tools()})),
+            "tools/list" => {
+                let mut list = tools();
+                if let Some(arr) = list.as_array_mut() {
+                    arr.extend(extra.iter().map(|t| t.spec.clone()));
+                }
+                respond(&mut stdout, &id, json!({"tools": list}));
+            }
             "tools/call" => {
                 let name = msg
                     .pointer("/params/name")
@@ -142,7 +165,7 @@ pub fn serve_stdio() -> anyhow::Result<()> {
                     .pointer("/params/arguments")
                     .cloned()
                     .unwrap_or(json!({}));
-                match call_tool(name, &args) {
+                match call_tool(name, &args, &extra) {
                     Ok(text) => respond(
                         &mut stdout,
                         &id,

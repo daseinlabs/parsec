@@ -126,6 +126,28 @@ def _model_row(r: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Site-wide by-model totals from the (account, model) rollup, shaped for
+# fold_public. Plain SQL shared verbatim by both stores: NULLIF undoes the ''
+# sentinel the rollup uses for "no model captured" so the pricing join and the
+# API shape see a real NULL.
+_SAVINGS_PUBLIC_SQL = (
+    "SELECT NULLIF(r.model, '') AS model, "
+    "SUM(r.rows_count) AS rows_count, "
+    "SUM(r.measured_rows) AS measured_rows, "
+    "SUM(r.tokens_saved) AS tokens_saved, "
+    "SUM(r.billed_input_tokens) AS billed_input_tokens, "
+    "SUM(r.billed_output_tokens) AS billed_output_tokens, "
+    "SUM(r.billed_cache_read_tokens) AS billed_cache_read_tokens, "
+    "SUM(r.billed_cache_write_tokens) AS billed_cache_write_tokens, "
+    "p.input_per_mtok, p.output_per_mtok, p.cache_read_per_mtok, "
+    "p.cache_write_per_mtok, p.currency "
+    "FROM savings_rollup r "
+    "LEFT JOIN model_pricing p ON p.model = r.model "
+    "GROUP BY r.model, p.input_per_mtok, p.output_per_mtok, "
+    "p.cache_read_per_mtok, p.cache_write_per_mtok, p.currency"
+)
+
+
 def fold_public(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Roll by-model grouped rows (same column shape as the by-model queries)
     up to the site-wide public totals. Savings are valued per model at its own
@@ -203,12 +225,17 @@ def fold_daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-# Anthropic list pricing, USD per million tokens (cache_write = 5-minute TTL =
-# 1.25x input; 1-hour TTL would be 2x — the ledger stores a single
-# billed_cache_write_tokens and can't distinguish TTL, so the 5m default is
-# used). KEEP IN SYNC with migrations/0002_*.sql model_pricing seed.
+# Provider list pricing, USD per million tokens.
+# Anthropic: cache_write = 5-minute TTL = 1.25x input; 1-hour TTL would be 2x —
+# the ledger stores a single billed_cache_write_tokens and can't distinguish
+# TTL, so the 5m default is used.
+# OpenAI (Codex/ChatGPT traffic): cache_read = 0.1x input, cache_write = 1.25x
+# input per the published gpt-5.6 rates; rates are the short-context tier —
+# the >272K long-context tier bills higher but a single flat row can't
+# represent it, so long-context savings are undervalued, never overvalued.
+# KEEP IN SYNC with migrations/0002_*.sql + 0004_*.sql model_pricing seeds.
 _PRICING_SEED = (
-    # model,               input, output, cache_read, cache_write(5m)
+    # model,               input, output, cache_read, cache_write
     ("claude-fable-5", 10.0, 50.0, 1.0, 12.5),
     ("claude-opus-4-8", 5.0, 25.0, 0.5, 6.25),
     ("claude-opus-4-7", 5.0, 25.0, 0.5, 6.25),
@@ -216,6 +243,17 @@ _PRICING_SEED = (
     ("claude-sonnet-5", 3.0, 15.0, 0.3, 3.75),
     ("claude-sonnet-4-6", 3.0, 15.0, 0.3, 3.75),
     ("claude-haiku-4-5", 1.0, 5.0, 0.1, 1.25),
+    ("gpt-5.6-sol", 5.0, 30.0, 0.5, 6.25),
+    ("gpt-5.6-terra", 2.0, 12.0, 0.2, 2.5),
+    ("gpt-5.6-luna", 0.2, 1.2, 0.02, 0.25),
+    ("gpt-5.5", 5.0, 30.0, 0.5, 6.25),
+    ("gpt-5.4-mini", 0.75, 4.5, 0.075, 0.9375),
+    ("gpt-5.4-nano", 0.2, 1.25, 0.02, 0.25),
+    ("gpt-5.3-codex", 1.75, 14.0, 0.175, 2.1875),
+    ("gpt-5.2-codex", 1.75, 14.0, 0.175, 2.1875),
+    ("gpt-5-codex", 1.25, 10.0, 0.125, 1.5625),
+    ("gpt-5-mini", 0.25, 2.0, 0.025, 0.3125),
+    ("gpt-5-nano", 0.05, 0.4, 0.005, 0.0625),
 )
 
 _SCHEMA = """
@@ -253,6 +291,109 @@ CREATE TABLE IF NOT EXISTS ledger (
     extra                       TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS ledger_model ON ledger (json_extract(extra, '$.model'));
+
+-- Incremental (account, model) rollup: running totals maintained by the
+-- ledger triggers below so savings reads never scan the ledger (the public
+-- counter used to take ~7.5s at 562k rows). §8.4-honest: every counter
+-- derives from the same per-request count_tokens rows and is recomputable
+-- from the ledger. KEEP IN SYNC with migrations/0003_savings_rollup.sql.
+CREATE TABLE IF NOT EXISTS savings_rollup (
+    account_id                  TEXT NOT NULL,
+    -- '' = the row carried no model; NULL can't be part of a primary key.
+    model                       TEXT NOT NULL,
+    rows_count                  INTEGER NOT NULL DEFAULT 0,
+    measured_rows               INTEGER NOT NULL DEFAULT 0,
+    tokens_saved                INTEGER NOT NULL DEFAULT 0,
+    counterfactual_input_tokens INTEGER NOT NULL DEFAULT 0,
+    billed_input_tokens         INTEGER NOT NULL DEFAULT 0,
+    billed_output_tokens        INTEGER NOT NULL DEFAULT 0,
+    billed_cache_read_tokens    INTEGER NOT NULL DEFAULT 0,
+    billed_cache_write_tokens   INTEGER NOT NULL DEFAULT 0,
+    fail_open_count             INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, model)
+);
+
+-- INSERT OR IGNORE seeds the (account, model) row, then UPDATE folds the
+-- ledger row in — upsert inside a trigger body is not portable across the
+-- SQLite versions in the field. A NULL counterfactual is a hole (§8.4): it
+-- counts in rows_count but adds nothing to measured_rows/tokens_saved.
+CREATE TRIGGER IF NOT EXISTS ledger_savings_rollup_ins AFTER INSERT ON ledger
+BEGIN
+    INSERT OR IGNORE INTO savings_rollup (account_id, model)
+        VALUES (NEW.account_id, COALESCE(json_extract(NEW.extra, '$.model'), ''));
+    UPDATE savings_rollup SET
+        rows_count = rows_count + 1,
+        measured_rows = measured_rows + (NEW.counterfactual_input_tokens IS NOT NULL),
+        tokens_saved = tokens_saved + COALESCE(NEW.counterfactual_input_tokens
+            - (NEW.billed_input_tokens + NEW.billed_cache_read_tokens
+               + NEW.billed_cache_write_tokens), 0),
+        counterfactual_input_tokens = counterfactual_input_tokens
+            + COALESCE(NEW.counterfactual_input_tokens, 0),
+        billed_input_tokens = billed_input_tokens + NEW.billed_input_tokens,
+        billed_output_tokens = billed_output_tokens + NEW.billed_output_tokens,
+        billed_cache_read_tokens = billed_cache_read_tokens + NEW.billed_cache_read_tokens,
+        billed_cache_write_tokens = billed_cache_write_tokens + NEW.billed_cache_write_tokens,
+        fail_open_count = fail_open_count + NEW.fail_open
+    WHERE account_id = NEW.account_id
+      AND model = COALESCE(json_extract(NEW.extra, '$.model'), '');
+END;
+
+CREATE TRIGGER IF NOT EXISTS ledger_savings_rollup_del AFTER DELETE ON ledger
+BEGIN
+    UPDATE savings_rollup SET
+        rows_count = rows_count - 1,
+        measured_rows = measured_rows - (OLD.counterfactual_input_tokens IS NOT NULL),
+        tokens_saved = tokens_saved - COALESCE(OLD.counterfactual_input_tokens
+            - (OLD.billed_input_tokens + OLD.billed_cache_read_tokens
+               + OLD.billed_cache_write_tokens), 0),
+        counterfactual_input_tokens = counterfactual_input_tokens
+            - COALESCE(OLD.counterfactual_input_tokens, 0),
+        billed_input_tokens = billed_input_tokens - OLD.billed_input_tokens,
+        billed_output_tokens = billed_output_tokens - OLD.billed_output_tokens,
+        billed_cache_read_tokens = billed_cache_read_tokens - OLD.billed_cache_read_tokens,
+        billed_cache_write_tokens = billed_cache_write_tokens - OLD.billed_cache_write_tokens,
+        fail_open_count = fail_open_count - OLD.fail_open
+    WHERE account_id = OLD.account_id
+      AND model = COALESCE(json_extract(OLD.extra, '$.model'), '');
+END;
+
+-- The app never UPDATEs ledger rows (INSERT OR IGNORE), but a hand edit must
+-- not silently desync the rollup: subtract OLD, fold in NEW.
+CREATE TRIGGER IF NOT EXISTS ledger_savings_rollup_upd AFTER UPDATE ON ledger
+BEGIN
+    UPDATE savings_rollup SET
+        rows_count = rows_count - 1,
+        measured_rows = measured_rows - (OLD.counterfactual_input_tokens IS NOT NULL),
+        tokens_saved = tokens_saved - COALESCE(OLD.counterfactual_input_tokens
+            - (OLD.billed_input_tokens + OLD.billed_cache_read_tokens
+               + OLD.billed_cache_write_tokens), 0),
+        counterfactual_input_tokens = counterfactual_input_tokens
+            - COALESCE(OLD.counterfactual_input_tokens, 0),
+        billed_input_tokens = billed_input_tokens - OLD.billed_input_tokens,
+        billed_output_tokens = billed_output_tokens - OLD.billed_output_tokens,
+        billed_cache_read_tokens = billed_cache_read_tokens - OLD.billed_cache_read_tokens,
+        billed_cache_write_tokens = billed_cache_write_tokens - OLD.billed_cache_write_tokens,
+        fail_open_count = fail_open_count - OLD.fail_open
+    WHERE account_id = OLD.account_id
+      AND model = COALESCE(json_extract(OLD.extra, '$.model'), '');
+    INSERT OR IGNORE INTO savings_rollup (account_id, model)
+        VALUES (NEW.account_id, COALESCE(json_extract(NEW.extra, '$.model'), ''));
+    UPDATE savings_rollup SET
+        rows_count = rows_count + 1,
+        measured_rows = measured_rows + (NEW.counterfactual_input_tokens IS NOT NULL),
+        tokens_saved = tokens_saved + COALESCE(NEW.counterfactual_input_tokens
+            - (NEW.billed_input_tokens + NEW.billed_cache_read_tokens
+               + NEW.billed_cache_write_tokens), 0),
+        counterfactual_input_tokens = counterfactual_input_tokens
+            + COALESCE(NEW.counterfactual_input_tokens, 0),
+        billed_input_tokens = billed_input_tokens + NEW.billed_input_tokens,
+        billed_output_tokens = billed_output_tokens + NEW.billed_output_tokens,
+        billed_cache_read_tokens = billed_cache_read_tokens + NEW.billed_cache_read_tokens,
+        billed_cache_write_tokens = billed_cache_write_tokens + NEW.billed_cache_write_tokens,
+        fail_open_count = fail_open_count + NEW.fail_open
+    WHERE account_id = NEW.account_id
+      AND model = COALESCE(json_extract(NEW.extra, '$.model'), '');
+END;
 
 -- Model list pricing (USD per million tokens). Report-time join turns token
 -- counts into cost; kept out of the ledger rows so a price change is one UPDATE
@@ -327,6 +468,31 @@ class SQLiteStore(Store):
                 "VALUES (?, ?, ?, ?, ?)",
                 _PRICING_SEED,
             )
+            # Backfill the rollup for a pre-existing DB file created before the
+            # savings_rollup triggers existed. An empty rollup + non-empty
+            # ledger can only mean "never backfilled": the ledger is
+            # append-only and the triggers keep the rollup in step from the
+            # moment the schema lands.
+            if not self._conn.execute("SELECT 1 FROM savings_rollup LIMIT 1").fetchone():
+                self._conn.execute(
+                    "INSERT INTO savings_rollup (account_id, model, rows_count, "
+                    "measured_rows, tokens_saved, counterfactual_input_tokens, "
+                    "billed_input_tokens, billed_output_tokens, "
+                    "billed_cache_read_tokens, billed_cache_write_tokens, fail_open_count) "
+                    "SELECT account_id, COALESCE(json_extract(extra, '$.model'), ''), "
+                    "COUNT(*), COUNT(counterfactual_input_tokens), "
+                    "COALESCE(SUM(CASE WHEN counterfactual_input_tokens IS NOT NULL "
+                    "  THEN counterfactual_input_tokens - (billed_input_tokens "
+                    "    + billed_cache_read_tokens + billed_cache_write_tokens) END), 0), "
+                    "COALESCE(SUM(counterfactual_input_tokens), 0), "
+                    "COALESCE(SUM(billed_input_tokens), 0), "
+                    "COALESCE(SUM(billed_output_tokens), 0), "
+                    "COALESCE(SUM(billed_cache_read_tokens), 0), "
+                    "COALESCE(SUM(billed_cache_write_tokens), 0), "
+                    "COALESCE(SUM(fail_open), 0) "
+                    "FROM ledger "
+                    "GROUP BY account_id, COALESCE(json_extract(extra, '$.model'), '')"
+                )
             self._conn.commit()
 
     def set_entitlement(self, account_id: str, entitled: bool) -> None:
@@ -470,29 +636,12 @@ class SQLiteStore(Store):
         return summary
 
     def savings_public(self) -> dict[str, Any]:
-        # The account-scoped by-model query minus its WHERE — grouped per model
-        # so each model's saved tokens are valued at its own blended rate.
+        # Site-wide totals from the (account, model) rollup — a users×models-row
+        # scan, never the ledger. Summed per model so each model's saved tokens
+        # are valued at its own blended rate; accounts collapse here and nothing
+        # per-account leaves this method.
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT json_extract(l.extra, '$.model') AS model, "
-                "COUNT(*) AS rows_count, "
-                "COUNT(l.counterfactual_input_tokens) AS measured_rows, "
-                "COALESCE(SUM(CASE WHEN l.counterfactual_input_tokens IS NOT NULL "
-                "  THEN l.counterfactual_input_tokens - (l.billed_input_tokens "
-                "    + l.billed_cache_read_tokens + l.billed_cache_write_tokens) END), 0) "
-                "  AS tokens_saved, "
-                "COALESCE(SUM(l.billed_input_tokens), 0) AS billed_input_tokens, "
-                "COALESCE(SUM(l.billed_output_tokens), 0) AS billed_output_tokens, "
-                "COALESCE(SUM(l.billed_cache_read_tokens), 0) AS billed_cache_read_tokens, "
-                "COALESCE(SUM(l.billed_cache_write_tokens), 0) AS billed_cache_write_tokens, "
-                "p.input_per_mtok, p.output_per_mtok, p.cache_read_per_mtok, "
-                "p.cache_write_per_mtok, p.currency "
-                "FROM ledger l "
-                "LEFT JOIN model_pricing p ON p.model = json_extract(l.extra, '$.model') "
-                "GROUP BY json_extract(l.extra, '$.model'), p.input_per_mtok, "
-                "  p.output_per_mtok, p.cache_read_per_mtok, p.cache_write_per_mtok, "
-                "  p.currency"
-            ).fetchall()
+            rows = self._conn.execute(_SAVINGS_PUBLIC_SQL).fetchall()
         return fold_public([dict(r) for r in rows])
 
     def usage_daily(self, account_id: str, days: int) -> list[dict[str, Any]]:

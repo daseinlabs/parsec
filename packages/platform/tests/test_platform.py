@@ -375,8 +375,9 @@ def test_savings_public(client: TestClient) -> None:
     aggregated across ALL accounts, and exposes no per-account detail. CORS
     headers let the static www fetch it from the browser (no BFF there)."""
     example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    keys: dict[str, str] = {}
     for acct, fill in (("acct-a", "d"), ("acct-b", "e")):
-        key = client.post("/keys", headers=auth(mint_jwt(acct))).json()["key"]
+        keys[acct] = client.post("/keys", headers=auth(mint_jwt(acct))).json()["key"]
         row = dict(
             example,
             request_id="req_" + fill * 32,
@@ -387,9 +388,39 @@ def test_savings_public(client: TestClient) -> None:
             billed_cache_write_tokens=9_500,
         )
         assert (
-            client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+            client.post(
+                "/ledger", json=row, headers={"X-Parsec-Key": keys[acct]}
+            ).status_code
             == 201
         )
+    # A failed-probe row is a hole (§8.4): counted, but adds no savings.
+    hole = dict(
+        example,
+        request_id="req_" + "f" * 32,
+        model="claude-sonnet-5",
+        counterfactual_input_tokens=None,
+        fail_open=True,
+    )
+    assert (
+        client.post(
+            "/ledger", json=hole, headers={"X-Parsec-Key": keys["acct-a"]}
+        ).status_code
+        == 201
+    )
+    # A row with no model captured: its tokens count, its cost is a hole.
+    # (The contracts example itself carries no model field.)
+    modelless = dict(example, request_id="req_" + "9" * 32)
+    assert (
+        client.post(
+            "/ledger", json=modelless, headers={"X-Parsec-Key": keys["acct-b"]}
+        ).status_code
+        == 201
+    )
+    modelless_saved = example["counterfactual_input_tokens"] - (
+        example["billed_input_tokens"]
+        + example["billed_cache_read_tokens"]
+        + example["billed_cache_write_tokens"]
+    )
 
     resp = client.get(
         "/savings/public", headers={"Origin": "https://getparsec.ai"}
@@ -397,16 +428,105 @@ def test_savings_public(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.headers["access-control-allow-origin"] == "https://getparsec.ai"
     public = resp.json()
-    # Both accounts' savings, valued at the model's blended input-side rate.
-    assert public["tokens_saved"] == 60_000
-    blended = (500 * 3.0 + 60_000 * 0.3 + 9_500 * 3.75) / 70_000
+    # Both accounts' savings, valued at the model's blended input-side rate;
+    # the modelless row adds tokens but no cost (unpriced = hole, never zero).
+    assert public["tokens_saved"] == 60_000 + modelless_saved
+    # The hole row's billed tokens still shape the model's blended rate (it
+    # billed real input; only its savings are unmeasured) — same as the old
+    # full-ledger scan.
+    bi = 2 * 500 + example["billed_input_tokens"]
+    br = 2 * 60_000 + example["billed_cache_read_tokens"]
+    bw = 2 * 9_500 + example["billed_cache_write_tokens"]
+    blended = (bi * 3.0 + br * 0.3 + bw * 3.75) / (bi + br + bw)
     assert public["cost_saved_usd"] == pytest.approx(
-        round(2 * 30_000 * blended / 1_000_000, 6)
+        round(60_000 * blended / 1_000_000, 6)
     )
-    assert public["measured_rows"] == 2
+    assert public["measured_rows"] == 3
     assert public["currency"] == "USD"
     # Nothing per-account leaks through the public shape.
     assert "by_model" not in public and "account_id" not in public
+
+
+_ROLLUP_RECOMPUTE_SQL = (
+    # The pre-rollup full-ledger aggregation, at the rollup's (account, model)
+    # grain — the §8.4 ground truth the rollup must always equal.
+    "SELECT account_id, COALESCE(json_extract(extra, '$.model'), '') AS model, "
+    "COUNT(*), COUNT(counterfactual_input_tokens), "
+    "COALESCE(SUM(CASE WHEN counterfactual_input_tokens IS NOT NULL "
+    "  THEN counterfactual_input_tokens - (billed_input_tokens "
+    "    + billed_cache_read_tokens + billed_cache_write_tokens) END), 0), "
+    "COALESCE(SUM(counterfactual_input_tokens), 0), "
+    "COALESCE(SUM(billed_input_tokens), 0), "
+    "COALESCE(SUM(billed_output_tokens), 0), "
+    "COALESCE(SUM(billed_cache_read_tokens), 0), "
+    "COALESCE(SUM(billed_cache_write_tokens), 0), "
+    "COALESCE(SUM(fail_open), 0) "
+    "FROM ledger "
+    "GROUP BY account_id, COALESCE(json_extract(extra, '$.model'), '') "
+    "ORDER BY account_id, model"
+)
+
+
+def _assert_rollup_matches_ledger(store: SQLiteStore) -> None:
+    rollup = store._conn.execute(
+        "SELECT account_id, model, rows_count, measured_rows, tokens_saved, "
+        "counterfactual_input_tokens, billed_input_tokens, billed_output_tokens, "
+        "billed_cache_read_tokens, billed_cache_write_tokens, fail_open_count "
+        "FROM savings_rollup ORDER BY account_id, model"
+    ).fetchall()
+    # A fully-deleted (account, model) leaves an all-zero rollup row where the
+    # recompute has none — harmless, but any *non-zero* counter there is drift.
+    live = [t for t in (tuple(r) for r in rollup) if any(t[2:])]
+    recomputed = [tuple(r) for r in store._conn.execute(_ROLLUP_RECOMPUTE_SQL)]
+    assert live == recomputed
+
+
+def test_savings_rollup_matches_ledger_recompute(tmp_path: Path) -> None:
+    """savings_rollup is derived state: §8.4 honesty holds only if it stays
+    byte-equal to a from-scratch recompute of the ledger. Exercise every
+    trigger path (insert with model / without model / NULL probe, delete) and
+    the init-time backfill of a pre-rollup DB file."""
+    db = tmp_path / "platform.db"
+    store = SQLiteStore(str(db))
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    rows = [
+        ("acct-a", dict(example, request_id="req_" + "1" * 32, model="claude-sonnet-5")),
+        ("acct-a", dict(example, request_id="req_" + "2" * 32, model="claude-haiku-4-5")),
+        ("acct-b", dict(example, request_id="req_" + "3" * 32, model="claude-sonnet-5")),
+        # NULL probe: a hole — rows_count only.
+        (
+            "acct-b",
+            dict(
+                example,
+                request_id="req_" + "4" * 32,
+                model="claude-sonnet-5",
+                counterfactual_input_tokens=None,
+                fail_open=True,
+            ),
+        ),
+        # No model captured (the contracts example carries no model field).
+        ("acct-b", dict(example, request_id="req_" + "5" * 32)),
+    ]
+    for acct, row in rows:
+        store.add_ledger_row(acct, LedgerRow.model_validate(row).model_dump())
+    # Idempotent re-send: no double count.
+    store.add_ledger_row("acct-a", LedgerRow.model_validate(rows[0][1]).model_dump())
+    _assert_rollup_matches_ledger(store)
+
+    # Delete trigger keeps the rollup exact when ledger rows are removed.
+    store._conn.execute("DELETE FROM ledger WHERE request_id = ?", ("req_" + "2" * 32,))
+    store._conn.commit()
+    _assert_rollup_matches_ledger(store)
+
+    # Backfill: a DB file from before the rollup existed (simulated by
+    # emptying it) is reconstructed exactly on the next open.
+    store._conn.execute("DELETE FROM savings_rollup")
+    store._conn.commit()
+    store._conn.close()
+    reopened = SQLiteStore(str(db))
+    _assert_rollup_matches_ledger(reopened)
+    # And the public read comes from the rollup alone.
+    assert reopened.savings_public()["measured_rows"] == 3
 
 
 def test_ledger_accepts_pre_rename_key_and_header(client: TestClient) -> None:
@@ -555,6 +675,34 @@ def test_cost_saved_is_null_for_unpriced_model(client: TestClient) -> None:
     assert summary["cost_saved_usd"] == 0.0
 
 
+def test_openai_models_are_priced(client: TestClient) -> None:
+    """Codex/ChatGPT traffic ships OpenAI model strings; the seed must price
+    them so their savings are dollars, not a hole (blended the same way as
+    Claude rows)."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    row = dict(
+        example,
+        request_id="req_" + "d" * 32,
+        model="gpt-5.6-terra",  # 2 / 12 / 0.2 / 2.5 per MTok
+        counterfactual_input_tokens=100_000,
+        billed_input_tokens=500,
+        billed_cache_read_tokens=60_000,
+        billed_cache_write_tokens=9_500,
+    )
+    assert (
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+        == 201
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    m = {r["model"]: r for r in summary["by_model"]}["gpt-5.6-terra"]
+    saved = m["tokens_saved"]  # 30_000
+    blended = (500 * 2.0 + 60_000 * 0.2 + 9_500 * 2.5) / (500 + 60_000 + 9_500)
+    assert float(m["cost_saved_usd"]) == round(saved * blended / 1_000_000, 6)
+    assert m["cost_usd"] is not None
+
+
 def test_ledger_usage_series(client: TestClient) -> None:
     """The per-day usage series buckets rows by date with tokens + cost, and
     honors the `days` window bound."""
@@ -637,11 +785,10 @@ def test_postgres_store_roundtrip() -> None:
     from parsec_platform.pgstore import PostgresStore
 
     store = PostgresStore(os.environ["TEST_POSTGRES_URL"])
-    migration = (
-        Path(__file__).resolve().parents[1] / "migrations" / "0001_init.sql"
-    ).read_text()
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
     with store._pool.connection() as conn:
-        conn.execute(migration)
+        for path in sorted(migrations.glob("*.sql")):
+            conn.execute(path.read_text())
 
     suffix = uuid.uuid4().hex[:8]
     account = f"acct-pg-{suffix}"
@@ -663,15 +810,19 @@ def test_postgres_store_roundtrip() -> None:
         # ledger: idempotent insert, NULL-probe rows excluded from savings
         example = json.loads(CONTRACTS_EXAMPLE.read_text())
         rid = "req_" + uuid.uuid4().hex
-        row = dict(example, request_id=rid)
+        # Normalize through the contract model as the /ledger route does — the
+        # raw example uses the camelCase alias (cachePrefixSha8).
+        row = LedgerRow.model_validate(dict(example, request_id=rid)).model_dump()
         store.add_ledger_row(account, row)
         store.add_ledger_row(account, row)  # duplicate — must not raise
-        hole = dict(
-            example,
-            request_id="req_" + uuid.uuid4().hex,
-            counterfactual_input_tokens=None,
-            fail_open=True,
-        )
+        hole = LedgerRow.model_validate(
+            dict(
+                example,
+                request_id="req_" + uuid.uuid4().hex,
+                counterfactual_input_tokens=None,
+                fail_open=True,
+            )
+        ).model_dump()
         store.add_ledger_row(account, hole)
         s = store.ledger_summary(account)
         assert s["rows_count"] == 2
@@ -685,9 +836,27 @@ def test_postgres_store_roundtrip() -> None:
             - example["billed_cache_read_tokens"]
             - example["billed_cache_write_tokens"]
         )
+
+        # The trigger-maintained rollup carries this account's rows at
+        # (account, model) grain — same counters the ledger scan produced.
+        # (The example rows carry no model field, so they land under ''.)
+        with store._pool.connection() as conn:
+            rollup = conn.execute(
+                "SELECT model, rows_count, measured_rows, tokens_saved, "
+                "fail_open_count FROM savings_rollup WHERE account_id = %s",
+                (account,),
+            ).fetchall()
+        assert rollup == [("", 2, 1, s["tokens_saved"], 1)]
+        # savings_public reads the rollup (site-wide, so only >= this account).
+        assert store.savings_public()["tokens_saved"] >= s["tokens_saved"]
     finally:
         with store._pool.connection() as conn:
+            # The ledger delete fires the rollup trigger back to zero; the row
+            # itself is removed with the other per-account fixtures.
             conn.execute("DELETE FROM ledger WHERE account_id = %s", (account,))
+            conn.execute(
+                "DELETE FROM savings_rollup WHERE account_id = %s", (account,)
+            )
             conn.execute("DELETE FROM api_keys WHERE account_id = %s", (account,))
             conn.execute(
                 "DELETE FROM stripe_customers WHERE account_id = %s", (account,)

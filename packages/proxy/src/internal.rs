@@ -145,7 +145,7 @@ fn tool_use_blocks(content: Option<&Value>) -> Vec<&Map<String, Value>> {
 /// the input splat can OVERRIDE tool/name (keeping their slot positions), and
 /// an input "command" key is subsequently overwritten by the twin/derived
 /// command — command is ALWAYS set; query only when non-empty.
-fn actions_from_tool_use(content: Option<&Value>) -> Vec<Value> {
+pub(crate) fn actions_from_tool_use(content: Option<&Value>) -> Vec<Value> {
     let empty = Value::Object(Map::new());
     let mut out: Vec<Value> = Vec::new();
     for b in tool_use_blocks(content) {

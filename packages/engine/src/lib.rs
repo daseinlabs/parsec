@@ -15,5 +15,6 @@ pub mod cst;
 pub mod features;
 pub mod freeze;
 pub mod messages;
+pub mod needed;
 pub mod pystr;
 pub mod readout;

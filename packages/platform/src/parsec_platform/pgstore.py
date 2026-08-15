@@ -17,6 +17,7 @@ import os
 from typing import Any
 
 from parsec_platform.store import (
+    _SAVINGS_PUBLIC_SQL,
     Store,
     _model_row,
     extra_fields,
@@ -262,28 +263,12 @@ class PostgresStore(Store):
         return fold_daily([dict(zip(cols, r)) for r in rows])
 
     def savings_public(self) -> dict[str, Any]:
-        # The account-scoped by-model query minus its WHERE — grouped per model
-        # so each model's saved tokens are valued at its own blended rate.
+        # Site-wide totals from the (account, model) rollup — a users×models-row
+        # scan, never the ledger (the full-ledger GROUP BY took ~7.5s at 562k
+        # rows). The rollup is maintained by the ledger trigger in
+        # migrations/0003_savings_rollup.sql; the SQL is shared with SQLiteStore.
         with self._pool.connection() as conn:
-            rows = conn.execute(
-                "SELECT l.extra->>'model' AS model, "
-                "COUNT(*) AS rows_count, "
-                "COUNT(l.counterfactual_input_tokens) AS measured_rows, "
-                "COALESCE(SUM(l.counterfactual_input_tokens - (l.billed_input_tokens "
-                "  + l.billed_cache_read_tokens + l.billed_cache_write_tokens)) "
-                "  FILTER (WHERE l.counterfactual_input_tokens IS NOT NULL), 0) "
-                "  AS tokens_saved, "
-                "COALESCE(SUM(l.billed_input_tokens), 0) AS billed_input_tokens, "
-                "COALESCE(SUM(l.billed_output_tokens), 0) AS billed_output_tokens, "
-                "COALESCE(SUM(l.billed_cache_read_tokens), 0) AS billed_cache_read_tokens, "
-                "COALESCE(SUM(l.billed_cache_write_tokens), 0) AS billed_cache_write_tokens, "
-                "p.input_per_mtok, p.output_per_mtok, p.cache_read_per_mtok, "
-                "p.cache_write_per_mtok, p.currency "
-                "FROM ledger l "
-                "LEFT JOIN model_pricing p ON p.model = l.extra->>'model' "
-                "GROUP BY l.extra->>'model', p.input_per_mtok, p.output_per_mtok, "
-                "  p.cache_read_per_mtok, p.cache_write_per_mtok, p.currency"
-            ).fetchall()
+            rows = conn.execute(_SAVINGS_PUBLIC_SQL).fetchall()
         cols = (
             "model",
             "rows_count",
