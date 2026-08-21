@@ -94,6 +94,7 @@ dials are inert while the mode is `off`.
 
 | Var | Default | Effect |
 |---|---|---|
+| `PARSEC_NOREREAD` | `off` | The no-reread / loop-breaker hook is **opt-in**. `on` (also `1`/`true`) arms it; anything else, unset included, leaves it fully inert — no denials, and no read/edit state recorded, so the savings ledger and statusline stay at zero. Inverted from `PARSEC_FREEZE=off` on purpose: this gate blocks a tool call the agent asked for, so off is the safe default. Stacks under `PARSEC_API_KEY` — both gates must be open. Every integration (Claude Code today; codex and opencode when their ports land) reads this one flag. |
 | `PARSEC_GOVERNOR` | `off` | `off` \| `advise` (compute + ledger-record, wire untouched) \| `on` (directives injected). Also gates whether `gf` rides to the brain, i.e. whether the doomhead is scored at all. |
 | `PARSEC_RULE_TAU` | `0.25` | Rule-head fire threshold (advisory calibration; bench-validated tau pending). |
 | `PARSEC_DOOM_THRESH` | `0.5` | Doomhead flag threshold (reference proxy value). |

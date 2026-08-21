@@ -703,6 +703,35 @@ def test_openai_models_are_priced(client: TestClient) -> None:
     assert m["cost_usd"] is not None
 
 
+def test_gemini_models_are_priced(client: TestClient) -> None:
+    """Gemini traffic ships Google model strings; the seed must price them so
+    their savings are dollars, not a hole (blended the same way as Claude
+    rows). Gemini has no cache-write surcharge, so write tokens blend at the
+    base input rate."""
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    example = json.loads(CONTRACTS_EXAMPLE.read_text())
+    row = dict(
+        example,
+        request_id="req_" + "e" * 32,
+        model="gemini-3.5-flash",  # 1.5 / 9 / 0.15 / 1.5 per MTok
+        counterfactual_input_tokens=100_000,
+        billed_input_tokens=500,
+        billed_cache_read_tokens=60_000,
+        billed_cache_write_tokens=9_500,
+    )
+    assert (
+        client.post("/ledger", json=row, headers={"X-Parsec-Key": key}).status_code
+        == 201
+    )
+
+    summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
+    m = {r["model"]: r for r in summary["by_model"]}["gemini-3.5-flash"]
+    saved = m["tokens_saved"]  # 30_000
+    blended = (500 * 1.5 + 60_000 * 0.15 + 9_500 * 1.5) / (500 + 60_000 + 9_500)
+    assert float(m["cost_saved_usd"]) == round(saved * blended / 1_000_000, 6)
+    assert m["cost_usd"] is not None
+
+
 def test_ledger_usage_series(client: TestClient) -> None:
     """The per-day usage series buckets rows by date with tokens + cost, and
     honors the `days` window bound."""

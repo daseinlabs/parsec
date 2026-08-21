@@ -18,9 +18,11 @@ doing it inline.
 
 ## The no-reread hook is a contract, not an obstacle
 
-The PreToolUse hook blocks re-reads of file ranges already in your context and
-breaks repeated identical commands. A denial means the content is already
-above you — scroll back and use it. Do not attempt to route around a denial
+Read narrowly and reuse what is already above you — that is the standing
+habit, hook or no hook. When the no-reread hook is armed (`PARSEC_NOREREAD=on`;
+it is off by default) a PreToolUse gate enforces it, blocking re-reads of file
+ranges already in your context and breaking repeated identical commands. A
+denial means the content is already above you — scroll back and use it. Do not attempt to route around a denial
 with a different tool, a wider range, or a shell `cat`; that spends the tokens
 the hook just saved. If you genuinely believe the file changed since you read
 it, say so and read the specific changed range.

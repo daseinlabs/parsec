@@ -43,9 +43,12 @@ pub fn run(event: &str) -> anyhow::Result<()> {
 
     match event.as_str() {
         "PreToolUse" => {
-            // Entitlement gate (apikey): no key ⇒ parsec saves nothing, so the
-            // no-reread / loop-breaker never fires and no state accrues.
-            if !crate::apikey::enabled() {
+            // Two gates, both must hold. Entitlement (apikey): no key ⇒
+            // parsec saves nothing. Opt-in (noreread::enabled): the gate is
+            // DEFAULT OFF and only fires under PARSEC_NOREREAD=on. Either
+            // one closed ⇒ the no-reread / loop-breaker never fires and no
+            // state accrues.
+            if !crate::apikey::enabled() || !crate::noreread::enabled() {
                 return Ok(());
             }
             let mut st = load_session(&session_id);
@@ -80,8 +83,10 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             }
         }
         "PostToolUse" => {
-            // Same gate as PreToolUse: unentitled ⇒ record nothing.
-            if !crate::apikey::enabled() {
+            // Same two gates as PreToolUse: unentitled or opted-out ⇒
+            // record nothing. Recording under an off gate would leave stale
+            // reads that deny on the turn the user flips it on.
+            if !crate::apikey::enabled() || !crate::noreread::enabled() {
                 return Ok(());
             }
             let mut st = load_session(&session_id);

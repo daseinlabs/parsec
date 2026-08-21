@@ -138,7 +138,10 @@ the download entirely: `parsec setup codex` from the installed binary.
   same day (see decisions above). On-demand is the savings-display ceiling:
   the Codex status line is a closed item catalog.
 - **Free-tier UX drops still open**: `PreToolUse` no-reread hook,
-  `[agents]` roles (no proxy dependency).
+  `[agents]` roles (no proxy dependency). When the no-reread hook lands here
+  it must gate on `PARSEC_NOREREAD` (default off, see
+  docs/environment-variables.md) — one flag across every integration, not a
+  per-tool switch.
 - **Pinned-version smoke test in CI**: 2026-08-12 surfaced five separate
   doc-vs-binary skews in codex 0.147.0 (prompts dead, skills dir, `async`
   hooks, zstd request bodies, content-type-less SSE) — a CI job driving

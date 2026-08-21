@@ -72,8 +72,7 @@ fn banner_text() -> String {
          → Then run:  parsec key set <psc_…>\n\
          \n\
          ⚠️  NO API KEY — parsec savings are OFF. Claude Code runs normally, \
-         but parsec will not curate context or block re-reads/loops until you \
-         add a key.\n\
+         but parsec will not curate context until you add a key.\n\
          ~(silence this reminder with PARSEC_API_KEY_NOTE=0)"
     )
 }

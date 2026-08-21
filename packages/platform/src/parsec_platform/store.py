@@ -233,7 +233,12 @@ def fold_daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # input per the published gpt-5.6 rates; rates are the short-context tier —
 # the >272K long-context tier bills higher but a single flat row can't
 # represent it, so long-context savings are undervalued, never overvalued.
-# KEEP IN SYNC with migrations/0002_*.sql + 0004_*.sql model_pricing seeds.
+# Gemini: cache_read = 0.1x input; no per-token cache-write surcharge (explicit
+# caching bills hourly storage, not representable here), so cache_write = the
+# base input rate. Pro rows are the ≤200K tier; 3.7/3.6-flash rates are
+# promotional through 2026-12-31.
+# KEEP IN SYNC with migrations/0002_*.sql + 0004_*.sql + 0005_*.sql
+# model_pricing seeds.
 _PRICING_SEED = (
     # model,               input, output, cache_read, cache_write
     ("claude-fable-5", 10.0, 50.0, 1.0, 12.5),
@@ -254,6 +259,15 @@ _PRICING_SEED = (
     ("gpt-5-codex", 1.25, 10.0, 0.125, 1.5625),
     ("gpt-5-mini", 0.25, 2.0, 0.025, 0.3125),
     ("gpt-5-nano", 0.05, 0.4, 0.005, 0.0625),
+    ("gemini-3.7-flash", 0.75, 3.75, 0.075, 0.75),
+    ("gemini-3.6-flash", 0.75, 3.75, 0.075, 0.75),
+    ("gemini-3.5-flash", 1.5, 9.0, 0.15, 1.5),
+    ("gemini-3.5-flash-lite", 0.3, 2.5, 0.03, 0.3),
+    ("gemini-3.1-pro-preview", 2.0, 12.0, 0.2, 2.0),
+    ("gemini-3.1-flash-lite", 0.25, 1.5, 0.025, 0.25),
+    ("gemini-2.5-pro", 1.25, 10.0, 0.125, 1.25),
+    ("gemini-2.5-flash", 0.3, 2.5, 0.03, 0.3),
+    ("gemini-2.5-flash-lite", 0.1, 0.4, 0.01, 0.1),
 )
 
 _SCHEMA = """

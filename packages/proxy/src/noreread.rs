@@ -33,6 +33,12 @@
 //!
 //! Denials below MIN_DENY_TOKENS are suppressed: a denial that saves less
 //! than its own message costs is a net loss (defect 2).
+//!
+//! DEFAULT OFF (`PARSEC_NOREREAD=on` to enable — see [`enabled`]). The gate
+//! is opt-in across every integration: Claude Code reads the flag in
+//! `hook.rs`, and the codex / opencode ports (still open — see
+//! docs/codex-integration.md, docs/opencode-integration.md) must read the
+//! same one rather than inventing a per-tool switch.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -46,6 +52,27 @@ pub const LOOP_N: u32 = 3;
 /// Never deny a re-read smaller than the denial message itself (~150
 /// tokens): a third of measured denials were net-negative without this.
 pub const MIN_DENY_TOKENS: u64 = 150;
+
+/// Master switch for the gate itself: `PARSEC_NOREREAD` = `on` (deny
+/// re-reads and command loops) | anything else, unset included (default —
+/// fully inert: nothing is denied and no read/edit state accrues, so the
+/// ledger and the savings statusline stay at zero).
+///
+/// Inverted relative to `PARSEC_FREEZE=off` / `PARSEC_TOOL_PRUNE=off` on
+/// purpose. Those flags only trade away curation inside a request the user
+/// already made; this one gates a tool call the agent asked for, and a
+/// wrong denial costs the user a turn. Off is the safe default, on is the
+/// opt-in. `apikey::enabled` remains the outer entitlement gate — both must
+/// hold for the hook to fire.
+pub fn enabled() -> bool {
+    enabled_from(std::env::var("PARSEC_NOREREAD").ok().as_deref())
+}
+
+/// Pure half of [`enabled`], so the parse is testable without mutating
+/// process env from a test thread.
+fn enabled_from(v: Option<&str>) -> bool {
+    matches!(v.map(str::trim), Some("on" | "1" | "true"))
+}
 
 // ---- shell read/edit vocabulary (ported 1:1; see the reference's
 // "MAINTAINED, HARNESS-COUPLED DEPENDENCY" note — extend reads and edits
@@ -847,6 +874,21 @@ mod tests {
     /// Comfortably above MIN_DENY_TOKENS (~1230 bytes ≈ 307 tokens).
     fn big_body() -> String {
         format!("{}\n", "x".repeat(40)).repeat(30)
+    }
+
+    #[test]
+    fn gate_is_opt_in_and_off_by_default() {
+        // Unset and every non-affirmative spelling leave the gate inert:
+        // the default must never depend on how the value is punctuated.
+        assert!(!enabled_from(None));
+        assert!(!enabled_from(Some("")));
+        assert!(!enabled_from(Some("off")));
+        assert!(!enabled_from(Some("0")));
+        assert!(!enabled_from(Some("On")));
+        assert!(enabled_from(Some("on")));
+        assert!(enabled_from(Some("1")));
+        assert!(enabled_from(Some("true")));
+        assert!(enabled_from(Some("  on  ")));
     }
 
     #[test]

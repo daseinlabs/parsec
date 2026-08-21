@@ -55,7 +55,9 @@
   publish of `parsec-opencode` remains an optional alternative install path
   (`"plugin": [...]` config entry), not a prerequisite.
 - Free-tier UX ports: explore/map agent md → `.opencode/agents/`, no-reread
-  via `tool.execute.before` (survey §3.4). Commands shipped 2026-08-11 via
+  via `tool.execute.before` (survey §3.4) — gated on `PARSEC_NOREREAD`
+  (default off, see docs/environment-variables.md), the same flag Claude
+  Code's hook reads, not a per-tool switch. Commands shipped 2026-08-11 via
   config-hook injection (see table above), deliberately not as
   `.opencode/commands/` file drops — one artifact, no extra ownership
   tracking, removed with the plugin.
