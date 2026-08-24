@@ -28,4 +28,5 @@ reqwest.workspace = true
 futures-util.workspace = true
 zstd = "0.13.3"
 flate2 = "1.1.9"
+tiktoken-rs = { version = "0.12.0", default-features = false }
 # planned: rmcp (MCP) — added with the port

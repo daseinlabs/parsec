@@ -25,9 +25,9 @@ path for opposite reasons**, and that difference drives everything below.
 |---|---|---|
 | Reason it's in the path | Substitute OAuth token (account rotation) | Rewrite request body (curation); passthrough auth |
 | Claude Code capture | `ANTHROPIC_BASE_URL` in settings.json | `ANTHROPIC_BASE_URL` in settings.json — **identical** |
-| Claude Desktop capture | mitmproxy local mode + system CA trust + `addon.py` rewrite | **none** — scoped out (`routing-and-liveness.md` §1.2) |
-| Sits in TLS path for OAuth tokens | Yes (terminates, reads, re-signs) | No (terminates a plaintext loopback connection only) |
-| Client runtime deps | Node + Python (mitmproxy) | Single signed Rust binary, zero runtime deps (DIRECTION §7b) |
+| Claude Desktop capture | mitmproxy local mode + system CA trust + `addon.py` rewrite | same mechanism, **opt-in** since `setup_desktop.rs` (`docs/claude-desktop-integration.md`) |
+| Sits in TLS path for OAuth tokens | Yes (terminates, reads, re-signs) | Only on the opt-in Desktop path; Claude Code stays a plaintext loopback hop |
+| Client runtime deps | Node + Python (mitmproxy) | Single signed Rust binary, zero runtime deps (DIRECTION §7b) — mitmproxy only if Desktop is enabled |
 | Multi-account / rotation | Core feature (`TokenPool`, round-robin, cooldowns) | Out of scope — single user, own credentials |
 
 ## 2. How CC-Router captures each surface
@@ -126,7 +126,15 @@ parsec deliberately omits:
 | Interception layer, **Rust-native (no mitmproxy)** | weeks-to-months (reimplementing mitmproxy's OS layer) |
 | Installer/uninstaller for CA trust + boot services | ~3–5 days + the product/security decision |
 
-**Recommendation: do not port this as-is.** CC-Router built Desktop support to
+> **Superseded 2026-08-24 for the default-posture part only.** Desktop support
+> was subsequently built — `packages/proxy/src/setup_desktop.rs`,
+> `docs/claude-desktop-integration.md`. The recommendation below still governs
+> how: it is opt-in, absent from `parsec setup`, and neither the mitmproxy
+> dependency nor the CA is ever taken on without the user asking. §4.1–4.2 of
+> the integration doc record how each cost is bounded. The effort table above
+> proved roughly right; the server-side change was indeed ~zero.
+
+**Recommendation (as written, 2026-08): do not port this as-is.** CC-Router built Desktop support to
 extend *account-pooling* to Desktop — a strong driver for its product. parsec's
 equivalent driver would be extending *curation/savings* to Desktop, which is
 weaker: Desktop/Cowork is not the Claude-Code power-user ICP, its cache and

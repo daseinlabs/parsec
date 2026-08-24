@@ -78,6 +78,15 @@ impl MockState {
             .cloned()
             .collect()
     }
+    fn models(&self) -> Vec<Recorded> {
+        self.reqs
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.path == "/v1/models")
+            .cloned()
+            .collect()
+    }
     fn count_tokens(&self) -> Vec<Recorded> {
         self.reqs
             .lock()
@@ -121,6 +130,17 @@ async fn mock_messages(State(m): State<MockState>, headers: HeaderMap, raw: Byte
         .unwrap()
 }
 
+async fn mock_models(State(m): State<MockState>, headers: HeaderMap) -> Response {
+    m.record("/v1/models", &headers, b"");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({"data": [{"id": "claude-opus-5", "type": "model"}]}).to_string(),
+        ))
+        .unwrap()
+}
+
 async fn mock_count_tokens(State(m): State<MockState>, headers: HeaderMap, raw: Bytes) -> Response {
     m.record("/v1/messages/count_tokens", &headers, &raw);
     Response::builder()
@@ -150,6 +170,7 @@ async fn setup_entitled(entitled: bool) -> Ctx {
     let mock_router = Router::new()
         .route("/v1/messages", post(mock_messages))
         .route("/v1/messages/count_tokens", post(mock_count_tokens))
+        .route("/v1/models", axum::routing::get(mock_models))
         .with_state(mock.clone());
     let ml = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mock_addr = ml.local_addr().unwrap();
@@ -452,10 +473,12 @@ async fn count_tokens_verbatim_and_stateless() {
         "count_tokens writes no ledger row"
     );
 
-    // and anything else 404s
+    // and anything else 404s. `/v1/oauth/*` is the pointed example: it is a
+    // path the Claude Desktop interceptor must never redirect here, and this
+    // 404 is why — parsec is a model-traffic proxy, not a general gateway.
     let r = ctx
         .http
-        .get(format!("{}/v1/models", ctx.url))
+        .get(format!("{}/v1/oauth/token", ctx.url))
         .send()
         .await
         .unwrap();
@@ -487,4 +510,72 @@ async fn sse_relayed_byte_identical_with_usage_ledger() {
     assert_eq!(row["billed_cache_write_tokens"], 3);
     assert_eq!(row["counterfactual_input_tokens"], 1234);
     assert_eq!(row["fail_open"], false);
+}
+
+/// `/v1/models` exists solely so the Claude Desktop interceptor can redirect
+/// it (docs/claude-desktop-integration.md §2): the interceptor rewrites whole
+/// hosts, so a 404 here would surface in Desktop as a broken model picker.
+/// It must be a verbatim GET passthrough — auth forwarded, nothing curated,
+/// and no ledger row (it carries no conversation to measure).
+#[tokio::test]
+async fn models_is_a_verbatim_passthrough_with_auth_and_no_ledger_row() {
+    let ctx = setup().await;
+    let resp = ctx
+        .http
+        .get(format!("{}/v1/models", ctx.url))
+        .header("x-api-key", "sk-ant-user-key")
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["data"][0]["id"], "claude-opus-5");
+
+    let seen = ctx.mock.models();
+    assert_eq!(seen.len(), 1, "exactly one upstream GET");
+    // The caller's own credentials reach upstream unchanged — never swapped.
+    assert_eq!(seen[0].header("x-api-key"), Some("sk-ant-user-key"));
+    assert_eq!(seen[0].header("anthropic-version"), Some("2023-06-01"));
+
+    // No conversation, so no savings row — measurement honesty (§8.4).
+    let ledger = std::fs::read_to_string(&ctx.ledger).unwrap_or_default();
+    assert!(
+        ledger.trim().is_empty(),
+        "a model listing must not write a ledger row: {ledger}"
+    );
+}
+
+/// The interceptor's attribution tag is an internal routing header. It must
+/// reach the proxy (so Desktop savings are separable in the ledger) and must
+/// NOT be forwarded to Anthropic.
+#[tokio::test]
+async fn desktop_attribution_header_never_reaches_upstream() {
+    let ctx = setup().await;
+    ctx.http
+        .post(format!("{}/v1/messages", ctx.url))
+        .header("x-api-key", "sk-ant-user-key")
+        .header("x-parsec-tool", "claude-desktop")
+        .json(&json!({
+            "model": "claude-opus-5",
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "hi"}]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let seen = ctx.mock.messages();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].header("x-api-key"), Some("sk-ant-user-key"));
+    assert_eq!(
+        seen[0].header("x-parsec-tool"),
+        None,
+        "x-parsec-tool is machine-local and must be dropped at the upstream hop"
+    );
+
+    // …and it lands in the ledger, which is the point of setting it.
+    let ledger = std::fs::read_to_string(&ctx.ledger).unwrap_or_default();
+    let row: Value = serde_json::from_str(ledger.lines().next().unwrap_or("{}")).unwrap();
+    assert_eq!(row["tool"], "claude-desktop");
 }

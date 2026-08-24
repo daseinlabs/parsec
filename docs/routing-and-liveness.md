@@ -35,8 +35,10 @@ Every documented way to put something between Claude and the model API.
   are not in the request path.
 - **Claude Desktop has no model-endpoint configuration.**
   `claude_desktop_config.json` is MCP-only. `ANTHROPIC_BASE_URL` is not
-  documented as honored. Absent §3.2, Desktop is out of reach — scope it out
-  explicitly rather than carrying it as an open aspiration.
+  documented as honored. This is still true — which is why Desktop is now
+  reached the §3.2 way instead: process-scoped TLS interception, opt-in,
+  shipped as `parsec setup desktop` (`docs/claude-desktop-integration.md`).
+  It is not a routing mechanism and does not belong in the table above.
 - **Claude Code has no failover.** If the configured base URL does not
   answer, the request fails. It does not fall back to `api.anthropic.com`.
   A hung (rather than refused) connection burns `API_TIMEOUT_MS` first —

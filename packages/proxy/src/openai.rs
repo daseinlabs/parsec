@@ -243,6 +243,10 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
         return Ok(None);
     }
     let internal = crate::responses::to_internal(body);
+    // Human-authored entries the curator may score but must never rewrite
+    // (protect.rs). On this wire that is EVERY `role: "user"` item: tool
+    // output arrives as `function_call_output`, so nothing else is.
+    let protected = crate::responses::protected_mask(body);
     let conv_id = conv_key(body, &internal);
     let mut stats = PlanStats {
         turn: internal
@@ -308,7 +312,17 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
             );
         }
         match served {
-            Ok(c) => {
+            Ok(mut c) => {
+                stats.freeze_cut_protected_tokens =
+                    crate::protect::restore_protected(&internal, &mut c, &protected);
+                if stats.freeze_cut_protected_tokens > 0 {
+                    tracing::warn!(
+                        conv = %conv_id,
+                        refused_tokens = stats.freeze_cut_protected_tokens,
+                        "openai curator: cut refused on human-authored content — served verbatim"
+                    );
+                }
+                stats.freeze_cut_roles = crate::protect::cut_by_role(&internal, &c);
                 stats.freeze_cut_tokens = (crate::server::internal_mass(&internal)
                     - crate::server::internal_mass(&c))
                 .max(0);
@@ -333,6 +347,11 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
     stats.folds_total = folds.len();
     stats.folds_new = folds.len().saturating_sub(folds_before);
     lock(&st.convs).entry(conv_id.clone()).or_default().folds = folds;
+    // §8.4 hole-filler: OpenAI publishes no count_tokens endpoint, so the
+    // savings for this request are measured directly — the o200k_base token
+    // delta between the body that arrived and the one being sent. See
+    // counterfact.rs for why this is a measurement and not a baseline.
+    stats.counterfactual_local = crate::counterfact::responses_delta(body, &curated);
     stats.curate_ms = t_curate.elapsed().as_secs_f64() * 1000.0;
     tracing::debug!(
         conv = %conv_id,

@@ -65,6 +65,52 @@ const PRJ_GREP: &[&str] = &[
 const SHELL_TOOLS: &[&str] = &["bash", "shell", "run", "execute"];
 const QUERY_KEYS: &[&str] = &["query", "pattern", "q", "search"];
 
+/// Which entries of [`to_internal`]'s output are HUMAN-AUTHORED and must
+/// reach the model byte-for-byte (`protect::restore_protected`). Aligned to
+/// that output index-for-index, system entry included.
+///
+/// On this wire a `role: "user"` message is one of two very different things:
+/// a `tool_result` carrier (the observation the curator exists to digest) or
+/// a human turn. The discriminator is the presence of a `tool_result` block —
+/// content that is a bare string, or a block list with no `tool_result` in
+/// it, is the user talking. A MIXED message (tool_result plus an appended
+/// `text` block, which is how Claude Code attaches system-reminders) stays
+/// curatable: it is an observation with a note stapled on, and protecting the
+/// whole thing would forfeit the main win on this wire.
+///
+/// Assistant text and reasoning stay curatable — they are the model's own
+/// prior output, not instructions. Everything unrecognized is unprotected
+/// because it is also unchunked: `parse` only ever cuts user/tool/assistant.
+pub fn protected_mask(body: &Value) -> Vec<bool> {
+    let mut mask: Vec<bool> = Vec::new();
+    if !system_to_text(body.get("system")).is_empty() {
+        mask.push(false); // system is never chunked, so never restored
+    }
+    let src = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    for m in src {
+        // to_internal defaults a MISSING role to "user"; mirror that exactly
+        // so the mask and the view can never disagree about an entry.
+        let is_user = match m.get("role") {
+            None => true,
+            Some(r) => r.as_str() == Some("user"),
+        };
+        let carries_tool_result =
+            m.get("content")
+                .and_then(Value::as_array)
+                .is_some_and(|blocks| {
+                    blocks
+                        .iter()
+                        .any(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
+                });
+        mask.push(is_user && !carries_tool_result);
+    }
+    mask
+}
+
 /// anthropic_shapes.to_internal: adapt an inbound Anthropic Messages body to
 /// the internal flat message list — optional `{"role":"system"}` entry first
 /// (only when the flattened system text is non-empty), then one entry per

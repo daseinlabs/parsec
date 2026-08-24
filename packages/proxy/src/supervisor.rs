@@ -328,6 +328,7 @@ pub fn router(state: Arc<SupState>) -> Router {
                     "service": "parsec-proxy",
                     "role": "supervisor",
                     "version": env!("CARGO_PKG_VERSION"),
+                    "wires": crate::setup::SERVED_WIRES,
                 }))
             }),
         )

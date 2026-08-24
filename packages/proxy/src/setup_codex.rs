@@ -36,6 +36,11 @@
 
 use std::path::{Path, PathBuf};
 
+/// Wires a Codex install rides: `/openai/*` in BYOK mode, `/chatgpt/*` under
+/// the ChatGPT subscription. Setup refuses to call a listener compatible
+/// unless it advertises both.
+const REQUIRED_WIRES: &[&str] = &["openai", "chatgpt"];
+
 /// Tail-block markers (provider table + hook). BEGIN is matched as a line
 /// PREFIX so wording tweaks in later releases still find older blocks; END
 /// is a full line. The prefix is unchanged from the first release, so
@@ -140,12 +145,15 @@ fn head_block(mode: Mode, port: u16) -> String {
 fn hook_command_line() -> String {
     #[cfg(unix)]
     {
-        "command = \"/bin/sh -c '\\\"$HOME\\\"/.parsec/bin/parsec up || parsec up'\"".to_string()
+        "command = \"/bin/sh -c '\\\"$HOME\\\"/.parsec/bin/parsec up --session-start || parsec up --session-start'\"".to_string()
     }
     #[cfg(windows)]
     {
         let exe = crate::setup::parsec_home().join("bin").join("parsec.exe");
-        format!("command = 'cmd /c \"\"{}\" up\"'", exe.display())
+        format!(
+            "command = 'cmd /c \"\"{}\" up --session-start\"'",
+            exe.display()
+        )
     }
 }
 
@@ -178,6 +186,50 @@ fn tail_block(port: u16) -> String {
          {TAIL_END}\n",
         hook_command = hook_command_line()
     )
+}
+
+/// Bring a proxy that serves the Codex wires up on `port`, replacing an
+/// older parsec build that holds it. A foreign listener is never touched and
+/// never reported as success — the user has to free the port themselves.
+fn warm_proxy(port: u16) {
+    use crate::setup::PortOccupant;
+    let spawn = |what: &str| match crate::setup::spawn_proxy_detached(port, &[]) {
+        Ok(()) => println!("proxy {what} on 127.0.0.1:{port}"),
+        Err(e) => println!("proxy pre-warm failed ({e}) — run `parsec up` before codex"),
+    };
+    match crate::setup::classify_port(port, REQUIRED_WIRES) {
+        PortOccupant::Compatible => println!("proxy already listening on 127.0.0.1:{port}"),
+        PortOccupant::Free => spawn("starting"),
+        PortOccupant::StaleParsec => {
+            println!(
+                "an older parsec proxy holds 127.0.0.1:{port} and does not serve the \
+                 codex routes — replacing it"
+            );
+            if !crate::setup::shutdown_parsec_on(port) {
+                println!(
+                    "it refused to stop — run `parsec up --restart`, then re-run \
+                     `parsec setup codex`"
+                );
+                return;
+            }
+            for _ in 0..40 {
+                if !crate::hook::port_listening(port) {
+                    spawn("restarted");
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            println!(
+                "it acked the stop but kept the port — run `parsec up --restart`, then \
+                 re-run `parsec setup codex`"
+            );
+        }
+        PortOccupant::Foreign => println!(
+            "127.0.0.1:{port} is held by something that is not the parsec proxy — \
+             left alone. Codex traffic will fail until that port is free; stop it \
+             and re-run `parsec setup codex`."
+        ),
+    }
 }
 
 // ── skills (the parsec command surface) ─────────────────────────────────────
@@ -222,6 +274,28 @@ fn skill_files(port: u16) -> Vec<(&'static str, String)> {
                  Do not summarize the numbers away — the table is the answer. If both \
                  invocations fail, say the parsec binary is missing and suggest re-running \
                  `parsec setup codex`.\n"
+            ),
+        ),
+        skill(
+            "parsec-trim",
+            "Compact this Codex session — a deterministic needed-set trim plus standing directives",
+            format!(
+                "Two steps, both through the parsec binary. NEVER summarize the session \
+                 yourself — step 1 is deterministic and step 2 is the only part you write.\n\n\
+                 1. Run `{run} trim --tool codex || parsec trim --tool codex`. It computes \
+                 which parts of this session were actually re-read, edited, or used later \
+                 and stages them. Exit code 2 means there is nothing worth compacting yet — \
+                 say so and stop. Its token numbers are chars/4 ESTIMATES; never present \
+                 them as measured.\n\n\
+                 2. Write a STANDING DIRECTIVES block from your own context — the durable \
+                 rulings, constraints, and scope decisions of this session, NOT a summary of \
+                 the work — and pipe it in:\n\n\
+                 ```\n\
+                 printf '%s' \"<your directives>\" | {run} trim --finalize\n\
+                 ```\n\n\
+                 Then tell the user to start a fresh Codex session: the staged trim is \
+                 injected once, at the next session start, and expires unused after 30 \
+                 minutes. Do not start that session yourself.\n"
             ),
         ),
         skill(
@@ -435,10 +509,28 @@ pub fn setup(mode: Mode) -> anyhow::Result<()> {
 
     // Port: state-file port when Claude Code setup ran, else the default —
     // the same resolution the opencode installer uses, no state written.
-    let port = crate::setup::load_state()
+    //
+    // Then run it through choose_free_port, which is the part that was
+    // missing. codex bakes this number into config.toml as literal text and
+    // nothing re-validates it afterwards, so a port held by a FOREIGN process
+    // is not a dead route — it is a live one, pointed at a stranger, carrying
+    // the user's OAuth Bearer and chatgpt-account-id on every request. The
+    // opencode shim refuses to route without a /health identity check
+    // (`proxyHealthy`); this is the installer-side equivalent, and it has to
+    // happen HERE, before the block is written — warm_proxy already warns
+    // about a foreign listener, but by then the config names it.
+    let preferred = crate::setup::load_state()
         .map(|st| st.port)
         .filter(|p| *p > 0)
         .unwrap_or_else(crate::setup::default_port);
+    let port = crate::setup::choose_free_port(preferred);
+    if port != preferred {
+        println!(
+            "127.0.0.1:{preferred} is held by a non-parsec process — routing codex at \
+             {port} instead. If Claude Code is routed at {preferred}, re-run `parsec setup` \
+             so both land on one proxy."
+        );
+    }
 
     let cfg_path = config_path();
     let existing = read_optional(&cfg_path)?.unwrap_or_default();
@@ -488,24 +580,27 @@ pub fn setup(mode: Mode) -> anyhow::Result<()> {
     }
 
     // Stable binary path for the skills and the SessionStart hook: symlink
-    // ~/.parsec/bin/parsec at the running binary.
-    #[cfg(unix)]
+    // (unix) or a refreshed copy (Windows) at the running binary.
+    //
+    // This used to be #[cfg(unix)] while the skills at hook_command_line()
+    // point at %USERPROFILE%\.parsec\bin\parsec.exe unconditionally — so for
+    // anyone who installed via the Claude Code plugin rather than
+    // install.ps1, that path never existed and BOTH the /parsec-* skill
+    // surface and the proxy-reviving SessionStart hook were dead on Windows.
     if let Err(e) = crate::setup_opencode::refresh_bin_alias() {
         println!(
-            "could not refresh the ~/.parsec/bin/parsec alias ({e}) — skills and the \
-             session hook fall back to `parsec` on PATH"
+            "could not refresh the {} alias ({e}) — skills and the session hook fall \
+             back to `parsec` on PATH",
+            crate::setup_opencode::bin_alias_path().display()
         );
     }
 
     // Warm the proxy now; the SessionStart hook keeps it alive from here on.
-    if crate::hook::port_listening(port) {
-        println!("proxy already listening on 127.0.0.1:{port}");
-    } else {
-        match crate::setup::spawn_proxy_detached(port, &[]) {
-            Ok(()) => println!("proxy starting on 127.0.0.1:{port}"),
-            Err(e) => println!("proxy pre-warm failed ({e}) — run `parsec up` before codex"),
-        }
-    }
+    // Port occupancy is NOT compatibility: a supervisor from an older plugin
+    // release answers /health 200 while 404-ing every Codex route, and setup
+    // used to call that success (report, "Additional setup defect"). Require
+    // the wires this integration actually rides.
+    warm_proxy(port);
 
     match mode {
         Mode::Subscription => println!(

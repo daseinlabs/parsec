@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
+
+# The internal view's closed role set (proxy/src/protect.rs `role_key`). The
+# proxy buckets anything off this list, so an inbound role string can never
+# reach the ledger as a key.
+ProtectRole = Literal[
+    "system", "user", "assistant", "tool", "opaque", "(other)", "(unrecorded)"
+]
 
 
 class LedgerRow(BaseModel):
@@ -52,6 +59,24 @@ class LedgerRow(BaseModel):
     brain_ms: float | None = Field(default=None, ge=0)
     scorer_fail_opens: int | None = Field(default=None, ge=0)
     freeze_cut_tokens: int | None = Field(default=None, ge=0)
+    # Which instrument produced counterfactual_input_tokens when it was NOT
+    # the provider's count_tokens probe. Absent = provider-probed (the
+    # authoritative case); "local_bpe" = our own tokenizer, on a wire that
+    # offers no probe. Literal, not str: a reader must never have to guess
+    # whether a savings figure is authoritative, so adding an instrument is a
+    # deliberate contract change (§8.4).
+    counterfactual_source: Literal["local_bpe"] | None = None
+    # Per-role cut breakdown, internal-view chars/4 (same units as
+    # freeze_cut_tokens, NOT billed tokens). Keys are the internal view's
+    # closed role set — the inbound role is copied verbatim into that view,
+    # so the gate is what keeps this path unable to carry raw text, exactly
+    # like the `tool` and `session_id` patterns above.
+    freeze_cut_roles: dict[ProtectRole, NonNegativeInt] | None = None
+    # Mass the curator tried to cut from human-authored entries and that the
+    # protection guard restored. The over-cut alarm on the Anthropic wire
+    # (normally 0); routine on the Responses wire, where the freezer chunks
+    # every non-first user turn by design and the guard restores it.
+    freeze_cut_protected_tokens: int | None = Field(default=None, ge=0)
     tools_total: int | None = Field(default=None, ge=0)
     tools_kept: int | None = Field(default=None, ge=0)
     tools_pre_prune_sha8: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")

@@ -20,12 +20,22 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 const TOOL = "opencode";
 const DEFAULT_PORT = 8082;
+/// The ledger contract this reader understands. Gated exactly like the Rust
+/// reader (statusline.rs `aggregate_ledger`): a row from another contract
+/// version is not ours to interpret, and silently summing one would put a
+/// number on screen that no other savings surface agrees with.
+const LEDGER_CONTRACT = "savings-ledger/v0";
+/// Windows ships `parsec.exe`; the bare name still resolves through PATH
+/// (libuv applies PATHEXT), but the conventional drop path must carry the
+/// extension or the probe finds nothing and the whole command surface —
+/// plus `parsec up` — silently disappears on Windows.
+const BIN_NAME = process.platform === "win32" ? "parsec.exe" : "parsec";
 
 const parsecHome = () => join(homedir(), ".parsec");
 
@@ -60,7 +70,7 @@ async function proxyHealthy(port) {
 function findParsecBin() {
   const explicit = process.env.PARSEC_BIN;
   if (explicit) return explicit;
-  for (const candidate of ["parsec", join(parsecHome(), "bin", "parsec")]) {
+  for (const candidate of ["parsec", join(parsecHome(), "bin", BIN_NAME)]) {
     try {
       const probe = spawnSync(candidate, ["--version"], { timeout: 2000 });
       if (probe.status === 0) return candidate;
@@ -99,24 +109,86 @@ function localProxyPort(base) {
 }
 
 /** Session savings from the local ledger: rows this plugin's requests minted
- * (tool === "opencode") since plugin load. Reads at most the last 4096 rows —
- * the ledger is append-only jsonl and can be large. */
-function sessionSavedTokens(sinceMs) {
+ * (tool === "opencode") since plugin load.
+ *
+ * Incremental by byte offset rather than a whole-file read per call. The
+ * ledger is append-only jsonl and grows without bound, and this runs on
+ * EVERY session.idle — re-reading and re-parsing the entire file each time
+ * is wasted I/O that scales with how long parsec has been installed. The
+ * offset is taken at plugin load, so rows appended after it are this
+ * session's by construction; that also drops the wall-clock `ts` filter,
+ * which could not distinguish same-millisecond rows and depended on the
+ * writer's and reader's clocks agreeing.
+ *
+ * Returns a closure holding the running total. Never throws: a missing,
+ * purged, or rotated ledger degrades to the last figure it knew. */
+function makeSavingsTail() {
+  const path = join(parsecHome(), "ledger.jsonl");
+  /** Bytes already folded into `saved`. */
+  let offset = 0;
+  /** Trailing bytes of a row the writer had not finished appending. Held as
+   * a Buffer, not a string: a chunk boundary can land mid-UTF-8-sequence,
+   * and decoding the halves separately would corrupt that row. */
+  let partial = Buffer.alloc(0);
+  let saved = 0;
   try {
-    const lines = readFileSync(join(parsecHome(), "ledger.jsonl"), "utf8")
-      .trimEnd()
-      .split("\n")
-      .slice(-4096);
-    let saved = 0;
-    for (const line of lines) {
+    offset = statSync(path).size;
+  } catch {
+    /* no ledger yet — start at 0 and pick up the first row written */
+  }
+  return () => {
+    let size;
+    try {
+      size = statSync(path).size;
+    } catch {
+      return saved; // purged or uninstalled mid-session
+    }
+    if (size < offset) {
+      // Rotated or truncated: the bytes behind our total are gone, so the
+      // total is no longer answerable. Start over rather than report a sum
+      // over rows that no longer exist.
+      offset = 0;
+      partial = Buffer.alloc(0);
+      saved = 0;
+    }
+    if (size === offset) return saved;
+    let fd;
+    let chunk;
+    try {
+      fd = openSync(path, "r");
+      const buf = Buffer.allocUnsafe(size - offset);
+      const n = readSync(fd, buf, 0, buf.length, offset);
+      chunk = buf.subarray(0, n);
+      offset += n;
+    } catch {
+      return saved;
+    } finally {
+      if (fd !== undefined) {
+        try {
+          closeSync(fd);
+        } catch {
+          /* nothing useful to do */
+        }
+      }
+    }
+    const combined = Buffer.concat([partial, chunk]);
+    const lastNl = combined.lastIndexOf(0x0a);
+    if (lastNl === -1) {
+      // No complete row yet. Guard against a pathological newline-free file
+      // pinning an ever-growing buffer in memory.
+      partial = combined.length > 1 << 20 ? Buffer.alloc(0) : combined;
+      return saved;
+    }
+    partial = combined.subarray(lastNl + 1);
+    for (const line of combined.subarray(0, lastNl).toString("utf8").split("\n")) {
       let row;
       try {
         row = JSON.parse(line);
       } catch {
         continue;
       }
+      if (row.contract_version !== LEDGER_CONTRACT) continue;
       if (row.tool !== TOOL) continue;
-      if (Date.parse(row.ts) < sinceMs) continue;
       // §8.4 honesty: null counterfactual = unmeasured — skip, never impute.
       if (typeof row.counterfactual_input_tokens !== "number") continue;
       const billedIn =
@@ -126,9 +198,7 @@ function sessionSavedTokens(sinceMs) {
       saved += row.counterfactual_input_tokens - billedIn;
     }
     return saved;
-  } catch {
-    return 0;
-  }
+  };
 }
 
 /** The /parsec-* commands — the opencode port of the Claude Code plugin
@@ -215,10 +285,10 @@ function commandsFor(bin) {
 }
 
 export const ParsecPlugin = async ({ client }) => {
-  const startedMs = Date.now();
   const port = routedPort();
   const bin = findParsecBin();
   const routed = await ensureProxy(port, bin);
+  const savedTokens = makeSavingsTail();
   let lastToasted = 0;
 
   const toast = async (message, variant = "info") => {
@@ -263,7 +333,7 @@ export const ParsecPlugin = async ({ client }) => {
 
     event: async ({ event }) => {
       if (event?.type !== "session.idle" || !routed) return;
-      const saved = sessionSavedTokens(startedMs);
+      const saved = savedTokens();
       if (saved > 0 && saved !== lastToasted) {
         lastToasted = saved;
         void toast(

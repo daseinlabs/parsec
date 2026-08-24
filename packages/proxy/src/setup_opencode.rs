@@ -95,15 +95,13 @@ pub fn setup() -> anyhow::Result<()> {
 
     // Give the shim a stable binary path: the plugin-cache location this
     // binary runs from changes on every update, and the shim (plus the
-    // /parsec-* command templates it registers) probes ~/.parsec/bin/parsec
-    // when `parsec` is not on PATH. Symlink, not copy — on version skew the
-    // link dangles, the shim's --version probe fails, and it degrades to
-    // PATH probing instead of silently running a stale binary.
-    #[cfg(unix)]
+    // /parsec-* command templates it registers) probes the alias path when
+    // `parsec` is not on PATH.
     if let Err(e) = refresh_bin_alias() {
         println!(
-            "could not refresh the ~/.parsec/bin/parsec alias ({e}) — the shim \
-             will look for `parsec` on PATH instead"
+            "could not refresh the {} alias ({e}) — the shim will look for \
+             `parsec` on PATH instead",
+            bin_alias_path().display()
         );
     }
 
@@ -114,15 +112,31 @@ pub fn setup() -> anyhow::Result<()> {
         .map(|st| st.port)
         .filter(|p| *p > 0)
         .unwrap_or_else(crate::setup::default_port);
-    if crate::hook::port_listening(port) {
-        println!("proxy already listening on 127.0.0.1:{port}");
-    } else {
-        match crate::setup::spawn_proxy_detached(port, &[]) {
+    // Identity, not just liveness. A bare `port_listening` reports success
+    // for ANY process holding the port — including a stale pre-update parsec
+    // supervisor, or something else entirely — which is the false-success
+    // this whole probe exists to prevent. The shim itself already gets this
+    // right (`proxyHealthy` requires /health to answer as parsec before it
+    // routes); the installer was the half that did not.
+    use crate::setup::PortOccupant;
+    match crate::setup::classify_port(port, &["anthropic"]) {
+        PortOccupant::Compatible => println!("proxy already listening on 127.0.0.1:{port}"),
+        PortOccupant::Free => match crate::setup::spawn_proxy_detached(port, &[]) {
             Ok(()) => println!("proxy starting on 127.0.0.1:{port}"),
             Err(e) => println!(
                 "proxy pre-warm failed ({e}) — the shim will start it when opencode launches"
             ),
-        }
+        },
+        PortOccupant::StaleParsec => println!(
+            "a parsec proxy on 127.0.0.1:{port} predates this build and does not serve the \
+             anthropic wire — run `parsec up --restart` so the installed binary serves"
+        ),
+        // Never spawn onto, and never claim, a port we do not own. The shim
+        // will find no parsec /health here and stay unrouted — fail open.
+        PortOccupant::Foreign => println!(
+            "127.0.0.1:{port} is held by a non-parsec process — NOT routing opencode at it. \
+             Free the port and re-run, or run `parsec setup` to pick a different one."
+        ),
     }
 
     println!(
@@ -133,6 +147,18 @@ pub fn setup() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The stable path the shim and its command templates probe when `parsec` is
+/// not on PATH. Windows ships `parsec.exe`, and the shim's `BIN_NAME` must
+/// agree with this or the probe finds nothing.
+pub(crate) fn bin_alias_path() -> PathBuf {
+    let name = if cfg!(windows) {
+        "parsec.exe"
+    } else {
+        "parsec"
+    };
+    crate::setup::parsec_home().join("bin").join(name)
+}
+
 /// Point `~/.parsec/bin/parsec` at the running binary. Only a symlink is
 /// ever replaced (a symlink there is ours by construction); a real file is
 /// the user's and is left alone. `parsec uninstall` purges the whole dir,
@@ -141,7 +167,7 @@ pub fn setup() -> anyhow::Result<()> {
 #[cfg(unix)]
 pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
-    let alias = crate::setup::parsec_home().join("bin").join("parsec");
+    let alias = bin_alias_path();
     match std::fs::symlink_metadata(&alias) {
         Ok(md) if md.file_type().is_symlink() => {
             if std::fs::read_link(&alias)? == exe {
@@ -158,6 +184,53 @@ pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
     }
     std::os::unix::fs::symlink(&exe, &alias)?;
     println!("binary alias {} -> {}", alias.display(), exe.display());
+    Ok(())
+}
+
+/// Windows twin of the alias refresh. There is no symlink to reach for — an
+/// unprivileged account cannot create one — so the alias is a COPY, which
+/// means it CAN go stale in a way the unix symlink deliberately cannot.
+/// Refreshing it on every `parsec setup opencode` is what keeps it honest.
+///
+/// Without this the shim's probe path (`%USERPROFILE%\.parsec\bin\parsec.exe`)
+/// simply did not exist for anyone who installed through the Claude Code
+/// plugin rather than install.ps1: `findParsecBin()` returned null, so the
+/// whole `/parsec-*` command surface vanished and the shim could not run
+/// `parsec up` to revive a dead proxy.
+#[cfg(windows)]
+pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
+    let exe = std::env::current_exe()?;
+    let alias = bin_alias_path();
+    // install.ps1 drops the exe straight at the probe path — then the alias
+    // IS the running image and there is nothing to copy (nor could we, with
+    // the file locked by our own process).
+    if alias == exe {
+        return Ok(());
+    }
+    if let Some(dir) = alias.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let src = std::fs::read(&exe)?;
+    let current = std::fs::metadata(&alias).map(|m| m.len()).unwrap_or(0) == src.len() as u64
+        && std::fs::read(&alias).map(|cur| cur == src).unwrap_or(false);
+    if current {
+        return Ok(());
+    }
+    // Temp + rename so a proxy starting concurrently never maps a
+    // half-written image. rename() replaces an existing file on Windows; a
+    // target locked by a RUNNING proxy fails here, and the caller reports
+    // that as a warning rather than failing the whole setup.
+    let tmp = alias.with_extension("exe.parsec-tmp");
+    std::fs::write(&tmp, &src)?;
+    if let Err(e) = std::fs::rename(&tmp, &alias) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    println!(
+        "binary alias {} -> copy of {}",
+        alias.display(),
+        exe.display()
+    );
     Ok(())
 }
 
@@ -225,6 +298,24 @@ mod tests {
         ] {
             assert!(PLUGIN_JS.contains(cmd), "{cmd} missing from shim");
         }
+    }
+
+    #[test]
+    fn shim_probes_the_platform_binary_name() {
+        // The installer writes the alias at bin_alias_path(); the shim probes
+        // BIN_NAME. If those disagree the shim finds no binary, registers no
+        // commands, and cannot run `parsec up` — silently, and only on the
+        // platform nobody tests on.
+        assert!(
+            PLUGIN_JS.contains("parsec.exe"),
+            "shim has no Windows binary name"
+        );
+        let expected = bin_alias_path();
+        let name = expected.file_name().unwrap().to_string_lossy();
+        assert!(
+            PLUGIN_JS.contains(&format!("\"{name}\"")),
+            "shim does not probe {name}"
+        );
     }
 
     #[test]

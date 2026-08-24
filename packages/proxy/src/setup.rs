@@ -128,11 +128,16 @@ pub fn choose_free_port(preferred: u16) -> u16 {
     if port_bindable(preferred) {
         return preferred;
     }
-    if proxy_request(preferred, "GET", "/health").is_some_and(|h| h.contains("parsec-proxy")) {
+    if parsec_owns(preferred) {
         return preferred; // our own supervisor — keep the port it owns
     }
     for p in (preferred.saturating_add(1))..=(preferred.saturating_add(64)) {
-        if port_bindable(p) {
+        // Bindable OR already ours. Without the second half, a parsec proxy
+        // that an earlier installer moved to 8083 looks "taken" here, so the
+        // next tool routes at 8084 and the two harnesses end up pointed at
+        // different ports — defeating the shared-proxy design at exactly the
+        // moment the ports are being renegotiated.
+        if port_bindable(p) || parsec_owns(p) {
             tracing::warn!(
                 "port {preferred} is held by a non-parsec process — routing to {p} instead"
             );
@@ -140,6 +145,13 @@ pub fn choose_free_port(preferred: u16) -> u16 {
         }
     }
     preferred // nothing free nearby; the supervisor bind will report it loudly
+}
+
+/// True when a parsec proxy answers `/health` on `port`. Identity, not
+/// liveness: the whole point is to tell our own supervisor apart from a
+/// stranger's server before we route a user's credentials at it.
+pub(crate) fn parsec_owns(port: u16) -> bool {
+    proxy_request(port, "GET", "/health").is_some_and(|h| h.contains("parsec-proxy"))
 }
 
 // ── model source resolution ─────────────────────────────────────────────────
@@ -207,10 +219,44 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
 /// (A dead *worker* needs no intervention — the supervisor respawns it and
 /// falls back to Anthropic in the gap.) Idempotent —
 /// a live proxy (ours or the user's own) is never double-spawned.
-pub fn up(restart: bool) -> anyhow::Result<()> {
+/// `parsec up` — revive the routed proxy, and (on `--session-start`) hand a
+/// staged Codex trim to the session that is starting.
+///
+/// Codex has no `additionalContext` hook field the way Claude Code does, but
+/// it surfaces a SessionStart hook's STDOUT to the model as a `developer`
+/// message — confirmed in a real rollout, where this function's own
+/// "proxy already listening…" line appears as one. That is the injection
+/// channel: printing the composed trim puts it in the next session's context,
+/// which is exactly what the Claude Code hook achieves through
+/// `additionalContext`.
+///
+/// Gated on the flag rather than on every `up`, so a manual `parsec up`
+/// cannot silently burn a staged payload. `consume_pending` is one-shot and
+/// TTL-bounded, so a resume inside the window gets it once and never again.
+pub fn up(restart: bool, session_start: bool) -> anyhow::Result<()> {
+    if session_start {
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Some(ctx) =
+                crate::trim::consume_pending(&cwd.to_string_lossy(), crate::trim::Source::Codex)
+            {
+                println!("{ctx}");
+            }
+        }
+    }
     let port = routed_port();
     let log = parsec_home().join("proxy.log");
     if crate::hook::port_listening(port) {
+        // Liveness is not identity. Every harness's SessionStart hook calls
+        // this, so a foreign process holding the routed port used to be
+        // reported as a healthy proxy to all of them — including by the very
+        // command warm_proxy tells users to run when a shutdown is refused.
+        if !restart && !parsec_owns(port) {
+            anyhow::bail!(
+                "127.0.0.1:{port} is listening but is NOT a parsec proxy — refusing to \
+                 report it healthy. Routed traffic is going to that process; stop it and \
+                 re-run, or run `parsec setup` to route at a different port."
+            );
+        }
         if !restart {
             println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
             return Ok(());
@@ -357,7 +403,7 @@ pub fn disable() -> anyhow::Result<()> {
 /// Minimal one-shot HTTP exchange with the local proxy. Raw TcpStream on
 /// purpose: no client dep, works the same on every platform, and short
 /// timeouts keep uninstall snappy when nothing is listening.
-fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
+pub(crate) fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
     use std::io::{Read, Write};
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let mut s =
@@ -380,6 +426,72 @@ fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
 /// The version a parsec proxy on `port` reports via GET /health, or None
 /// when nothing parsec-shaped answers. Lets the SessionStart hook spot a
 /// proxy left serving by a pre-update binary.
+/// The wire namespaces this build's router actually serves, advertised on
+/// `/health` as `wires`. This exists because `version` cannot do the job:
+/// every plugin build reports the crate version (0.1.0), so a supervisor from
+/// an older plugin release is indistinguishable from the current one by
+/// version alone — which is exactly how an alpha-9 process kept port 8082 and
+/// answered `/health` 200 while 404-ing every Codex route, letting
+/// `parsec setup codex` report success
+/// (bugs/parsec_codex_user_message_trimming_report.md, "Additional setup
+/// defect"). Add an entry here whenever a new namespace is routed; setup
+/// flows require the ones they depend on.
+pub const SERVED_WIRES: &[&str] = &["anthropic", "openai", "chatgpt"];
+
+fn parse_health_wires(resp: &str) -> Option<Vec<String>> {
+    let (_, body) = resp.split_once("\r\n\r\n")?;
+    let v: Value = serde_json::from_str(body.trim()).ok()?;
+    if v.get("service").and_then(Value::as_str) != Some("parsec-proxy") {
+        return None;
+    }
+    Some(
+        v.get("wires")?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(String::from)
+            .collect(),
+    )
+}
+
+/// What the process on `port` is, from the point of view of a setup flow that
+/// needs `required` wires served.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PortOccupant {
+    /// Nothing is listening — spawn freely.
+    Free,
+    /// Ours, and it serves every required wire.
+    Compatible,
+    /// Ours (or at least answers as ours) but cannot serve what is needed —
+    /// an older build. Safe to shut down and replace.
+    StaleParsec,
+    /// Answers, but is not the parsec proxy. NEVER shut down: it belongs to
+    /// something else on this machine.
+    Foreign,
+}
+
+/// Classify the listener on `port` against the wires a setup flow needs.
+/// A build that answers `/health` as ours without a `wires` field predates
+/// the capability advertisement and is treated as stale — it is, by
+/// definition, older than every build that can prove itself.
+pub fn classify_port(port: u16, required: &[&str]) -> PortOccupant {
+    if !crate::hook::port_listening(port) {
+        return PortOccupant::Free;
+    }
+    let Some(resp) = proxy_request(port, "GET", "/health") else {
+        return PortOccupant::Foreign; // listening but mute: not ours to stop
+    };
+    if !resp.contains("parsec-proxy") {
+        return PortOccupant::Foreign;
+    }
+    match parse_health_wires(&resp) {
+        Some(wires) if required.iter().all(|r| wires.iter().any(|w| w == r)) => {
+            PortOccupant::Compatible
+        }
+        _ => PortOccupant::StaleParsec,
+    }
+}
+
 pub(crate) fn proxy_health_version(port: u16) -> Option<String> {
     parse_health_version(&proxy_request(port, "GET", "/health")?)
 }
@@ -467,6 +579,9 @@ pub fn uninstall() -> anyhow::Result<()> {
     // leave it pointing at a port nothing will listen on again.
     crate::setup_opencode::remove_if_managed();
     crate::setup_codex::remove_if_managed();
+    // Same reason for Claude Desktop: an interceptor left running would keep
+    // redirecting Desktop at a port nothing answers on.
+    crate::setup_desktop::remove_if_managed();
     println!("{}", stop_proxy(port));
     let home = parsec_home();
     let (removed, failed) = purge_data_files(&home);
@@ -1205,6 +1320,73 @@ mod tests {
         // caller treats it as "cannot compare, leave alone".
         let old = "HTTP/1.1 200 OK\r\n\r\n{\"ok\":true,\"service\":\"parsec-proxy\"}";
         assert_eq!(parse_health_version(old), None);
+    }
+
+    fn health(body: &str) -> String {
+        format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{body}")
+    }
+
+    #[test]
+    fn health_wires_parse_only_from_our_own_service() {
+        assert_eq!(
+            parse_health_wires(&health(
+                r#"{"service":"parsec-proxy","wires":["anthropic","openai","chatgpt"]}"#
+            )),
+            Some(vec![
+                "anthropic".to_string(),
+                "openai".to_string(),
+                "chatgpt".to_string()
+            ])
+        );
+        // A build that predates the field cannot prove itself.
+        assert_eq!(
+            parse_health_wires(&health(r#"{"service":"parsec-proxy","version":"0.1.0"}"#)),
+            None
+        );
+        // Somebody else's server never yields wires, whatever it claims.
+        assert_eq!(
+            parse_health_wires(&health(r#"{"service":"other","wires":["openai"]}"#)),
+            None
+        );
+    }
+
+    #[test]
+    fn classify_port_reports_free_when_nothing_listens() {
+        // Port 1 is never listening.
+        assert_eq!(classify_port(1, SERVED_WIRES), PortOccupant::Free);
+    }
+
+    #[test]
+    fn parsec_owns_rejects_a_listener_that_is_not_ours() {
+        // The identity half of the misroute guard, which liveness cannot give:
+        // codex bakes the chosen port into config.toml as literal text and
+        // nothing re-validates it, so mistaking a stranger for our supervisor
+        // points a real session's OAuth Bearer at that process rather than
+        // merely failing. Same accept-and-drop squatter as the scan test
+        // above, so the probe fails fast instead of waiting out the timeout.
+        let squat = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = squat.local_addr().unwrap().port();
+        let held = std::thread::spawn(move || {
+            for _ in 0..2 {
+                if let Ok((s, _)) = squat.accept() {
+                    drop(s); // FIN → the probe reads "" and returns immediately
+                }
+            }
+        });
+        assert!(!port_bindable(port), "squatter should hold the port");
+        assert!(
+            !parsec_owns(port),
+            "a foreign listener must never read as ours"
+        );
+        assert_eq!(classify_port(port, SERVED_WIRES), PortOccupant::Foreign);
+        let _ = held.join();
+    }
+
+    #[test]
+    fn served_wires_covers_every_namespace_setup_flows_require() {
+        for w in ["anthropic", "openai", "chatgpt"] {
+            assert!(SERVED_WIRES.contains(&w), "{w} missing from SERVED_WIRES");
+        }
     }
 
     #[test]

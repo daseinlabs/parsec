@@ -236,7 +236,7 @@
       },
       {
        "role": "tool",
-       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~232 tokens) omitted ...]\nFAILED (failures=8)"
+       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~205 tokens) omitted ...]\nFAILED (failures=8)"
       }
      ]
     },
@@ -295,7 +295,7 @@
       },
       {
        "role": "tool",
-       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~232 tokens) omitted ...]\nFAILED (failures=8)"
+       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~205 tokens) omitted ...]\nFAILED (failures=8)"
       },
       {
        "role": "assistant",
@@ -369,7 +369,7 @@
       },
       {
        "role": "tool",
-       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~232 tokens) omitted ...]\nFAILED (failures=8)"
+       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~205 tokens) omitted ...]\nFAILED (failures=8)"
       },
       {
        "role": "assistant",
@@ -388,7 +388,7 @@
       },
       {
        "role": "assistant",
-       "content": "Let me re-read the whole file once more.\n[... 0 lines (~10 tokens) omitted ...]",
+       "content": "Let me re-read the whole file once more.",
        "extra": {
         "actions": [
          {
@@ -458,7 +458,7 @@
       },
       {
        "role": "tool",
-       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~232 tokens) omitted ...]\nFAILED (failures=8)"
+       "content": "<returncode>1</returncode>\n=== test session starts ===\ntest_app.py::test_handler_0 FAILED\n[... 23 lines (~205 tokens) omitted ...]\nFAILED (failures=8)"
       },
       {
        "role": "assistant",
@@ -477,7 +477,7 @@
       },
       {
        "role": "assistant",
-       "content": "Let me re-read the whole file once more.\n[... 0 lines (~10 tokens) omitted ...]",
+       "content": "Let me re-read the whole file once more.",
        "extra": {
         "actions": [
          {
@@ -492,7 +492,7 @@
       },
       {
        "role": "assistant",
-       "content": "Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handler_1 looks fine.\n[... 47 lines (~492 tokens) omitted ...]\nObservation 49: handler_1 looks fine.",
+       "content": "Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handler_1 looks fine.\n[... 47 lines (~465 tokens) omitted ...]\nObservation 49: handler_1 looks fine.",
        "extra": {
         "actions": [
          {
@@ -732,7 +732,7 @@
      "expected": [
       {
        "role": "assistant",
-       "content": "Upfront planning thought 0 about the handler bug.\nUpfront planning thought 1 about the handler bug.\n[... 42 lines (~570 tokens) omitted ...]\nUpfront planning thought 44 about the handler bug.",
+       "content": "Upfront planning thought 0 about the handler bug.\nUpfront planning thought 1 about the handler bug.\n[... 42 lines (~534 tokens) omitted ...]\nUpfront planning thought 44 about the handler bug.",
        "extra": {
         "actions": [
          {
@@ -753,7 +753,7 @@
      "expected": [
       {
        "role": "assistant",
-       "content": "Upfront planning thought 0 about the handler bug.\nUpfront planning thought 1 about the handler bug.\n[... 42 lines (~570 tokens) omitted ...]\nUpfront planning thought 44 about the handler bug.",
+       "content": "Upfront planning thought 0 about the handler bug.\nUpfront planning thought 1 about the handler bug.\n[... 42 lines (~534 tokens) omitted ...]\nUpfront planning thought 44 about the handler bug.",
        "extra": {
         "actions": [
          {

@@ -41,6 +41,11 @@ CONTRACTS_EXAMPLE = (
 CONTRACTS_GOVERNOR_EXAMPLE = (
     CONTRACTS_EXAMPLE.parent / "savings-ledger.governor.example.json"
 )
+# The authoritative schema itself — compared field-for-field against the
+# pydantic mirror, so a new proxy field cannot reach ingest unmirrored.
+CONTRACTS_SCHEMA = (
+    CONTRACTS_EXAMPLE.parents[1] / "savings-ledger.schema.json"
+)
 
 
 @pytest.fixture()
@@ -217,6 +222,41 @@ def test_pydantic_model_accepts_governor_example() -> None:
     assert row.checkpoint_id == example["checkpoint_id"]
     assert row.tools_unfrozen == example["tools_unfrozen"]
     assert row.curator_insists == example["curator_insists"]
+    assert row.counterfactual_source == "local_bpe"
+    assert row.freeze_cut_roles == example["freeze_cut_roles"]
+    assert row.freeze_cut_protected_tokens == example["freeze_cut_protected_tokens"]
+
+
+def test_schema_and_mirror_have_identical_field_sets() -> None:
+    """Structural drift guard: every schema property must exist in the mirror
+    and vice versa.
+
+    The example-based guards above only catch a field the example happens to
+    carry, so they pass VACUOUSLY for a field nobody remembered to add — which
+    is exactly how counterfactual_source, freeze_cut_roles and
+    freeze_cut_protected_tokens shipped from the proxy while both mirrors were
+    unaware of them, 422-ing every curated row at ingest. This compares the
+    sets directly, so the next such field fails here instead of in production.
+    """
+    schema = json.loads(CONTRACTS_SCHEMA.read_text())
+    schema_props = set(schema["properties"])
+    mirror_props = {
+        f.alias or name for name, f in LedgerRow.model_fields.items()
+    }
+    assert schema_props == mirror_props, (
+        f"schema-only: {sorted(schema_props - mirror_props)} · "
+        f"mirror-only: {sorted(mirror_props - schema_props)}"
+    )
+
+
+def test_governor_example_covers_every_optional_schema_field() -> None:
+    """The seams example must exercise every optional field, or the guards
+    that validate it silently stop covering the ones it omits."""
+    schema = json.loads(CONTRACTS_SCHEMA.read_text())
+    optional = set(schema["properties"]) - set(schema.get("required", []))
+    example = json.loads(CONTRACTS_GOVERNOR_EXAMPLE.read_text())
+    missing = optional - set(example)
+    assert not missing, f"governor example does not exercise: {sorted(missing)}"
 
 
 def test_ledger_ingest_to_summary(client: TestClient) -> None:
@@ -684,7 +724,7 @@ def test_openai_models_are_priced(client: TestClient) -> None:
     row = dict(
         example,
         request_id="req_" + "d" * 32,
-        model="gpt-5.6-terra",  # 2 / 12 / 0.2 / 2.5 per MTok
+        model="gpt-5.6-terra",  # 2 / 12 / 0.2 / 2.0 per MTok
         counterfactual_input_tokens=100_000,
         billed_input_tokens=500,
         billed_cache_read_tokens=60_000,
@@ -698,9 +738,73 @@ def test_openai_models_are_priced(client: TestClient) -> None:
     summary = client.get("/ledger/summary", headers=auth(mint_jwt())).json()
     m = {r["model"]: r for r in summary["by_model"]}["gpt-5.6-terra"]
     saved = m["tokens_saved"]  # 30_000
-    blended = (500 * 2.0 + 60_000 * 0.2 + 9_500 * 2.5) / (500 + 60_000 + 9_500)
+    # cache_write blends at the BASE input rate: OpenAI has no cache-write
+    # surcharge (0007_openai_pricing_correction.sql).
+    blended = (500 * 2.0 + 60_000 * 0.2 + 9_500 * 2.0) / (500 + 60_000 + 9_500)
     assert float(m["cost_saved_usd"]) == round(saved * blended / 1_000_000, 6)
     assert m["cost_usd"] is not None
+
+
+def test_pricing_seed_matches_the_migrations() -> None:
+    """`_PRICING_SEED` and migrations/*.sql are two hand-maintained copies of
+    the same table, kept together by a comment. Replay the migrations'
+    model_pricing statements against SQLite (same DDL, and every statement
+    involved is portable SQL) and diff the result against the seed, so a rate
+    corrected in one place can't silently stay wrong in the other.
+
+    This is the check that would have caught gpt-5.6-sol drifting: 0004 seeded
+    it, 0007 corrected it, and nothing but a comment tied either to store.py."""
+    import re
+    import sqlite3
+
+    from parsec_platform.store import _PRICING_SEED, _SCHEMA
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        next(
+            m.group(0)
+            for m in re.finditer(
+                r"CREATE TABLE IF NOT EXISTS model_pricing.*?\);", _SCHEMA, re.S
+            )
+        )
+    )
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    applied = 0
+    for path in sorted(migrations.glob("*.sql")):
+        body = path.read_text()
+        # Strip comments, then take whole statements that touch model_pricing.
+        body = "\n".join(l for l in body.splitlines() if not l.lstrip().startswith("--"))
+        for stmt in body.split(";"):
+            head = stmt.strip().upper()
+            if not head.startswith(("INSERT INTO MODEL_PRICING", "UPDATE MODEL_PRICING")):
+                continue
+            conn.execute(stmt)
+            applied += 1
+    assert applied, "no model_pricing statements found — the parser drifted"
+
+    from_migrations = {
+        row[0]: tuple(round(float(v), 6) for v in row[1:])
+        for row in conn.execute(
+            "SELECT model, input_per_mtok, output_per_mtok, cache_read_per_mtok, "
+            "cache_write_per_mtok FROM model_pricing"
+        )
+    }
+    from_seed = {
+        r[0]: tuple(round(float(v), 6) for v in r[1:]) for r in _PRICING_SEED
+    }
+    assert from_migrations == from_seed, (
+        "store.py _PRICING_SEED and migrations/*.sql disagree; "
+        f"only in migrations: {set(from_migrations) - set(from_seed)}; "
+        f"only in seed: {set(from_seed) - set(from_migrations)}; "
+        "differing rates: "
+        + repr(
+            {
+                k: (from_migrations[k], from_seed[k])
+                for k in set(from_migrations) & set(from_seed)
+                if from_migrations[k] != from_seed[k]
+            }
+        )
+    )
 
 
 def test_gemini_models_are_priced(client: TestClient) -> None:

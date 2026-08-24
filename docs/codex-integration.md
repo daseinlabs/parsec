@@ -151,8 +151,38 @@ the download entirely: `parsec setup codex` from the installed binary.
   verbatim; re-verify `model_providers` fields (esp. `http_headers`) and the
   Codex-side item shapes (`function_call` argv arrays, `function_call_output`
   output forms) against Codex HEAD before release.
-- Per-tool savings split in `parsec savings` / statusline / dashboard (rows
-  carry `tool`; nothing reads it yet — shared with opencode).
+- ~~Per-tool savings split in `parsec savings`~~ shipped 2026-08-24 (shared
+  with opencode). Codex matters most here: its rows have a null
+  counterfactual, so before the split they were invisible in the report
+  while still counting toward `null_probes`. A codex row with no
+  counterfactual at all now reads **unmeasured** — the §8.4-honest rendering
+  of "this wire has no count_tokens", as distinct from "we measured zero".
+  Once the local-BPE counterfactual is in play the same line reads
+  **"locally counted, not provider-probed"**: the per-tool split tracks
+  `counterfactual_source == "local_bpe"` separately, because codex is the
+  one tool whose figure would otherwise change instrument silently — local
+  counting is what makes its rows countable at all, so an unqualified
+  "measured" there would promote our tokenizer's opinion to a
+  provider-authoritative number. Statusline and dashboard still blend the
+  harnesses.
+- ~~**Baked-port misroute**~~ fixed 2026-08-24. `setup()` resolved the port
+  as "setup_state port, else default" and wrote it into `config.toml` as
+  literal text with nothing re-validating it, while `choose_free_port` scans
+  upward off 8082 when a FOREIGN process squats it. So `parsec setup codex`
+  before Claude Code setup baked 8082, Claude Code then routed at 8083, and
+  codex was left pointing at whatever owned 8082 — carrying the OAuth Bearer
+  and `chatgpt-account-id` to it. Because the port is baked, that is a LIVE
+  wrong route, not a dead one. Now the resolved port goes through
+  `choose_free_port` **before the block is written** (`warm_proxy` already
+  warned about a foreign listener, but by then the config named it), and the
+  installer prints the divergence when it has to move. Two supporting fixes:
+  `choose_free_port`'s upward scan now also accepts a port an existing parsec
+  proxy owns — otherwise a proxy already moved to 8083 read as "taken" and
+  the next tool landed on 8084, defeating the shared-proxy design at exactly
+  the moment ports are renegotiated — and `parsec up` now refuses to report a
+  foreign listener as a healthy proxy (`parsec_owns`), which every harness's
+  SessionStart hook depends on. Locked by
+  `parsec_owns_rejects_a_listener_that_is_not_ours`.
 
 ## Manual test
 

@@ -295,3 +295,236 @@ fn missing_transcript_exits_two() {
     assert_eq!(code, 2, "stdout: {stdout}");
     assert!(stdout.contains("no session transcript"), "{stdout}");
 }
+
+// ── Codex rollouts ─────────────────────────────────────────────────────────
+
+impl TempHome {
+    /// Write a Codex rollout where the tree really lives:
+    /// `$HOME/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, with a session_meta
+    /// line naming this project's cwd.
+    fn write_rollout(&self, name: &str, items: &[Value]) -> PathBuf {
+        let dir = self.0.join(".codex/sessions/2026/08/24");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut lines = vec![json!({
+            "timestamp": "2026-08-24T00:00:00Z",
+            "type": "session_meta",
+            "payload": {"session_id": "s1", "cwd": self.proj().to_string_lossy(),
+                        "cli_version": "0.147.0"}
+        })
+        .to_string()];
+        lines.extend(items.iter().map(|it| {
+            json!({"timestamp": "2026-08-24T00:00:01Z", "type": "response_item", "payload": it})
+                .to_string()
+        }));
+        let p = dir.join(name);
+        std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+        p
+    }
+}
+
+fn cx_call(cmd: &str) -> Value {
+    json!({"type": "custom_tool_call", "call_id": "c", "name": "exec",
+           "input": format!("const r = await tools.exec_command({{cmd:\"{cmd}\",\"workdir\":\"/r\"}});")})
+}
+
+fn cx_out(text: &str) -> Value {
+    json!({"type": "custom_tool_call_output", "call_id": "c",
+           "output": [{"type": "input_text", "text": text}]})
+}
+
+/// The same keepable shape as the Claude Code fixture, in Codex's schema.
+fn codex_session() -> Vec<Value> {
+    let mut v = vec![
+        json!({"type": "message", "role": "developer",
+               "content": [{"type": "input_text", "text": "<skills_instructions>…"}]}),
+        json!({"type": "message", "role": "user",
+               "content": [{"type": "input_text", "text": "fix ctrl.py"}]}),
+        cx_call("cat plan.md"),
+        cx_out(&lines("plan_item_number", 1, 60)),
+        cx_call("sed -n '1,10p' ctrl.py"),
+        cx_out(&lines("ctrl_source_line", 1, 10)),
+    ];
+    for i in 0..4 {
+        v.push(cx_call(&format!("echo filler_{i}")));
+        v.push(cx_out("ok"));
+    }
+    v.push(cx_call("sed -n '3,4p' ctrl.py"));
+    v.push(cx_out("ctrl_source_line_3\nctrl_source_line_4"));
+    v.push(cx_call("echo done"));
+    v.push(cx_out("done"));
+    v
+}
+
+#[test]
+fn codex_rollout_is_discovered_and_trimmed() {
+    let home = TempHome::new("codex");
+    home.write_rollout("rollout-2026-08-24T00-00-00-abc.jsonl", &codex_session());
+
+    let (out, code) = run_trim(&home, &[], None);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("codex session"), "source not reported: {out}");
+
+    let payload: Value =
+        serde_json::from_str(&std::fs::read_to_string(home.pending()).unwrap()).unwrap();
+    assert_eq!(payload["tool"], "codex");
+    assert_eq!(payload["status"], "det");
+    // The needed-set found the precisely re-read ctrl.py lines through the
+    // command buried in Codex's JS snippet.
+    assert!(
+        payload["body"]
+            .as_str()
+            .unwrap()
+            .contains("ctrl_source_line_3"),
+        "keep-set missed the re-read: {}",
+        payload["body"]
+    );
+}
+
+/// The cross-tool accident: a project with BOTH histories trims the fresher
+/// one, and a Codex-staged payload is never injected into Claude Code.
+#[test]
+fn the_fresher_transcript_wins_and_payloads_do_not_cross_tools() {
+    let home = TempHome::new("both");
+    // Claude Code transcript first, then a NEWER Codex rollout.
+    let cc_dir = home.path().join(".claude/projects").join(
+        home.proj()
+            .to_string_lossy()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect::<String>(),
+    );
+    std::fs::create_dir_all(&cc_dir).unwrap();
+    let cc = cc_dir.join("sess.jsonl");
+    std::fs::write(
+        &cc,
+        keepable_session()
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    home.write_rollout("rollout-2026-08-24T00-00-00-abc.jsonl", &codex_session());
+
+    let (out, code) = run_trim(&home, &[], None);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("codex session"), "fresher source lost: {out}");
+
+    // Forcing the other way still works.
+    let (out, code) = run_trim(&home, &["--tool", "claude"], None);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("claude session"), "{out}");
+
+    // A bad --tool is loud, not silently auto.
+    let (out, code) = run_trim(&home, &["--tool", "nope"], None);
+    assert_ne!(code, 0, "{out}");
+}
+
+fn run_up(home: &TempHome, args: &[&str]) -> (String, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_parsec"))
+        .arg("up")
+        .args(args)
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        // Point the proxy at a port nothing will answer on and forbid the
+        // spawn: `up` still runs its trim pickup first, which is what this
+        // asserts. Its own proxy chatter goes to the same stdout.
+        .env("PARSEC_PROXY_PORT", "1")
+        .env("PARSEC_PROXY_AUTOSTART", "0")
+        .env_remove("PARSEC_TRIM_TTL_SECS")
+        .current_dir(home.proj())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .expect("spawn parsec up");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        out.status.code().unwrap_or(-1),
+    )
+}
+
+/// Codex has no additionalContext hook field; it surfaces SessionStart hook
+/// STDOUT to the model as a developer message. `parsec up --session-start` is
+/// therefore the Codex injection channel — and it must be the FLAG that
+/// consumes, so a manual `parsec up` cannot burn a staged payload.
+#[test]
+fn session_start_injects_a_codex_trim_and_a_bare_up_does_not() {
+    let home = TempHome::new("inject");
+    home.write_rollout("rollout-2026-08-24T00-00-00-abc.jsonl", &codex_session());
+    let (out, code) = run_trim(&home, &[], None);
+    assert_eq!(code, 0, "{out}");
+    let (out, code) = run_trim(&home, &["--finalize"], Some("Never touch ctrl.py again."));
+    assert_eq!(code, 0, "{out}");
+    assert!(home.pending().exists());
+
+    // A bare `up` leaves it alone.
+    let (out, _) = run_up(&home, &[]);
+    assert!(
+        !out.contains("ctrl_source_line_3"),
+        "bare up burned it: {out}"
+    );
+    assert!(home.pending().exists(), "bare up consumed the payload");
+
+    // `--session-start` prints it, directives and all, exactly once.
+    let (out, _) = run_up(&home, &["--session-start"]);
+    assert!(
+        out.contains("ctrl_source_line_3"),
+        "trim not injected: {out}"
+    );
+    assert!(
+        out.contains("STANDING DIRECTIVES"),
+        "directives missing: {out}"
+    );
+    assert!(out.contains("Never touch ctrl.py again."), "{out}");
+    assert!(!home.pending().exists(), "payload must be one-shot");
+
+    let (out2, _) = run_up(&home, &["--session-start"]);
+    assert!(
+        !out2.contains("ctrl_source_line_3"),
+        "payload replayed: {out2}"
+    );
+}
+
+/// A Codex-staged payload is invisible to the Claude Code hook, and vice
+/// versa — one project shares one pending file, and injecting the other
+/// harness's trim would describe a conversation this session never had.
+#[test]
+fn a_codex_payload_is_not_injected_into_claude_code() {
+    let home = TempHome::new("nocross");
+    home.write_rollout("rollout-2026-08-24T00-00-00-abc.jsonl", &codex_session());
+    let (out, code) = run_trim(&home, &[], None);
+    assert_eq!(code, 0, "{out}");
+
+    let hook = Command::new(env!("CARGO_BIN_EXE_parsec"))
+        .args(["hook", "SessionStart"])
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("PARSEC_PROXY_AUTOSTART", "0")
+        .current_dir(home.proj())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .and_then(|mut c| {
+            c.stdin
+                .take()
+                .unwrap()
+                .write_all(
+                    json!({"hook_event_name": "SessionStart", "source": "clear",
+                           "session_id": "s", "cwd": home.proj().to_string_lossy()})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .map(|_| c)
+        })
+        .and_then(|c| c.wait_with_output())
+        .expect("hook run");
+    let out = String::from_utf8_lossy(&hook.stdout).into_owned();
+    assert!(
+        !out.contains("ctrl_source_line_3"),
+        "claude code hook picked up a codex trim: {out}"
+    );
+    assert!(home.pending().exists(), "the codex payload must survive");
+}
