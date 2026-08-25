@@ -286,47 +286,6 @@ pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
         return Err(e.into());
     }
     copy_sibling_dlls(&exe, &alias);
-    /// Carry the app-local VC++ CRT across with the exe.
-    ///
-    /// parsec.exe imports msvcp140/vcruntime140, which are absent on a clean
-    /// Windows box, and the loader searches ONLY next to the exe. release.yml
-    /// ships them beside the binary for that reason — copying the exe alone to
-    /// the alias path stripped them, so the copy everything points at died before
-    /// main() with 0xC0000135 and no stderr. That is undiagnosable anywhere, and
-    /// invisible in the tray, which starts through a hidden-window launcher.
-    ///
-    /// Best-effort per file: a release that no longer imports the CRT publishes
-    /// none of these, and their absence is not an error.
-    #[cfg(windows)]
-    fn copy_sibling_dlls(exe: &Path, alias: &Path) {
-        let (Some(from), Some(to)) = (exe.parent(), alias.parent()) else {
-            return;
-        };
-        if from == to {
-            return;
-        }
-        let Ok(entries) = std::fs::read_dir(from) else {
-            return;
-        };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.extension()
-                .and_then(|x| x.to_str())
-                .map(str::to_ascii_lowercase)
-                != Some("dll".into())
-            {
-                continue;
-            }
-            let Some(name) = p.file_name() else { continue };
-            let dest = to.join(name);
-            // Same-content check keeps repeat setups from rewriting ~750 KB.
-            let same = std::fs::metadata(&dest).map(|m| m.len()).ok()
-                == std::fs::metadata(&p).map(|m| m.len()).ok();
-            if !same {
-                let _ = std::fs::copy(&p, &dest);
-            }
-        }
-    }
 
     println!(
         "binary alias {} -> copy of {}",
@@ -334,6 +293,48 @@ pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
         exe.display()
     );
     Ok(())
+}
+
+/// Carry the app-local VC++ CRT across with the exe.
+///
+/// parsec.exe imports msvcp140/vcruntime140, which are absent on a clean
+/// Windows box, and the loader searches ONLY next to the exe. release.yml
+/// ships them beside the binary for that reason — copying the exe alone to
+/// the alias path stripped them, so the copy everything points at died before
+/// main() with 0xC0000135 and no stderr. That is undiagnosable anywhere, and
+/// invisible in the tray, which starts through a hidden-window launcher.
+///
+/// Best-effort per file: a release that no longer imports the CRT publishes
+/// none of these, and their absence is not an error.
+#[cfg(windows)]
+fn copy_sibling_dlls(exe: &Path, alias: &Path) {
+    let (Some(from), Some(to)) = (exe.parent(), alias.parent()) else {
+        return;
+    };
+    if from == to {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(from) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.extension()
+            .and_then(|x| x.to_str())
+            .map(str::to_ascii_lowercase)
+            != Some("dll".into())
+        {
+            continue;
+        }
+        let Some(name) = p.file_name() else { continue };
+        let dest = to.join(name);
+        // Same-content check keeps repeat setups from rewriting ~750 KB.
+        let same = std::fs::metadata(&dest).map(|m| m.len()).ok()
+            == std::fs::metadata(&p).map(|m| m.len()).ok();
+        if !same {
+            let _ = std::fs::copy(&p, &dest);
+        }
+    }
 }
 
 /// `parsec disable opencode` — remove exactly (and only) the managed shim.

@@ -3,7 +3,9 @@
 How parsec reaches Claude Desktop, what it deliberately does not touch, and
 the two costs the feature carries.
 
-Status: implemented, opt-in, at feature parity with CC-Router's interceptor.
+Status: implemented, at feature parity with CC-Router's interceptor. Opt-in
+from the binary; the Windows installer enables it when Claude Desktop is
+present (`-NoDesktop` opts out) — see §3.
 `packages/proxy/src/setup_desktop.rs` + `packages/proxy/src/desktop_addon.py`,
 exposed as `parsec setup desktop`, `parsec desktop start|stop|restart|status`,
 `parsec disable desktop`, and the `/parsec:desktop` skill. The mechanism is
@@ -105,6 +107,40 @@ qualifier.
 | `parsec desktop status` | Configured / running / auto-start / Desktop present / mitmproxy / CA / extension approval / routed scope. Changes nothing. |
 | `parsec disable desktop` | Full teardown: stop, remove the boot service, the addon, and the state file; print the CA removal command. |
 
+### From the Windows installer
+
+`scripts/install.ps1` sets Desktop up as part of its normal run: auto-detect
+adds `desktop` whenever `%LOCALAPPDATA%\AnthropicClaude\Claude.exe` exists —
+the same location `claude_desktop_installed()` probes, so the script and the
+binary cannot disagree about what is installed. It then installs mitmproxy via
+winget if missing and runs `parsec setup desktop --install-ca`.
+
+**Windows needs administrator for the whole provision, not just the CA.**
+Interception there runs through WinDivert, whose driver requires elevation, and
+`run_start` spawns `mitmdump` detached and then requires it alive 1.5 s later —
+a window no human can approve a UAC dialog inside. So the installer asks for
+elevation **once**, up front, and runs the entire `parsec setup desktop` under
+it (`Start-Process -Verb RunAs -Wait`), then prints `parsec desktop status`
+from the unelevated shell because the elevated console takes its own output
+with it. A declined prompt leaves Desktop unprovisioned with the exact command
+to re-run — every other tool in that install still succeeded.
+
+Two consequences worth stating plainly:
+
+- The interceptor ends up running **elevated**, so `parsec desktop stop` needs
+  an admin shell too — `taskkill` against a higher-integrity process is
+  otherwise denied.
+- This is where the installer departs from the binary's posture (§5.2): parsec
+  itself only ever *prints* the trust command. The installer completes it, but
+  never silently — the user sees Windows ask and can say no.
+
+Opt-outs: `-NoDesktop` skips Desktop entirely even when installed; `-NoCa`
+provisions without trusting the CA (Desktop then stays unintercepted until the
+printed command is run). Both have env equivalents (`PARSEC_NO_DESKTOP`,
+`PARSEC_NO_CA`) for the `irm | iex` form. On ARM64, auto-detected desktop is
+dropped with a warning rather than aborting the install — the parsec binary is
+published for win-x64 only.
+
 `setup` and `start` share one code path — `setup` is `start` with the CA and
 explainer steps in front — so the two entry points cannot drift on which gates
 they check.
@@ -159,10 +195,11 @@ aiming Desktop at a port nothing will answer on again.
 ## 5. The two costs, and how they are bounded
 
 `docs/cc-router-comparison.md` §4 recommended against building this. That
-recommendation was about *default* posture, and it still holds: this is opt-in,
-it is not part of `parsec setup`, and nothing in the first-run path mentions
-it. What follows is how the costs are contained rather than a claim that they
-are absent.
+recommendation was about *default* posture. It still holds for the binary —
+`parsec setup` does not touch Desktop, and nothing in Claude Code's first-run
+path mentions it — but **not** for `install.ps1`, which enables Desktop
+whenever it finds it (§3). What follows is how the costs are contained rather
+than a claim that they are absent.
 
 ### 5.1 A runtime dependency on mitmproxy (Python)
 
@@ -183,7 +220,9 @@ This is the machine-wide, hard-to-reverse change, so parsec does not make it
 silently in either direction:
 
 - `parsec setup desktop` **prints** the exact trust command by default. Only
-  `--install-ca` runs it, and then the OS prompts for authentication.
+  `--install-ca` runs it, and then the OS prompts for authentication. The
+  Windows installer does complete the step (§3) — through a UAC prompt the
+  user can decline, never silently.
 - `parsec disable desktop` **prints** the removal command and does not run it
   — on macOS the certificate is matched by SHA-1, and a wrong guess would
   delete some other trust root.
