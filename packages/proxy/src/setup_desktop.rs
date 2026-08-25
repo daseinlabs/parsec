@@ -128,19 +128,49 @@ pub fn claude_desktop_installed() -> bool {
     if cfg!(target_os = "macos") {
         Path::new("/Applications/Claude.app").exists()
     } else if cfg!(target_os = "windows") {
-        std::env::var("LOCALAPPDATA")
-            .map(|d| {
-                Path::new(&d)
-                    .join("AnthropicClaude")
-                    .join("Claude.exe")
-                    .exists()
-            })
-            .unwrap_or(false)
+        windows_desktop_present()
     } else {
         // No canonical Linux install location; assume present rather than
         // warn wrongly.
         true
     }
+}
+
+/// Windows install probe. Desktop ships as a Squirrel app: the launcher at the
+/// root of `AnthropicClaude\` sits beside versioned `app-<ver>\` payload
+/// directories, and a machine-wide install lands somewhere else again — so one
+/// hardcoded path answers "not installed" on machines that have it. Presence
+/// only: interception matches the process by NAME, so a path we cannot find
+/// never blocks capture, which is why this warns and never gates.
+///
+/// Not `#[cfg(windows)]`: `claude_desktop_installed` branches with `cfg!`, so
+/// every arm has to compile everywhere. Off Windows the env vars are absent
+/// and it answers false without touching the disk.
+fn windows_desktop_present() -> bool {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        let local = PathBuf::from(local);
+        roots.push(local.join("AnthropicClaude").join("Claude.exe"));
+        roots.push(local.join("Programs").join("Claude").join("Claude.exe"));
+    }
+    for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(dir) = std::env::var(var) {
+            roots.push(PathBuf::from(dir).join("Claude").join("Claude.exe"));
+        }
+    }
+    if roots.iter().any(|p| p.exists()) {
+        return true;
+    }
+    // Squirrel payload: app-1.2.3\claude.exe next to the stub launcher.
+    let Ok(local) = std::env::var("LOCALAPPDATA") else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(PathBuf::from(local).join("AnthropicClaude")) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        e.file_name().to_string_lossy().starts_with("app-") && e.path().join("claude.exe").exists()
+    })
 }
 
 // ── platform facts ──────────────────────────────────────────────────────────

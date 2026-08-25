@@ -94,6 +94,89 @@ function Update-SessionPath {
     $env:Path = $parts -join ";"
 }
 
+# Where is Claude Desktop? One hardcoded path is not enough: it is a Squirrel
+# app, so the launcher at the root of AnthropicClaude\ is a stub beside
+# versioned app-<ver>\ directories, and machine-wide installs land somewhere
+# else entirely. Returns a path, or $null when nothing matched.
+#
+# Presence is all this is used for. mitmproxy's local mode matches the process
+# by NAME (`--mode local:Claude.exe`), so a path we failed to find never stops
+# interception from working -- which is why -Tools desktop overrides a miss.
+function Find-ClaudeDesktop {
+    # 1. Running right now: the most authoritative answer available.
+    try {
+        $proc = Get-Process -Name claude -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path } | Select-Object -First 1
+        if ($proc) { return $proc.Path }
+    }
+    catch {}
+
+    # 2. Known install roots, per-user first (that is how Desktop ships).
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA "AnthropicClaude\Claude.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Claude\Claude.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\claude-desktop\Claude.exe"),
+        (Join-Path $env:ProgramFiles "Claude\Claude.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Claude\Claude.exe")
+    ) | Where-Object { $_ }
+    foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+
+    # 3. Squirrel's versioned payload: app-1.2.3\claude.exe, newest first.
+    $sq = Join-Path $env:LOCALAPPDATA "AnthropicClaude"
+    if (Test-Path $sq) {
+        $hit = Get-ChildItem $sq -Directory -Filter "app-*" -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName "claude.exe" } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($hit) { return $hit }
+    }
+
+    # 4. App Paths -- what ShellExecute uses to resolve a bare "claude.exe".
+    foreach ($k in @("HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Claude.exe",
+                     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Claude.exe")) {
+        try {
+            $v = (Get-ItemProperty -Path $k -ErrorAction Stop).'(default)'
+            if ($v -and (Test-Path $v)) { return $v }
+        }
+        catch {}
+    }
+
+    # 5. Uninstall entries: InstallLocation, or DisplayIcon (which is the exe
+    #    itself, sometimes with a ",0" icon index glued on).
+    $roots = @("HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+               "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+               "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall")
+    try {
+        $entries = Get-ChildItem $roots -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
+            Where-Object { $_.DisplayName -like "*Claude*" -and $_.DisplayName -notlike "*Claude Code*" }
+        foreach ($e in $entries) {
+            if ($e.InstallLocation) {
+                $exe = Join-Path $e.InstallLocation "Claude.exe"
+                if (Test-Path $exe) { return $exe }
+            }
+            if ($e.DisplayIcon) {
+                $exe = ($e.DisplayIcon -split ",")[0].Trim('"')
+                if ($exe -and (Test-Path $exe)) { return $exe }
+            }
+        }
+    }
+    catch {}
+
+    # 6. Start Menu shortcut, resolved through the shell.
+    try {
+        $lnk = Get-ChildItem (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs") `
+            -Filter "Claude.lnk" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($lnk) {
+            $target = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk.FullName).TargetPath
+            if ($target -and (Test-Path $target)) { return $target }
+        }
+    }
+    catch {}
+
+    return $null
+}
+
 function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole(
@@ -131,18 +214,21 @@ if (-not $Tools) {
     # opencode uses XDG-style paths on every platform.
     $ocCfg = if ($env:XDG_CONFIG_HOME) { Join-Path $env:XDG_CONFIG_HOME "opencode" } else { Join-Path $env:USERPROFILE ".config\opencode" }
     if ((Test-Cmd opencode) -or (Test-Path $ocCfg)) { $Tools += "opencode" }
-    # Claude Desktop: same install location setup_desktop.rs probes
-    # (claude_desktop_installed()), so detection here and the binary's own
-    # report cannot disagree. -NoDesktop opts out, because this is the one
-    # tool whose setup installs mitmproxy and trusts a root CA.
-    $desktopExe = Join-Path $env:LOCALAPPDATA "AnthropicClaude\Claude.exe"
-    if ((Test-Path $desktopExe) -and -not $NoDesktop) { $Tools += "desktop"; $desktopAuto = $true }
+    # Claude Desktop. -NoDesktop opts out, because this is the one tool whose
+    # setup installs mitmproxy and trusts a root CA. A miss here is not final:
+    # -Tools desktop forces it, since interception keys off the process name.
+    $desktopExe = Find-ClaudeDesktop
+    if ($desktopExe -and -not $NoDesktop) { $Tools += "desktop"; $desktopAuto = $true }
     if (-not $Tools) {
         Write-Error "no supported Claude client found (looked for: claude, codex, opencode, Claude Desktop). Install one first, or pick explicitly: -Tools codex"
     }
     Write-Host "detected: $($Tools -join ' ')"
     if ($Tools -contains "desktop") {
+        Write-Host "  Claude Desktop at $desktopExe"
         Write-Host "  desktop needs mitmproxy + a trusted root CA (you will get an administrator prompt); skip it with -NoDesktop"
+    }
+    elseif (-not $NoDesktop) {
+        Write-Host "  no Claude Desktop found - if it IS installed, force it with: -Tools desktop"
     }
 }
 
@@ -158,24 +244,35 @@ if ($NoCa -and ("desktop" -notin $Tools) -and -not $NoDesktop) {
     Write-Host "note: -NoCa only affects Claude Desktop setup"
 }
 
+$isX64 = $env:PROCESSOR_ARCHITECTURE -eq "AMD64"
+
 # Desktop needs the parsec binary, which is published for win-x64 only. When
 # desktop was AUTO-detected, drop it here rather than let the architecture
 # check below abort an install that would otherwise have set Claude Code up
 # fine. Asked for explicitly, it still errors -- that was a request, not a
 # guess.
-if ($desktopAuto -and $env:PROCESSOR_ARCHITECTURE -ne "AMD64" -and ("desktop" -in $Tools)) {
+if ($desktopAuto -and -not $isX64 -and ("desktop" -in $Tools)) {
     Write-Warning "skipping Claude Desktop: it needs the win-x64 parsec binary, which does not run on $env:PROCESSOR_ARCHITECTURE"
     $Tools = @($Tools | Where-Object { $_ -ne "desktop" })
 }
 
-# -- platform binary (codex/opencode/desktop -- the Claude Code plugin ships
-#    its own) ------------------------------------------------------------------
+# -- platform binary ----------------------------------------------------------
+# On x64 this is ALWAYS fetched, not just for the tools that cannot work
+# without it. The skills, the status line, and every doc tell people to run
+# `parsec ...`; a claude-only install used to leave that command missing until
+# a Claude Code session happened to create the alias, which reads as a broken
+# install. The Claude Code plugin still ships its own copy -- this is the one
+# on PATH.
 $dest = Join-Path $env:USERPROFILE ".parsec\bin\parsec.exe"
-$needsBinary = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or ($Tools -contains "desktop") -or $Tray
-if ($needsBinary) {
-    if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
+$binaryRequired = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or ($Tools -contains "desktop") -or $Tray
+if (-not $isX64) {
+    if ($binaryRequired) {
         Write-Error "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (only win-x64 today; ARM64 Windows: use WSL or the Claude Code plugin)"
     }
+    Write-Warning "no win-x64 parsec binary for $env:PROCESSOR_ARCHITECTURE - installing the Claude Code plugin only (it ships its own binary)"
+}
+$needsBinary = $isX64
+if ($needsBinary) {
     $destDir = Split-Path $dest
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     # Download beside the destination, verify it runs, then move into place.
@@ -242,6 +339,15 @@ if ($needsBinary) {
 # spawns mitmdump detached and requires it alive 1.5s later, which a human
 # approving a UAC dialog cannot beat.
 function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa) {
+    # Reached with -Tools desktop even when Find-ClaudeDesktop came up empty:
+    # the interceptor matches the PROCESS NAME, so an install we could not
+    # locate on disk still gets captured once Desktop is running. Say so, so
+    # a "not found" note does not read as a failure.
+    $found = Find-ClaudeDesktop
+    if ($found) { Write-Host "Claude Desktop: $found" }
+    else {
+        Write-Host "Claude Desktop not found on disk - continuing anyway: mitmproxy hooks the process by name (Claude.exe), not by path."
+    }
     if (-not (Test-Cmd mitmdump)) {
         if (Test-Cmd winget) {
             Write-Host "mitmproxy not found - installing it (winget)..."
@@ -346,6 +452,11 @@ if ($Tray) {
 Write-Host ""
 if ($needsBinary) {
     Write-Host ("installed {0} at {1}" -f (& $dest --version), $dest)
+    if (-not (Test-Cmd parsec)) {
+        # PATH was updated for this process and for future ones; a shell that
+        # predates the install still will not see it.
+        Write-Host ("note: 'parsec' resolves in NEW terminals - in this one, run it as " + $dest)
+    }
 }
 if (-not $Tray) {
     Write-Host "tray app (notification area + taskbar, starts at sign-in): parsec tray install"
