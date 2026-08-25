@@ -67,7 +67,9 @@ fn rollouts_newest_first(root: &Path) -> Vec<PathBuf> {
     }
     let mut found = Vec::new();
     walk(root, 4, &mut found);
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    // Newest first. `Reverse` rather than a flipped comparator: clippy's
+    // unnecessary_sort_by fires on the latter, and CI runs -D warnings.
+    found.sort_by_key(|(mtime, _)| std::cmp::Reverse(*mtime));
     found.into_iter().map(|(_, p)| p).collect()
 }
 
