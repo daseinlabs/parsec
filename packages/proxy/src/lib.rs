@@ -39,5 +39,6 @@ pub mod setup_opencode;
 pub mod splice;
 pub mod statusline;
 pub mod supervisor;
+pub mod tray;
 pub mod trim;
 pub mod visibility;

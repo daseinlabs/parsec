@@ -32,6 +32,23 @@ struct Cli {
     command: Command,
 }
 
+/// `parsec tray …` — the menu-bar app. Split install/run the way the Desktop
+/// interceptor is: `install` provisions and registers the login item, `run`
+/// is what launchd actually invokes.
+#[derive(Subcommand)]
+enum TrayAction {
+    /// Generate the .app bundle, register it as a login item, start it.
+    Install,
+    /// Unregister the login item and delete the bundle.
+    Uninstall,
+    /// Report what is installed. Changes nothing.
+    Status,
+    /// Run the menu-bar app in the foreground. Normally invoked by the login
+    /// item rather than by hand.
+    #[command(hide = true)]
+    Run,
+}
+
 /// `parsec desktop …` — run the Claude Desktop interceptor that `parsec setup
 /// desktop` provisioned. Split from `setup` for the same reason CC-Router
 /// splits `client start-desktop` from `client connect`: starting and stopping
@@ -133,6 +150,13 @@ enum Command {
     Desktop {
         #[command(subcommand)]
         action: DesktopAction,
+    },
+    /// Menu-bar app (macOS): live proxy/Desktop/savings status, and the
+    /// guided Claude Desktop setup that waits for the System Settings
+    /// approval instead of making you re-run the command.
+    Tray {
+        #[command(subcommand)]
+        action: TrayAction,
     },
     /// Full local cleanup ahead of `claude plugin uninstall`: disable, stop
     /// the proxy, and delete downloaded models/logs/ledger.
@@ -288,6 +312,12 @@ fn main() -> anyhow::Result<()> {
             DesktopAction::Restart => parsec_proxy::setup_desktop::restart(),
             DesktopAction::Status => parsec_proxy::setup_desktop::status(),
         },
+        Command::Tray { action } => parsec_proxy::tray::run(match action {
+            TrayAction::Install => parsec_proxy::tray::Action::Install,
+            TrayAction::Uninstall => parsec_proxy::tray::Action::Uninstall,
+            TrayAction::Status => parsec_proxy::tray::Action::Status,
+            TrayAction::Run => parsec_proxy::tray::Action::Run,
+        }),
         Command::Uninstall => parsec_proxy::setup::uninstall(),
         Command::Up {
             restart,

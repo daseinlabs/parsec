@@ -185,6 +185,14 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
         }
     }
 
+    // Make `parsec` resolvable from a terminal. Until this ran here, a
+    // Claude-Code-only install left no callable binary anywhere: the plugin
+    // copy lives in a cache dir whose path changes on every update, and
+    // install.sh only writes the alias + PATH when it detects codex or
+    // opencode. Every "run `parsec …`" instruction we print was therefore
+    // dead for plugin-only users.
+    ensure_callable(auto);
+
     // Warm proxy so the next session's first request finds a live port.
     let spawn_err = spawn_proxy_detached(st.port, &[]).err();
 
@@ -210,6 +218,175 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
         println!("proxy pre-warm failed ({e}) — the SessionStart hook will start it next session");
     }
     Ok(())
+}
+
+/// Is `~/.parsec/bin` already on PATH? Checked against PATH rather than by
+/// probing `which parsec`, because the answer we need is "will a NEW shell
+/// resolve it", not "does this process happen to have it".
+fn alias_dir_on_path() -> bool {
+    let Some(dir) = crate::setup_opencode::bin_alias_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+    else {
+        return false;
+    };
+    std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).any(|e| e == dir))
+        .unwrap_or(false)
+}
+
+/// The shell rc that a login shell of `shell` will actually read. Pure, so
+/// the per-shell mapping is pinned by tests rather than by whoever runs them:
+/// fish in particular needs a different FILE and a different SYNTAX, and
+/// getting either wrong writes a line that silently never executes.
+#[cfg(unix)]
+fn rc_for_shell(
+    shell: &str,
+    zdotdir: Option<&str>,
+    xdg_config: Option<&str>,
+    home: &Path,
+) -> PathBuf {
+    match Path::new(shell).file_name().and_then(|s| s.to_str()) {
+        Some("zsh") => zdotdir
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.to_path_buf())
+            .join(".zshrc"),
+        Some("bash") => home.join(".bashrc"),
+        Some("fish") => xdg_config
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("fish")
+            .join("conf.d")
+            .join("parsec.fish"),
+        _ => home.join(".profile"),
+    }
+}
+
+/// Keyed off `$SHELL` and not the running shell, for the same reason
+/// install.sh does it: a hook-spawned setup is not the user's interactive
+/// shell.
+#[cfg(unix)]
+fn shell_rc() -> PathBuf {
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    let zdotdir = std::env::var("ZDOTDIR").ok();
+    let xdg = std::env::var("XDG_CONFIG_HOME").ok();
+    rc_for_shell(&shell, zdotdir.as_deref(), xdg.as_deref(), &home_dir())
+}
+
+/// Append the guarded PATH line, exactly as install.sh does. Idempotent by
+/// content match, so re-running setup never stacks duplicates.
+#[cfg(unix)]
+fn add_dir_to_path(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let rc = shell_rc();
+    if let Ok(cur) = std::fs::read_to_string(&rc) {
+        if cur.contains(".parsec/bin") {
+            return Ok(None);
+        }
+    }
+    if let Some(parent) = rc.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let line = if rc.extension().and_then(|e| e.to_str()) == Some("fish") {
+        format!(
+            "\n# parsec\nfish_add_path --prepend \"{}\"\n",
+            dir.display()
+        )
+    } else {
+        format!("\n# parsec\nexport PATH=\"{}:$PATH\"\n", dir.display())
+    };
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&rc)?;
+    f.write_all(line.as_bytes())?;
+    Ok(Some(rc))
+}
+
+/// Windows twin: user-scope PATH via the same call install.ps1 makes. Not
+/// `setx` — that truncates at 1024 chars and has eaten people's PATH.
+#[cfg(windows)]
+fn add_dir_to_path(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    // PowerShell concatenation, no embedded double quotes — the quoting
+    // three languages deep (Rust -> cmdline -> PowerShell) is where this
+    // kind of helper usually breaks.
+    // Guarding the empty case matters: a user-scope PATH that is unset makes
+    // `$p` null, and a naive `$p + ';' + $d` writes a LEADING semicolon —
+    // an empty PATH entry, which Windows resolves as the current directory.
+    let script = format!(
+        "$d = '{}'; \
+         $p = [Environment]::GetEnvironmentVariable('Path','User'); \
+         if ([string]::IsNullOrEmpty($p)) {{ \
+           [Environment]::SetEnvironmentVariable('Path', $d, 'User') }} \
+         elseif (($p -split ';') -notcontains $d) {{ \
+           [Environment]::SetEnvironmentVariable('Path', ($p.TrimEnd(';') + ';' + $d), 'User') }}",
+        dir.display()
+    );
+    let ok = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok {
+        Ok(Some(PathBuf::from("your user PATH")))
+    } else {
+        anyhow::bail!("could not update the user PATH")
+    }
+}
+
+/// Make `parsec` callable from a terminal, not just from inside Claude Code.
+///
+/// The plugin binary lives in the plugin cache, whose path changes on every
+/// update, and NOTHING on the Claude Code install route used to leave a
+/// stable, callable copy: `install.sh` only writes the alias + PATH when it
+/// detects codex or opencode, and `refresh_bin_alias` was called only from
+/// those two setups. A plugin-only user therefore had no `parsec` on PATH at
+/// all — so every instruction that says "run `parsec …` in a terminal"
+/// (the Desktop CA step, the interceptor commands, `parsec up`) simply did
+/// not resolve for them.
+///
+/// The alias is always refreshed — cheap, non-destructive (only a symlink we
+/// own is ever replaced), and purged by `parsec uninstall` with the rest of
+/// ~/.parsec. The PATH edit is gated to MANUAL runs: a hook-spawned
+/// `--auto` first run must not silently rewrite someone's shell rc.
+pub(crate) fn ensure_callable(auto: bool) {
+    if let Err(e) = crate::setup_opencode::refresh_bin_alias() {
+        println!("could not refresh the parsec binary alias ({e})");
+        return;
+    }
+    if alias_dir_on_path() {
+        return;
+    }
+    let Some(dir) = crate::setup_opencode::bin_alias_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+    else {
+        return;
+    };
+    if auto {
+        println!(
+            "note: `parsec` is not on your PATH. Run `parsec setup` from a terminal, or add              manually:\n  export PATH=\"{}:$PATH\"",
+            dir.display()
+        );
+        return;
+    }
+    match add_dir_to_path(&dir) {
+        Ok(Some(where_)) => println!(
+            "added {} to PATH in {} — open a new terminal to use `parsec` directly",
+            dir.display(),
+            where_.display()
+        ),
+        Ok(None) => println!(
+            "{} is already in your shell config — open a new terminal to use `parsec`",
+            dir.display()
+        ),
+        Err(e) => println!(
+            "could not update PATH ({e}) — add manually:\n  export PATH=\"{}:$PATH\"",
+            dir.display()
+        ),
+    }
 }
 
 /// `parsec up` — bring the proxy back on the routed port. The manual twin of
@@ -1040,6 +1217,40 @@ fn spawn_detached(mut cmd: std::process::Command, log_name: &str) -> anyhow::Res
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[test]
+    fn rc_file_matches_the_users_login_shell() {
+        let home = Path::new("/home/u");
+        assert_eq!(
+            rc_for_shell("/bin/zsh", None, None, home),
+            home.join(".zshrc")
+        );
+        assert_eq!(
+            rc_for_shell("/bin/zsh", Some("/home/u/cfg/zsh"), None, home),
+            Path::new("/home/u/cfg/zsh/.zshrc")
+        );
+        assert_eq!(
+            rc_for_shell("/bin/bash", None, None, home),
+            home.join(".bashrc")
+        );
+        // fish gets its own conf.d drop-in — appending `export PATH=` to a
+        // fish config would write a line fish never runs.
+        assert_eq!(
+            rc_for_shell("/usr/local/bin/fish", None, None, home),
+            home.join(".config/fish/conf.d/parsec.fish")
+        );
+        assert_eq!(
+            rc_for_shell("/usr/bin/fish", None, Some("/xdg"), home),
+            Path::new("/xdg/fish/conf.d/parsec.fish")
+        );
+        // Unknown or empty $SHELL falls back to the POSIX profile.
+        assert_eq!(
+            rc_for_shell("/bin/ksh", None, None, home),
+            home.join(".profile")
+        );
+        assert_eq!(rc_for_shell("", None, None, home), home.join(".profile"));
+    }
 
     #[test]
     fn merge_writes_routing_into_empty_settings() {

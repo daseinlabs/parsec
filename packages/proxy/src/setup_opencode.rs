@@ -15,7 +15,7 @@
 //! settings routing. The shim and this command both fall back to the default
 //! port when no state exists, so they agree without sharing state.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The shim, embedded verbatim. include_str! keeps the two artifacts (npm
 /// package and file drop) byte-identical by construction.
@@ -168,23 +168,82 @@ pub(crate) fn bin_alias_path() -> PathBuf {
 pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
     let alias = bin_alias_path();
-    match std::fs::symlink_metadata(&alias) {
-        Ok(md) if md.file_type().is_symlink() => {
-            if std::fs::read_link(&alias)? == exe {
-                return Ok(());
-            }
-            std::fs::remove_file(&alias)?;
-        }
-        Ok(_) => return Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+    let state = match std::fs::symlink_metadata(&alias) {
+        Ok(md) if md.file_type().is_symlink() => AliasState::SymlinkTo(std::fs::read_link(&alias)?),
+        Ok(_) => AliasState::RealFile,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => AliasState::Missing,
         Err(e) => return Err(e.into()),
+    };
+    // `alias == exe` is install.sh's own layout: the downloaded binary IS the
+    // probe path, and it is the image currently running. Relinking it would
+    // point the alias at itself.
+    if decide_alias(&state, &exe, alias == exe) == AliasAction::Keep {
+        return Ok(());
     }
     if let Some(dir) = alias.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::os::unix::fs::symlink(&exe, &alias)?;
-    println!("binary alias {} -> {}", alias.display(), exe.display());
+    // Atomic: symlink to a temp name, then rename over. A `parsec` typed at
+    // exactly the wrong moment must never find the path missing.
+    let tmp = alias.with_extension("parsec-tmp");
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(&exe, &tmp)?;
+    if let Err(e) = std::fs::rename(&tmp, &alias) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    match state {
+        AliasState::RealFile => println!(
+            "replaced the stale binary at {} with a link to {} — `parsec` on your PATH now \
+             tracks plugin updates instead of staying frozen at install time",
+            alias.display(),
+            exe.display()
+        ),
+        _ => println!("binary alias {} -> {}", alias.display(), exe.display()),
+    }
     Ok(())
+}
+
+/// What is sitting at the alias path.
+#[cfg(unix)]
+#[derive(Debug, PartialEq)]
+enum AliasState {
+    Missing,
+    SymlinkTo(PathBuf),
+    RealFile,
+}
+
+#[cfg(unix)]
+#[derive(Debug, PartialEq)]
+enum AliasAction {
+    Keep,
+    Link,
+}
+
+/// Pure decision, so the rule that used to be wrong is pinned by a test.
+///
+/// The bug it fixes: a REAL FILE here used to mean "the user's — leave it
+/// alone", but `install.sh` *downloads a real binary to exactly this path*.
+/// So on every machine where install.sh ran, the `parsec` on PATH was frozen
+/// at install time and no plugin update ever refreshed it — the PATH binary
+/// and the plugin binary silently drifted apart. (That is not a hypothetical:
+/// it is how a proxy predating the `/v1/models` route stayed serving.)
+///
+/// `~/.parsec/bin/` is ours regardless of what is in it — `parsec uninstall`
+/// already deletes the whole directory (`purge_data_files`), so treating one
+/// file inside it as sacred was never consistent. A symlink is what belongs
+/// there: the plugin cache path (`~/.claude/plugins/cache/…/parsec`) is
+/// stable across versions, so the link keeps resolving to the current build
+/// on its own.
+#[cfg(unix)]
+fn decide_alias(state: &AliasState, exe: &Path, alias_is_exe: bool) -> AliasAction {
+    if alias_is_exe {
+        return AliasAction::Keep;
+    }
+    match state {
+        AliasState::SymlinkTo(target) if target == exe => AliasAction::Keep,
+        _ => AliasAction::Link,
+    }
 }
 
 /// Windows twin of the alias refresh. There is no symlink to reach for — an
@@ -275,6 +334,41 @@ pub fn remove_if_managed() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stale_real_binary_at_the_alias_path_is_replaced() {
+        let exe = Path::new("/plugins/cache/parsec-marketplace/parsec/bin/parsec");
+
+        // The regression: install.sh downloads a REAL binary to the alias
+        // path. Treating it as "the user's" froze `parsec` on PATH at install
+        // time forever.
+        assert_eq!(
+            decide_alias(&AliasState::RealFile, exe, false),
+            AliasAction::Link
+        );
+        // Nothing there yet — link it.
+        assert_eq!(
+            decide_alias(&AliasState::Missing, exe, false),
+            AliasAction::Link
+        );
+        // Already pointing at this build — leave it alone (idempotent).
+        assert_eq!(
+            decide_alias(&AliasState::SymlinkTo(exe.to_path_buf()), exe, false),
+            AliasAction::Keep
+        );
+        // Pointing at an older build — repoint.
+        assert_eq!(
+            decide_alias(&AliasState::SymlinkTo("/old/parsec".into()), exe, false),
+            AliasAction::Link
+        );
+        // install.sh's own layout: the alias IS the running image. Relinking
+        // would point it at itself.
+        assert_eq!(
+            decide_alias(&AliasState::RealFile, exe, true),
+            AliasAction::Keep
+        );
+    }
 
     #[test]
     fn shim_carries_the_sentinel_and_the_tool_tag() {

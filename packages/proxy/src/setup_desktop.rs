@@ -267,15 +267,20 @@ pub fn print_extension_instructions() {
         return;
     }
     println!(
-        "\n  macOS Network Extension approval — required, once per machine\n\n\
-         \x20 The first time mitmproxy runs in local mode, macOS installs a Network\n\
-         \x20 Extension (\"Mitmproxy Redirector\") that you must approve by hand.\n\
-         \x20 Without it mitmproxy captures ZERO traffic.\n\n\
-         \x20 1. Open System Settings\n\
-         \x20 2. General → Login Items & Extensions\n\
-         \x20 3. Scroll to Network Extensions and click the (i) button\n\
-         \x20 4. Toggle \"Mitmproxy Redirector\" ON\n\
-         \x20 5. Enter your Mac admin password when prompted\n"
+        "{}",
+        crate::brand::panel(
+            "one approval needed",
+            &[
+                "macOS installs a Network Extension (\"Mitmproxy Redirector\") the first \
+                 time mitmproxy runs in local mode, and you must approve it by hand. \
+                 Without it the interceptor captures ZERO traffic.",
+                "1. System Settings → General → Login Items & Extensions",
+                "2. Scroll to Network Extensions, click (i)",
+                "3. Toggle \"Mitmproxy Redirector\" ON",
+                "~Once per machine. The menu-bar app waits for this step instead of \
+                 making you re-run setup: parsec tray install",
+            ],
+        )
     );
 }
 
@@ -284,16 +289,24 @@ pub fn print_extension_instructions() {
 /// this heads it off.
 pub fn print_scope_explainer() {
     println!(
-        "\n  Claude Desktop — what parsec can route\n\n\
-         \x20 Claude Desktop does not expose ANTHROPIC_BASE_URL, so parsec uses\n\
-         \x20 mitmproxy to intercept only the traffic it can actually serve:\n\n\
-         \x20 [routed]     Cowork / Agent mode        — /v1/messages\n\
-         \x20 [routed]     Claude Code inside Desktop — /v1/messages (same as the CLI)\n\
-         \x20 [routed]     Model listing              — /v1/models\n\
-         \x20 [untouched]  Normal chat                — claude.ai webview, not redirectable\n\
-         \x20 [untouched]  Login, Cowork bridge       — /v1/oauth/*, /v1/environments/*\n\n\
-         \x20 Your credentials are never substituted: the addon sets no auth header\n\
-         \x20 and the proxy forwards yours verbatim, exactly as it does for the CLI.\n"
+        "{}",
+        crate::brand::panel(
+            "claude desktop",
+            &[
+                "Desktop exposes no ANTHROPIC_BASE_URL, so parsec intercepts only the \
+                 traffic it can actually serve.",
+                // `^` = verbatim art: these are columns, and the wrapper
+                // would otherwise collapse the padding that aligns them.
+                "^  routed     /v1/messages   Cowork / Agent mode",
+                "^  routed     /v1/messages   Claude Code in Desktop",
+                "^  routed     /v1/models     model listing",
+                "^  passthru   claude.ai      normal chat",
+                "^  passthru   /v1/oauth      login",
+                "^  passthru   /v1/environ…   Cowork bridge",
+                "~Your credentials are never substituted: the addon sets no auth header \
+                 and the proxy forwards yours verbatim, exactly as for the CLI.",
+            ],
+        )
     );
 }
 
@@ -476,6 +489,154 @@ fn write_addon(target: &str) -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+// ── Claude Desktop MCP registration ─────────────────────────────────────────
+
+/// Marks an `mcpServers` entry as parsec-managed. MCP server configs have no
+/// comment field, but they DO carry `env` — so the sentinel rides there,
+/// visible to the user and durable across Desktop rewriting the file.
+const MCP_KEY: &str = "parsec";
+const MCP_SENTINEL: &str = "PARSEC_MANAGED";
+
+/// Claude Desktop's config. Desktop loads MCP servers and nothing else — it
+/// has no plugin system — so this is the only surface through which parsec's
+/// tools can reach a Cowork session.
+pub fn desktop_config_path() -> PathBuf {
+    if cfg!(target_os = "windows") {
+        std::env::var("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| crate::setup::home_dir().join("AppData").join("Roaming"))
+            .join("Claude")
+            .join("claude_desktop_config.json")
+    } else {
+        crate::setup::home_dir()
+            .join("Library")
+            .join("Application Support")
+            .join("Claude")
+            .join("claude_desktop_config.json")
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum McpOutcome {
+    /// Written (fresh, or refreshed because the binary path moved).
+    Added,
+    /// Already ours and already correct.
+    Current,
+    /// An `mcpServers.parsec` we did not write — the user's, left alone.
+    Foreign,
+}
+
+/// The server entry. `command` is the ABSOLUTE alias path, never a bare
+/// `parsec`: Claude Desktop is a GUI app launched by the window server and
+/// inherits no shell PATH, so a bare name resolves to nothing.
+fn mcp_entry(command: &str) -> serde_json::Value {
+    serde_json::json!({
+        "command": command,
+        "args": ["mcp"],
+        "env": { MCP_SENTINEL: "1" },
+    })
+}
+
+/// Additive merge, pure for tests. The user's own keys are never touched and
+/// a foreign `parsec` entry is reported rather than clobbered — the same
+/// ownership discipline as `setup::merge_settings` and the opencode shim.
+///
+/// `serde_json`'s `preserve_order` (workspace-wide) is what keeps the rest of
+/// the user's config in its original key order through the round-trip.
+fn merge_mcp(
+    mut root: serde_json::Value,
+    command: &str,
+) -> anyhow::Result<(serde_json::Value, McpOutcome)> {
+    if root.is_null() {
+        root = serde_json::json!({});
+    }
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("claude_desktop_config.json root is not a JSON object"))?;
+    let servers = obj
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    let servers = servers
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("`mcpServers` is not a JSON object"))?;
+    let wanted = mcp_entry(command);
+    let outcome = match servers.get(MCP_KEY) {
+        None => {
+            servers.insert(MCP_KEY.into(), wanted);
+            McpOutcome::Added
+        }
+        Some(cur) if cur == &wanted => McpOutcome::Current,
+        // Ours, but stale — the alias path moved. Refresh it.
+        Some(cur) if cur.pointer(&format!("/env/{MCP_SENTINEL}")).is_some() => {
+            servers.insert(MCP_KEY.into(), wanted);
+            McpOutcome::Added
+        }
+        Some(_) => McpOutcome::Foreign,
+    };
+    Ok((root, outcome))
+}
+
+/// Remove exactly what we wrote. A foreign entry survives untouched.
+fn remove_mcp(mut root: serde_json::Value) -> (serde_json::Value, bool) {
+    let removed = root
+        .get_mut("mcpServers")
+        .and_then(|s| s.as_object_mut())
+        .is_some_and(|servers| {
+            let ours = servers
+                .get(MCP_KEY)
+                .and_then(|e| e.pointer(&format!("/env/{MCP_SENTINEL}")))
+                .is_some();
+            ours && servers.remove(MCP_KEY).is_some()
+        });
+    (root, removed)
+}
+
+fn read_desktop_config() -> anyhow::Result<serde_json::Value> {
+    match std::fs::read_to_string(desktop_config_path()) {
+        Ok(s) if s.trim().is_empty() => Ok(serde_json::json!({})),
+        Ok(s) => serde_json::from_str(&s)
+            .map_err(|e| anyhow::anyhow!("cannot parse {}: {e}", desktop_config_path().display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn write_desktop_config(root: &serde_json::Value) -> anyhow::Result<()> {
+    let path = desktop_config_path();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    // One-time backup before we ever modify a file holding the user's own
+    // Desktop preferences. Never overwritten, so it always holds the
+    // pre-parsec state rather than the last thing we wrote.
+    let backup = path.with_extension("json.parsec-backup");
+    if path.exists() && !backup.exists() {
+        let _ = std::fs::copy(&path, &backup);
+    }
+    let tmp = path.with_extension("json.parsec-tmp");
+    std::fs::write(&tmp, format!("{}\n", serde_json::to_string_pretty(root)?))?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
+/// Register `parsec mcp` with Claude Desktop so Cowork gets the scout tools.
+pub fn register_mcp() -> anyhow::Result<McpOutcome> {
+    let command = crate::setup_opencode::bin_alias_path();
+    let (root, outcome) = merge_mcp(read_desktop_config()?, &command.display().to_string())?;
+    if outcome != McpOutcome::Current {
+        write_desktop_config(&root)?;
+    }
+    Ok(outcome)
+}
+
+pub fn unregister_mcp() -> bool {
+    let Ok(root) = read_desktop_config() else {
+        return false;
+    };
+    let (root, removed) = remove_mcp(root);
+    removed && write_desktop_config(&root).is_ok()
 }
 
 // ── interceptor process lifecycle ───────────────────────────────────────────
@@ -1122,6 +1283,23 @@ pub fn setup(opts: Options) -> anyhow::Result<()> {
     //      run it. Shared with `parsec desktop start` so the two entry points
     //      cannot drift.
     println!("\naddon → {}", addon_path().display());
+
+    // Interception routes Desktop's TRAFFIC; this gives a Cowork session
+    // parsec's TOOLS. Separate mechanisms, both part of "set up Desktop".
+    match register_mcp() {
+        Ok(McpOutcome::Added) => println!(
+            "registered parsec's tools with Claude Desktop ({})",
+            desktop_config_path().display()
+        ),
+        Ok(McpOutcome::Current) => {
+            println!("parsec's tools already registered with Claude Desktop")
+        }
+        Ok(McpOutcome::Foreign) => println!(
+            "an `mcpServers.parsec` entry already exists in {} and is not ours — left alone",
+            desktop_config_path().display()
+        ),
+        Err(e) => println!("could not register parsec's tools with Claude Desktop ({e})"),
+    }
     // Provisioning restarts the proxy so the addon and the route table it was
     // rendered against belong to the same build.
     run_start(opts.autostart, true)
@@ -1221,6 +1399,7 @@ pub fn disable() -> anyhow::Result<()> {
     let was_running = stop();
     let had_service = uninstall_service();
     let addon_removed = remove_addon_if_managed();
+    let mcp_removed = unregister_mcp();
     let _ = std::fs::remove_file(state_file());
 
     println!(
@@ -1239,6 +1418,14 @@ pub fn disable() -> anyhow::Result<()> {
         "addon: {}",
         if addon_removed {
             "removed"
+        } else {
+            "none of ours to remove"
+        }
+    );
+    println!(
+        "Claude Desktop tools: {}",
+        if mcp_removed {
+            "unregistered"
         } else {
             "none of ours to remove"
         }
@@ -1267,8 +1454,9 @@ pub fn remove_if_managed() {
     let stopped = stop();
     let service = uninstall_service();
     let addon = remove_addon_if_managed();
+    let mcp = unregister_mcp();
     let _ = std::fs::remove_file(state_file());
-    if stopped || service || addon {
+    if stopped || service || addon || mcp {
         println!(
             "stopped the Claude Desktop interceptor. If you trusted mitmproxy's CA for it, \
              remove that separately: {}",
@@ -1280,6 +1468,84 @@ pub fn remove_if_managed() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_merge_is_additive_and_never_clobbers_the_users_config() {
+        use serde_json::json;
+        // A real Desktop config: the user's own keys must survive untouched,
+        // and in order (serde_json preserve_order).
+        let user = json!({
+            "coworkUserFilesPath": "/Users/x/Claude",
+            "preferences": { "sidebarMode": "chat" }
+        });
+        let (out, o) = merge_mcp(user, "/Users/x/.parsec/bin/parsec").unwrap();
+        assert_eq!(o, McpOutcome::Added);
+        assert_eq!(out["coworkUserFilesPath"], "/Users/x/Claude");
+        assert_eq!(out["preferences"]["sidebarMode"], "chat");
+        assert_eq!(
+            out["mcpServers"]["parsec"]["command"],
+            "/Users/x/.parsec/bin/parsec"
+        );
+        assert_eq!(out["mcpServers"]["parsec"]["args"], json!(["mcp"]));
+
+        // Idempotent.
+        let (again, o) = merge_mcp(out.clone(), "/Users/x/.parsec/bin/parsec").unwrap();
+        assert_eq!(o, McpOutcome::Current);
+        assert_eq!(again, out);
+
+        // A moved alias path refreshes rather than duplicating.
+        let (moved, o) = merge_mcp(out, "/opt/parsec/bin/parsec").unwrap();
+        assert_eq!(o, McpOutcome::Added);
+        assert_eq!(
+            moved["mcpServers"]["parsec"]["command"],
+            "/opt/parsec/bin/parsec"
+        );
+
+        // Someone else's `parsec` server is theirs — report, never overwrite.
+        let foreign = json!({"mcpServers": {"parsec": {"command": "/their/own/thing"}}});
+        let (kept, o) = merge_mcp(foreign, "/Users/x/.parsec/bin/parsec").unwrap();
+        assert_eq!(o, McpOutcome::Foreign);
+        assert_eq!(kept["mcpServers"]["parsec"]["command"], "/their/own/thing");
+
+        // Other MCP servers are neighbours, not casualties.
+        let neighbours = json!({"mcpServers": {"github": {"command": "gh-mcp"}}});
+        let (with_both, _) = merge_mcp(neighbours, "/p").unwrap();
+        assert_eq!(with_both["mcpServers"]["github"]["command"], "gh-mcp");
+        assert_eq!(with_both["mcpServers"]["parsec"]["command"], "/p");
+    }
+
+    #[test]
+    fn mcp_removal_takes_only_our_entry() {
+        use serde_json::json;
+        let (root, _) = merge_mcp(
+            json!({"mcpServers": {"github": {"command": "gh-mcp"}}}),
+            "/p",
+        )
+        .unwrap();
+        let (cleaned, removed) = remove_mcp(root);
+        assert!(removed);
+        assert!(cleaned["mcpServers"].get("parsec").is_none());
+        assert_eq!(cleaned["mcpServers"]["github"]["command"], "gh-mcp");
+
+        // A parsec entry we did not write is not ours to delete.
+        let foreign = json!({"mcpServers": {"parsec": {"command": "/their/own/thing"}}});
+        let (kept, removed) = remove_mcp(foreign);
+        assert!(!removed);
+        assert_eq!(kept["mcpServers"]["parsec"]["command"], "/their/own/thing");
+
+        // Nothing registered at all is not an error.
+        let (_, removed) = remove_mcp(json!({"preferences": {}}));
+        assert!(!removed);
+    }
+
+    #[test]
+    fn mcp_command_is_absolute_because_desktop_has_no_shell_path() {
+        // Claude Desktop is launched by the window server and inherits no
+        // shell environment; a bare `parsec` would resolve to nothing.
+        let e = mcp_entry("/Users/x/.parsec/bin/parsec");
+        assert!(e["command"].as_str().unwrap().starts_with('/'));
+        assert_eq!(e["env"][MCP_SENTINEL], "1");
+    }
 
     #[test]
     fn embedded_addon_carries_the_sentinel() {

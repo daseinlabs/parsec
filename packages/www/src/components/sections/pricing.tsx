@@ -38,13 +38,13 @@ const TIERS: Tier[] = [
   },
   {
     name: "Enterprise",
-    stack: "Self-host",
+    stack: "Deployed in your cloud",
     price: "Talk to us",
     contact: true,
     points: [
-      "Licensed checkpoints",
-      "Containerized stack",
-      "On-prem fine-tuning on your traces",
+      "The whole stack — scoring API included — runs in your VPC",
+      "Licensed checkpoints, containerized",
+      "Fine-tuning on your traces, without them leaving your network",
     ],
   },
 ];

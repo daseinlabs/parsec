@@ -9,7 +9,7 @@ export const FAQ_ITEMS: { q: string; a: string }[] = [
   },
   {
     q: "Does my code go to your servers?",
-    a: "On the Pro tier, the local proxy sends chunk text and structural features to our scoring API over TLS and gets keep/cut scores back — your model requests never route through us; they leave your machine with your own credentials. On the free tier, tokens are sent to us but never stored. The one exception is the hosted Team gateway, where you explicitly choose to run the proxy in our cloud with a BYOK API key.",
+    a: "On the Pro tier, the local proxy sends chunk text and structural features to our scoring API over TLS and gets keep/cut scores back — your model requests never route through us; they leave your machine with your own credentials. On the free tier, tokens are sent to us but never stored. The one exception is the hosted Team gateway, where you explicitly choose to run the proxy in our cloud with a BYOK API key. On Enterprise the direction reverses: the scoring API is deployed inside your own cloud, so no chunk text reaches us at all.",
   },
   {
     q: "Can I use my Claude subscription (Max plan) or ChatGPT plan?",
