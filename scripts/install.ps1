@@ -7,6 +7,9 @@
 # (`claude plugin install parsec@parsec-marketplace`); codex/opencode get
 # the win-x64 parsec binary downloaded to %USERPROFILE%\.parsec\bin\
 # parsec.exe (added to the user PATH) followed by `parsec setup <tool>`.
+# The app-local VC++ CRT DLLs are downloaded beside it -- the loader only
+# searches next to the exe. Pass -Tray to also install the tray app
+# (notification area + taskbar, HKCU Run entry, no admin).
 # Nothing is written outside ~\.parsec and the tools' own config dirs; no
 # admin rights needed. Undo: `parsec disable codex|opencode`,
 # `claude plugin uninstall parsec`.
@@ -25,7 +28,11 @@
 # always ship from the same commit.
 param(
     [string[]]$Tools = @(),
-    [switch]$Byok
+    [switch]$Byok,
+    # Install the tray app (notification area + taskbar) and register it to
+    # start at sign-in. Opt-in: a login item is a persistent, visible addition
+    # to someone's machine and should not appear because they installed a CLI.
+    [switch]$Tray
 )
 $ErrorActionPreference = "Stop"
 # PowerShell 5.1 defaults to TLS 1.0 -- GitHub requires 1.2+.
@@ -92,7 +99,8 @@ if ($Byok -and ("codex" -notin $Tools)) {
 # -- platform binary (codex/opencode only -- the Claude Code plugin ships its
 #    own) --------------------------------------------------------------------
 $dest = Join-Path $env:USERPROFILE ".parsec\bin\parsec.exe"
-if (($Tools -contains "codex") -or ($Tools -contains "opencode")) {
+$needsBinary = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or $Tray
+if ($needsBinary) {
     if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
         Write-Error "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (only win-x64 today; ARM64 Windows: use WSL or the Claude Code plugin)"
     }
@@ -103,6 +111,23 @@ if (($Tools -contains "codex") -or ($Tools -contains "opencode")) {
     try {
         Write-Host "downloading parsec (win-x64)..."
         Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/parsec.exe" -OutFile $tmp -UseBasicParsing
+        # App-local VC++ CRT. parsec.exe imports msvcp140/vcruntime140, which
+        # are absent on a clean Windows box; the loader only searches NEXT TO
+        # the exe, so these must land in the same directory or the process
+        # dies before main() with 0xC0000135 and no stderr. release.yml ships
+        # them beside the exe for exactly this reason -- downloading the exe
+        # alone reproduced the bug the bundling exists to prevent.
+        foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            try {
+                Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/$dll" `
+                    -OutFile (Join-Path $destDir $dll) -UseBasicParsing
+            }
+            catch {
+                # A release that no longer needs the CRT will not publish them;
+                # the --version check below is the real gate either way.
+                Write-Host "(no $dll published - continuing)"
+            }
+        }
         & $tmp --version | Out-Null # refuse to install a binary that cannot run
         if ($LASTEXITCODE -ne 0) { throw "downloaded binary failed --version" }
         # Windows locks a running exe -- stop an old proxy BEFORE the swap.
@@ -160,11 +185,24 @@ foreach ($t in $Tools) {
     }
 }
 
+# -- tray app (opt-in) --------------------------------------------------------
+if ($Tray) {
+    Write-Host ""
+    Write-Host "-- setting up the tray app --"
+    # `tray install` copies nothing on Windows: it writes a hidden-window
+    # launcher and a HKCU Run entry pointing at the alias below. No admin.
+    & $dest tray install
+    if ($LASTEXITCODE -ne 0) { Write-Warning 'tray install failed - run: parsec tray install' }
+}
+
 Write-Host ""
-if (($Tools -contains "codex") -or ($Tools -contains "opencode")) {
+if ($needsBinary) {
     Write-Host ("installed {0} at {1}" -f (& $dest --version), $dest)
+}
+if (-not $Tray) {
+    Write-Host "tray app (notification area + taskbar, starts at sign-in): parsec tray install"
 }
 if ($Tools -contains "claude") { Write-Host "claude: restart Claude Code (or start a new session) - setup runs automatically." }
 if ($Tools -contains "codex") { Write-Host "codex: start (or restart) codex - every session routes through parsec; type `$ and pick parsec-savings." }
 if ($Tools -contains "opencode") { Write-Host "opencode: restart opencode to activate (Anthropic API-key providers only); /parsec-savings shows the ledger." }
-Write-Host "undo: parsec disable codex|opencode - claude plugin uninstall parsec"
+Write-Host "undo: parsec disable codex|opencode - parsec tray uninstall - claude plugin uninstall parsec"
