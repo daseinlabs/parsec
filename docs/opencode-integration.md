@@ -63,8 +63,25 @@
   tracking, removed with the plugin.
 - `parsec share` CLI subcommand — until it exists, neither Claude Code's
   share skill nor an opencode `/parsec-share` command has anything to call.
-- Per-tool savings split in `parsec savings` / statusline / dashboard (rows
-  carry `tool` now; nothing reads it yet).
+- ~~Per-tool savings split in `parsec savings`~~ shipped 2026-08-24:
+  `aggregate_ledger` now carries `by_tool` and the report prints a "by tool"
+  section whenever more than one harness appears in the ledger, or a harness
+  minted rows with no counterfactual (codex/Responses) — those read as
+  "unmeasured", never as zero savings. Untagged rows attribute to
+  `claude-code`, per the contract. **Statusline and dashboard still blend
+  the harnesses** — the statusline is Claude-Code-only anyway, but the
+  platform's rollup should split before per-tool numbers are shown there.
+- Shim/installer Windows agreement (fixed 2026-08-24): the shim probed
+  `~/.parsec/bin/parsec` with no `.exe` and `refresh_bin_alias` was
+  `#[cfg(unix)]`, so on Windows a plugin-based install left the probe path
+  empty — `findParsecBin()` returned null, the `/parsec-*` commands never
+  registered, and the shim could not run `parsec up`. The shim now uses a
+  platform `BIN_NAME`, the installer writes a copied alias on Windows (no
+  unprivileged symlink), and `shim_probes_the_platform_binary_name` locks
+  the two together. `setup_codex.rs` dropped its `#[cfg(unix)]` gate on the
+  same call 2026-08-24 — it had the identical defect, and worse, since its
+  skills AND its proxy-reviving SessionStart hook both name
+  `%USERPROFILE%\.parsec\bin\parsec.exe` unconditionally.
 - ~~Supervisor stripped `x-parsec-tool` on the worker hop, so routed opencode
   requests lost their ledger attribution~~ fixed 2026-08-11 (`worker_headers`
   in supervisor.rs, found during the codex passthrough work — the tag now

@@ -32,6 +32,51 @@ struct Cli {
     command: Command,
 }
 
+/// `parsec tray …` — the menu-bar app. Split install/run the way the Desktop
+/// interceptor is: `install` provisions and registers the login item, `run`
+/// is what launchd actually invokes.
+#[derive(Subcommand)]
+enum TrayAction {
+    /// Generate the .app bundle, register it as a login item, start it.
+    Install,
+    /// Unregister the login item and delete the bundle.
+    Uninstall,
+    /// Report what is installed. Changes nothing.
+    Status,
+    /// Run the menu-bar app in the foreground. Normally invoked by the login
+    /// item rather than by hand.
+    #[command(hide = true)]
+    Run,
+}
+
+/// `parsec desktop …` — run the Claude Desktop interceptor that `parsec setup
+/// desktop` provisioned. Split from `setup` for the same reason CC-Router
+/// splits `client start-desktop` from `client connect`: starting and stopping
+/// must not re-run the CA prompt or the approval walkthrough.
+#[derive(Subcommand)]
+enum DesktopAction {
+    /// Start intercepting (refreshes the addon first, so a moved proxy port
+    /// or an upgraded addon is picked up without re-running setup).
+    Start {
+        /// Install the boot service instead of a login-scoped process, so
+        /// interception survives a reboot.
+        #[arg(long)]
+        autostart: bool,
+    },
+    /// Stop intercepting.
+    Stop {
+        /// Stop the running interceptor but leave the boot service in place,
+        /// so it returns at the next login.
+        #[arg(long)]
+        keep_autostart: bool,
+    },
+    /// Stop and start — the way to pick up a changed routed port.
+    Restart,
+    /// Report configured / running / auto-start / approval state. Changes
+    /// nothing.
+    Status,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Stdio MCP server: codescout exploration maps, search.
@@ -60,8 +105,8 @@ enum Command {
     Savings,
     /// One-time activation. `claude` (or no TOOL): write Claude Code routing
     /// env and start the proxy; runs automatically on first session. With
-    /// another TOOL (`parsec setup opencode|codex`): install that tool's
-    /// shim instead.
+    /// another TOOL (`parsec setup opencode|codex|desktop`): install that
+    /// tool's shim instead.
     Setup {
         /// Hook-spawned first-run mode: respects terminal states (disable,
         /// unsupported) and never races a live download. Manual runs retry.
@@ -71,16 +116,47 @@ enum Command {
         /// default ChatGPT-subscription routing.
         #[arg(long)]
         byok: bool,
-        /// Tool to set up: `claude` | `opencode` | `codex` (default: claude).
+        /// desktop only: trust mitmproxy's CA without a further prompt
+        /// (runs the platform trust-store command; you will be asked to
+        /// authenticate). Off by default — a machine-wide root CA is the
+        /// user's call, so we print the command instead.
+        #[arg(long)]
+        install_ca: bool,
+        /// desktop only: install the interceptor as a boot service
+        /// (launchd / systemd --user / Run key) so Desktop stays routed
+        /// across reboots, instead of running it for this login only.
+        #[arg(long)]
+        autostart: bool,
+        /// desktop only: report readiness (mitmproxy, CA, extension
+        /// approval, interceptor, target) and change nothing.
+        #[arg(long)]
+        status: bool,
+        /// Tool to set up: `claude` | `opencode` | `codex` | `desktop`
+        /// (default: claude).
         tool: Option<String>,
     },
     /// Undo setup. `claude` (or no TOOL): remove the parsec-managed env keys
     /// from Claude Code settings and stop auto-setup from re-running. With
-    /// another TOOL (`parsec disable opencode|codex`): remove that tool's
-    /// managed artifacts.
+    /// another TOOL (`parsec disable opencode|codex|desktop`): remove that
+    /// tool's managed artifacts.
     Disable {
-        /// Tool to disable: `claude` | `opencode` | `codex` (default: claude).
+        /// Tool to disable: `claude` | `opencode` | `codex` | `desktop`
+        /// (default: claude).
         tool: Option<String>,
+    },
+    /// Run the Claude Desktop interceptor provisioned by `parsec setup
+    /// desktop` (start/stop/restart/status). Opt-in; see
+    /// docs/claude-desktop-integration.md.
+    Desktop {
+        #[command(subcommand)]
+        action: DesktopAction,
+    },
+    /// Menu-bar app (macOS): live proxy/Desktop/savings status, and the
+    /// guided Claude Desktop setup that waits for the System Settings
+    /// approval instead of making you re-run the command.
+    Tray {
+        #[command(subcommand)]
+        action: TrayAction,
     },
     /// Full local cleanup ahead of `claude plugin uninstall`: disable, stop
     /// the proxy, and delete downloaded models/logs/ledger.
@@ -93,6 +169,12 @@ enum Command {
         /// Foreign processes on the port are never killed.
         #[arg(long)]
         restart: bool,
+        /// Called from a harness SessionStart hook. Prints a staged Codex
+        /// trim (/parsec:trim) to stdout, which Codex surfaces to the model
+        /// as a developer message — the injection channel Claude Code gets
+        /// through the hook's additionalContext field.
+        #[arg(long)]
+        session_start: bool,
     },
     /// Set/show/clear the per-account API key the proxy reports savings with
     /// (from the dashboard). Stored in ~/.parsec/credentials.json.
@@ -102,11 +184,12 @@ enum Command {
     },
     /// Stage a det+dir compaction of the current session (/parsec:trim):
     /// compute the deterministic needed-set trim of the transcript and stage
-    /// it under ~/.parsec/trim/; the SessionStart hook injects it after
-    /// /clear. Exit 2: session too short / no transcript.
+    /// it under ~/.parsec/trim/; the SessionStart hook (Claude Code) or
+    /// `parsec up` (Codex) injects it into the next session.
+    /// Exit 2: session too short / no transcript.
     Trim {
-        /// Session transcript JSONL (default: newest for cwd under
-        /// ~/.claude/projects).
+        /// Session transcript JSONL (default: the freshest transcript for
+        /// cwd, under ~/.claude/projects or ~/.codex/sessions).
         #[arg(long)]
         transcript: Option<std::path::PathBuf>,
         /// Session id recorded in the staged payload (informational).
@@ -126,6 +209,10 @@ enum Command {
         /// payload ready for injection.
         #[arg(long)]
         finalize: bool,
+        /// Which harness's transcript to trim: auto (default — the freshest
+        /// of the two for this directory), claude, or codex.
+        #[arg(long)]
+        tool: Option<String>,
         /// Trim aggressiveness: 1 (low trimming, keep more) to 5 (very high).
         /// Default 3 — the measured, parity-locked configuration; other
         /// levels are unmeasured presets. Env fallback: PARSEC_TRIM_LEVEL.
@@ -172,9 +259,21 @@ fn main() -> anyhow::Result<()> {
         Command::Statusline => parsec_proxy::statusline::run(),
         Command::SubagentStatusline => parsec_proxy::statusline::subagent_statusline(),
         Command::Savings => parsec_proxy::statusline::savings_report(),
-        Command::Setup { auto, byok, tool } => {
+        Command::Setup {
+            auto,
+            byok,
+            install_ca,
+            autostart,
+            status,
+            tool,
+        } => {
             if byok && tool.as_deref() != Some("codex") {
                 anyhow::bail!("--byok only applies to `parsec setup codex`");
+            }
+            if (install_ca || autostart || status) && tool.as_deref() != Some("desktop") {
+                anyhow::bail!(
+                    "--install-ca / --autostart / --status only apply to `parsec setup desktop`"
+                );
             }
             match tool.as_deref() {
                 None | Some("claude") => parsec_proxy::setup::run(auto),
@@ -184,17 +283,46 @@ fn main() -> anyhow::Result<()> {
                 } else {
                     parsec_proxy::setup_codex::Mode::Subscription
                 }),
-                Some(t) => anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex"),
+                Some("desktop") => {
+                    parsec_proxy::setup_desktop::setup(parsec_proxy::setup_desktop::Options {
+                        install_ca,
+                        autostart,
+                        status_only: status,
+                    })
+                }
+                Some(t) => anyhow::bail!(
+                    "unknown tool '{t}' — supported: claude, opencode, codex, desktop"
+                ),
             }
         }
         Command::Disable { tool } => match tool.as_deref() {
             None | Some("claude") => parsec_proxy::setup::disable(),
             Some("opencode") => parsec_proxy::setup_opencode::disable(),
             Some("codex") => parsec_proxy::setup_codex::disable(),
-            Some(t) => anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex"),
+            Some("desktop") => parsec_proxy::setup_desktop::disable(),
+            Some(t) => {
+                anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex, desktop")
+            }
         },
+        Command::Desktop { action } => match action {
+            DesktopAction::Start { autostart } => parsec_proxy::setup_desktop::start(autostart),
+            DesktopAction::Stop { keep_autostart } => {
+                parsec_proxy::setup_desktop::stop_cmd(keep_autostart)
+            }
+            DesktopAction::Restart => parsec_proxy::setup_desktop::restart(),
+            DesktopAction::Status => parsec_proxy::setup_desktop::status(),
+        },
+        Command::Tray { action } => parsec_proxy::tray::run(match action {
+            TrayAction::Install => parsec_proxy::tray::Action::Install,
+            TrayAction::Uninstall => parsec_proxy::tray::Action::Uninstall,
+            TrayAction::Status => parsec_proxy::tray::Action::Status,
+            TrayAction::Run => parsec_proxy::tray::Action::Run,
+        }),
         Command::Uninstall => parsec_proxy::setup::uninstall(),
-        Command::Up { restart } => parsec_proxy::setup::up(restart),
+        Command::Up {
+            restart,
+            session_start,
+        } => parsec_proxy::setup::up(restart, session_start),
         Command::Trim {
             transcript,
             session_id,
@@ -203,6 +331,7 @@ fn main() -> anyhow::Result<()> {
             json,
             finalize,
             level,
+            tool,
         } => parsec_proxy::trim::run(parsec_proxy::trim::TrimArgs {
             transcript,
             session_id,
@@ -211,6 +340,7 @@ fn main() -> anyhow::Result<()> {
             json,
             finalize,
             level,
+            tool,
         }),
         Command::Key { action } => match action {
             KeyAction::Set { key, platform_url } => parsec_proxy::setup::key_set(key, platform_url),

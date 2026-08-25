@@ -28,4 +28,27 @@ reqwest.workspace = true
 futures-util.workspace = true
 zstd = "0.13.3"
 flate2 = "1.1.9"
+tiktoken-rs = { version = "0.12.0", default-features = false }
 # planned: rmcp (MCP) — added with the port
+
+# Tray app (`parsec tray`) — macOS menu bar + Dock, Windows notification area
+# + taskbar. Target-scoped so a Linux build of the same binary carries none of
+# it: the tray is a role of the ONE parsec binary (DIRECTION §7b), not a second
+# artifact to sign and ship.
+#
+# This cfg MUST match the `#[cfg(any(target_os = "macos", windows))]` on
+# `mod tray::app` — they were out of step once (deps macOS-only, module built
+# for both) and the Windows build failed on unresolved crates while macOS
+# stayed green, which is exactly the failure a cross-platform matrix exists
+# to catch.
+#
+# winit rather than hand-rolled AppKit/Win32 plumbing: its `WaitUntil` control
+# flow is what lets the menu refresh on the MAIN thread, which AppKit requires
+# and Win32 message queues assume.
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+tray-icon = "0.19"
+winit = "0.30"
+# Decodes the embedded brand mark to the RGBA buffer tray-icon wants. The
+# `image` crate would pull a dozen codecs we will never use; the brand assets
+# are PNG and stay PNG.
+png = "0.17"

@@ -1,188 +1,219 @@
 {
- "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://daseinlabs.dev/contracts/savings-ledger/v0",
- "title": "savings-ledger — one row per request (draft v0)",
- "description": "DIRECTION.md §4.3 + §8.4 measurement honesty: the free count_tokens probe on the original body vs actually-billed usage, in the same row. Simultaneously the billing basis (Team), the upsell proof (Free→Pro), and the trust artifact (Enterprise).",
- "type": "object",
- "additionalProperties": false,
- "required": [
-  "contract_version",
-  "request_id",
-  "ts",
-  "counterfactual_input_tokens",
-  "billed_input_tokens",
-  "billed_output_tokens",
-  "billed_cache_read_tokens",
-  "billed_cache_write_tokens",
-  "cachePrefixSha8",
-  "fail_open",
-  "conv_id"
- ],
- "properties": {
-  "contract_version": {
-   "const": "savings-ledger/v0"
-  },
-  "request_id": {
-   "type": "string",
-   "pattern": "^req_[0-9a-f]{32}$"
-  },
-  "ts": {
-   "type": "string",
-   "format": "date-time"
-  },
-  "counterfactual_input_tokens": {
-   "type": [
-    "integer",
-    "null"
-   ],
-   "minimum": 0,
-   "description": "count_tokens probe on the ORIGINAL (uncurated) request body — the only permitted baseline (§8.4). null = probe failed; never estimated."
-  },
-  "billed_input_tokens": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Actually-billed uncached input tokens from the upstream usage block."
-  },
-  "billed_output_tokens": {
-   "type": "integer",
-   "minimum": 0
-  },
-  "billed_cache_read_tokens": {
-   "type": "integer",
-   "minimum": 0
-  },
-  "billed_cache_write_tokens": {
-   "type": "integer",
-   "minimum": 0
-  },
-  "cachePrefixSha8": {
-   "type": "string",
-   "pattern": "^[0-9a-f]{8}$",
-   "description": "Cache-bust attribution (§4.3, adopted from pxpipe): hash of the served conversation prefix."
-  },
-  "fail_open": {
-   "type": "boolean",
-   "description": "True when this request was served passthrough after an error (§8.3)."
-  },
-  "conv_id": {
-   "type": "string",
-   "maxLength": 128,
-   "description": "Proxy conversation identity (hash-derived; no raw content)."
-  },
-  "model": {
-   "type": "string",
-   "maxLength": 128,
-   "description": "The request's model id (a harness identifier, not content) — enables per-model reporting and honest dollarization via a price table (packages/bench pricing owns prices; the ledger stays token-denominated per §8.4)."
-  },
-  "session_id": {
-   "type": "string",
-   "pattern": "^[0-9a-fA-F-]{1,64}$",
-   "description": "Client harness session identity (Claude Code metadata.user_id session_id — an id, never content; the pattern is the contract-level guarantee). Groups requests across the conv_ids one session mints via compaction and subagents. Absent when the client sends no parseable session metadata."
-  },
-  "tool": {
-   "type": "string",
-   "pattern": "^[a-z0-9-]{1,32}$",
-   "description": "Calling-tool attribution (e.g. 'opencode'), from the x-parsec-tool header a non-Claude-Code shim sets on its requests to the local proxy. The pattern is the contract-level guarantee that this path cannot carry raw text. Absent = Claude Code (the pre-multi-tool default)."
-  },
-  "checkpoint_id": {
-   "type": "string",
-   "pattern": "^[0-9a-f]{64}$",
-   "description": "sha256 of the brain checkpoint bundle that scored this request (capture seam: served-cut provenance). Absent on passthrough-only requests."
-  },
-  "brain_ms": {
-   "type": "number",
-   "minimum": 0,
-   "description": "Wall time spent in brain scoring calls this request."
-  },
-  "scorer_fail_opens": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Birth steps left undecided this request because the scorer errored (§8.3 — counted, retried on a later call, never guessed)."
-  },
-  "freeze_cut_tokens": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Estimated token mass of chunks the freezer dropped across the conversation so far (internal-view chars/4 units, NOT billed tokens — savings claims come only from the counterfactual)."
-  },
-  "tools_total": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Tool schemas on the inbound request (pre-prune roster size; capture seam TRAINING_CAPTURE_GAPS #1)."
-  },
-  "tools_kept": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Tool schemas actually forwarded after the frozen keep-set filter."
-  },
-  "tools_pre_prune_sha8": {
-   "type": "string",
-   "pattern": "^[0-9a-f]{8}$",
-   "description": "Hash of the pre-prune roster (sorted names) — joins served traffic back to the full-roster identity without storing schemas."
-  },
-  "tools_unfrozen": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Pruned tools re-added to the keep-set THIS request because the prefix called them (reactive unfreeze) — present only on the request that unfroze them."
-  },
-  "tools_stubbed": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Pruned tools served as name+note stubs instead of hard-dropped (PARSEC_TOOL_STUB on) — present only when the stub path ran."
-  },
-  "curator_insists": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Insist-valve fires this request: the agent re-asked for content the curator had cut and the valve served it full — the per-request over-cut (regret) signal."
-  },
-  "governor_mode": {
-   "enum": [
-    "advise",
-    "on"
-   ],
-   "description": "Governor seams (all gov_* fields + nbr_cost_median) are present only when PARSEC_GOVERNOR != off; pre-governor rows stay schema-identical. 'advise' = signals recorded, wire untouched; 'on' = directives may be injected."
-  },
-  "gov_runaway_factor": {
-   "type": "number",
-   "minimum": 0,
-   "description": "billed input-side cumulative tokens / neighbour-cost median (rounded to 3 decimals); 0 = no opinion (hoods inert/unfetched)."
-  },
-  "gov_loop_frac": {
-   "type": "number",
-   "minimum": 0,
-   "maximum": 1,
-   "description": "Latest loop_fracs value (rounded to 3 decimals); 0 when fewer than 6 commands exist (the reference gate)."
-  },
-  "gov_doom_q": {
-   "type": "integer",
-   "minimum": 0,
-   "maximum": 1000000,
-   "description": "Doom-head sigmoid on the 1e-6 grid for this request's trace scoring; absent when the doom head was not scored this request."
-  },
-  "gov_n_src": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Distinct non-test source files the agent's own actions edited (the BANK do-no-harm signal)."
-  },
-  "gov_cum_tok": {
-   "type": "number",
-   "minimum": 0,
-   "description": "Char-derived double-cumsum context tokens (governor._budget_features port, rounded to integer) — NOT billed tokens."
-  },
-  "gov_rule_fires": {
-   "type": "integer",
-   "minimum": 0,
-   "description": "Rule fires delivered (or, in advise mode, recorded) this turn after the (eid, fire_step) dedupe."
-  },
-  "gov_directive_injected": {
-   "type": "boolean",
-   "description": "True when a governor directive turn was actually appended to the served body this request (always false in advise mode)."
-  },
-  "nbr_cost_median": {
-   "type": [
-    "number",
-    "null"
-   ],
-   "description": "Neighbour-cost median from /v1/neighbors (billed-input-token denominated), cached per conversation; null = fetched but hoods inert (<4 cost-bearing neighbours). Absent until fetched."
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://daseinlabs.dev/contracts/savings-ledger/v0",
+  "title": "savings-ledger — one row per request (draft v0)",
+  "description": "DIRECTION.md §4.3 + §8.4 measurement honesty: the free count_tokens probe on the original body vs actually-billed usage, in the same row. Simultaneously the billing basis (Team), the upsell proof (Free→Pro), and the trust artifact (Enterprise).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "ts",
+    "counterfactual_input_tokens",
+    "billed_input_tokens",
+    "billed_output_tokens",
+    "billed_cache_read_tokens",
+    "billed_cache_write_tokens",
+    "cachePrefixSha8",
+    "fail_open",
+    "conv_id"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "savings-ledger/v0"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^req_[0-9a-f]{32}$"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "counterfactual_input_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "count_tokens probe on the ORIGINAL (uncurated) request body — the only permitted baseline (§8.4). null = probe failed; never estimated."
+    },
+    "billed_input_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Actually-billed uncached input tokens from the upstream usage block."
+    },
+    "billed_output_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "billed_cache_read_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "billed_cache_write_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cachePrefixSha8": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$",
+      "description": "Cache-bust attribution (§4.3, adopted from pxpipe): hash of the served conversation prefix."
+    },
+    "fail_open": {
+      "type": "boolean",
+      "description": "True when this request was served passthrough after an error (§8.3)."
+    },
+    "conv_id": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "Proxy conversation identity (hash-derived; no raw content)."
+    },
+    "model": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "The request's model id (a harness identifier, not content) — enables per-model reporting and honest dollarization via a price table (packages/bench pricing owns prices; the ledger stays token-denominated per §8.4)."
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F-]{1,64}$",
+      "description": "Client harness session identity (Claude Code metadata.user_id session_id — an id, never content; the pattern is the contract-level guarantee). Groups requests across the conv_ids one session mints via compaction and subagents. Absent when the client sends no parseable session metadata."
+    },
+    "tool": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Calling-tool attribution (e.g. 'opencode'), from the x-parsec-tool header a non-Claude-Code shim sets on its requests to the local proxy. The pattern is the contract-level guarantee that this path cannot carry raw text. Absent = Claude Code (the pre-multi-tool default)."
+    },
+    "checkpoint_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 of the brain checkpoint bundle that scored this request (capture seam: served-cut provenance). Absent on passthrough-only requests."
+    },
+    "brain_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Wall time spent in brain scoring calls this request."
+    },
+    "scorer_fail_opens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Birth steps left undecided this request because the scorer errored (§8.3 — counted, retried on a later call, never guessed)."
+    },
+    "freeze_cut_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated token mass of chunks the freezer dropped across the conversation so far (internal-view chars/4 units, NOT billed tokens — savings claims come only from the counterfactual)."
+    },
+    "tools_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tool schemas on the inbound request (pre-prune roster size; capture seam TRAINING_CAPTURE_GAPS #1)."
+    },
+    "tools_kept": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tool schemas actually forwarded after the frozen keep-set filter."
+    },
+    "tools_pre_prune_sha8": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$",
+      "description": "Hash of the pre-prune roster (sorted names) — joins served traffic back to the full-roster identity without storing schemas."
+    },
+    "tools_unfrozen": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pruned tools re-added to the keep-set THIS request because the prefix called them (reactive unfreeze) — present only on the request that unfroze them."
+    },
+    "tools_stubbed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pruned tools served as name+note stubs instead of hard-dropped (PARSEC_TOOL_STUB on) — present only when the stub path ran."
+    },
+    "curator_insists": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Insist-valve fires this request: the agent re-asked for content the curator had cut and the valve served it full — the per-request over-cut (regret) signal."
+    },
+    "governor_mode": {
+      "enum": [
+        "advise",
+        "on"
+      ],
+      "description": "Governor seams (all gov_* fields + nbr_cost_median) are present only when PARSEC_GOVERNOR != off; pre-governor rows stay schema-identical. 'advise' = signals recorded, wire untouched; 'on' = directives may be injected."
+    },
+    "gov_runaway_factor": {
+      "type": "number",
+      "minimum": 0,
+      "description": "billed input-side cumulative tokens / neighbour-cost median (rounded to 3 decimals); 0 = no opinion (hoods inert/unfetched)."
+    },
+    "gov_loop_frac": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Latest loop_fracs value (rounded to 3 decimals); 0 when fewer than 6 commands exist (the reference gate)."
+    },
+    "gov_doom_q": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Doom-head sigmoid on the 1e-6 grid for this request's trace scoring; absent when the doom head was not scored this request."
+    },
+    "gov_n_src": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Distinct non-test source files the agent's own actions edited (the BANK do-no-harm signal)."
+    },
+    "gov_cum_tok": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Char-derived double-cumsum context tokens (governor._budget_features port, rounded to integer) — NOT billed tokens."
+    },
+    "gov_rule_fires": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Rule fires delivered (or, in advise mode, recorded) this turn after the (eid, fire_step) dedupe."
+    },
+    "gov_directive_injected": {
+      "type": "boolean",
+      "description": "True when a governor directive turn was actually appended to the served body this request (always false in advise mode)."
+    },
+    "nbr_cost_median": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Neighbour-cost median from /v1/neighbors (billed-input-token denominated), cached per conversation; null = fetched but hoods inert (<4 cost-bearing neighbours). Absent until fetched."
+    },
+    "counterfactual_source": {
+      "type": "string",
+      "enum": [
+        "local_bpe"
+      ],
+      "description": "Which INSTRUMENT produced counterfactual_input_tokens, when it was not the provider's own count_tokens probe. 'local_bpe' = counted by our local tokenizer on a wire that offers no probe (OpenAI/Responses). Absent = provider-probed, the authoritative case. Enumerated rather than free-form on purpose: a reader must never have to guess whether a savings figure is authoritative, and adding an instrument must be a deliberate contract change (DIRECTION.md 8.4)."
+    },
+    "freeze_cut_roles": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "system",
+          "user",
+          "assistant",
+          "tool",
+          "opaque",
+          "(other)",
+          "(unrecorded)"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "description": "Per-role breakdown of what the curator cut this request, in internal-view chars/4 units (same units as freeze_cut_tokens, NOT billed tokens). Keys are the internal view's closed role set; the enum is the contract-level guarantee that this path cannot carry raw text, since the inbound role is copied verbatim into the internal view. A role that was not cut is absent. Note that on the Anthropic wire 'user' covers both human turns and tool_result carriers, so a nonzero 'user' is not by itself an over-cut signal -- freeze_cut_protected_tokens is."
+    },
+    "freeze_cut_protected_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Mass (internal-view chars/4) the curator tried to cut from human-authored, wire-protected entries and that the protection guard restored before serving. On the Anthropic wire this is the over-cut alarm and is normally 0. On the Responses wire the freezer chunks every non-first user turn by design and the guard restores it, so a nonzero value there is routine operation, not an alarm."
+    }
   }
- }
 }

@@ -194,11 +194,18 @@ fn stage_then_finalize_roundtrip_with_level() {
         json!({"transcript": tp.to_string_lossy(), "level": 5}),
     );
     assert!(!is_err, "{text}");
-    assert!(text.contains("staged (status: det, level 5)"), "{text}");
+    assert!(
+        text.contains("staged (status: det, level 5, claude session)"),
+        "{text}"
+    );
     let payload: Value =
         serde_json::from_str(&std::fs::read_to_string(home.pending()).unwrap()).unwrap();
     assert_eq!(payload["status"], "det");
     assert_eq!(payload["level"], 5);
+    assert_eq!(
+        payload["tool"], "claude",
+        "an explicit path is a CC transcript"
+    );
     assert!(payload["body"]
         .as_str()
         .unwrap()

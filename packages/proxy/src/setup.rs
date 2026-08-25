@@ -128,11 +128,16 @@ pub fn choose_free_port(preferred: u16) -> u16 {
     if port_bindable(preferred) {
         return preferred;
     }
-    if proxy_request(preferred, "GET", "/health").is_some_and(|h| h.contains("parsec-proxy")) {
+    if parsec_owns(preferred) {
         return preferred; // our own supervisor — keep the port it owns
     }
     for p in (preferred.saturating_add(1))..=(preferred.saturating_add(64)) {
-        if port_bindable(p) {
+        // Bindable OR already ours. Without the second half, a parsec proxy
+        // that an earlier installer moved to 8083 looks "taken" here, so the
+        // next tool routes at 8084 and the two harnesses end up pointed at
+        // different ports — defeating the shared-proxy design at exactly the
+        // moment the ports are being renegotiated.
+        if port_bindable(p) || parsec_owns(p) {
             tracing::warn!(
                 "port {preferred} is held by a non-parsec process — routing to {p} instead"
             );
@@ -140,6 +145,13 @@ pub fn choose_free_port(preferred: u16) -> u16 {
         }
     }
     preferred // nothing free nearby; the supervisor bind will report it loudly
+}
+
+/// True when a parsec proxy answers `/health` on `port`. Identity, not
+/// liveness: the whole point is to tell our own supervisor apart from a
+/// stranger's server before we route a user's credentials at it.
+pub(crate) fn parsec_owns(port: u16) -> bool {
+    proxy_request(port, "GET", "/health").is_some_and(|h| h.contains("parsec-proxy"))
 }
 
 // ── model source resolution ─────────────────────────────────────────────────
@@ -173,6 +185,14 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
         }
     }
 
+    // Make `parsec` resolvable from a terminal. Until this ran here, a
+    // Claude-Code-only install left no callable binary anywhere: the plugin
+    // copy lives in a cache dir whose path changes on every update, and
+    // install.sh only writes the alias + PATH when it detects codex or
+    // opencode. Every "run `parsec …`" instruction we print was therefore
+    // dead for plugin-only users.
+    ensure_callable(auto);
+
     // Warm proxy so the next session's first request finds a live port.
     let spawn_err = spawn_proxy_detached(st.port, &[]).err();
 
@@ -200,6 +220,175 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Is `~/.parsec/bin` already on PATH? Checked against PATH rather than by
+/// probing `which parsec`, because the answer we need is "will a NEW shell
+/// resolve it", not "does this process happen to have it".
+fn alias_dir_on_path() -> bool {
+    let Some(dir) = crate::setup_opencode::bin_alias_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+    else {
+        return false;
+    };
+    std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).any(|e| e == dir))
+        .unwrap_or(false)
+}
+
+/// The shell rc that a login shell of `shell` will actually read. Pure, so
+/// the per-shell mapping is pinned by tests rather than by whoever runs them:
+/// fish in particular needs a different FILE and a different SYNTAX, and
+/// getting either wrong writes a line that silently never executes.
+#[cfg(unix)]
+fn rc_for_shell(
+    shell: &str,
+    zdotdir: Option<&str>,
+    xdg_config: Option<&str>,
+    home: &Path,
+) -> PathBuf {
+    match Path::new(shell).file_name().and_then(|s| s.to_str()) {
+        Some("zsh") => zdotdir
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.to_path_buf())
+            .join(".zshrc"),
+        Some("bash") => home.join(".bashrc"),
+        Some("fish") => xdg_config
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("fish")
+            .join("conf.d")
+            .join("parsec.fish"),
+        _ => home.join(".profile"),
+    }
+}
+
+/// Keyed off `$SHELL` and not the running shell, for the same reason
+/// install.sh does it: a hook-spawned setup is not the user's interactive
+/// shell.
+#[cfg(unix)]
+fn shell_rc() -> PathBuf {
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    let zdotdir = std::env::var("ZDOTDIR").ok();
+    let xdg = std::env::var("XDG_CONFIG_HOME").ok();
+    rc_for_shell(&shell, zdotdir.as_deref(), xdg.as_deref(), &home_dir())
+}
+
+/// Append the guarded PATH line, exactly as install.sh does. Idempotent by
+/// content match, so re-running setup never stacks duplicates.
+#[cfg(unix)]
+fn add_dir_to_path(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let rc = shell_rc();
+    if let Ok(cur) = std::fs::read_to_string(&rc) {
+        if cur.contains(".parsec/bin") {
+            return Ok(None);
+        }
+    }
+    if let Some(parent) = rc.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let line = if rc.extension().and_then(|e| e.to_str()) == Some("fish") {
+        format!(
+            "\n# parsec\nfish_add_path --prepend \"{}\"\n",
+            dir.display()
+        )
+    } else {
+        format!("\n# parsec\nexport PATH=\"{}:$PATH\"\n", dir.display())
+    };
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&rc)?;
+    f.write_all(line.as_bytes())?;
+    Ok(Some(rc))
+}
+
+/// Windows twin: user-scope PATH via the same call install.ps1 makes. Not
+/// `setx` — that truncates at 1024 chars and has eaten people's PATH.
+#[cfg(windows)]
+fn add_dir_to_path(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    // PowerShell concatenation, no embedded double quotes — the quoting
+    // three languages deep (Rust -> cmdline -> PowerShell) is where this
+    // kind of helper usually breaks.
+    // Guarding the empty case matters: a user-scope PATH that is unset makes
+    // `$p` null, and a naive `$p + ';' + $d` writes a LEADING semicolon —
+    // an empty PATH entry, which Windows resolves as the current directory.
+    let script = format!(
+        "$d = '{}'; \
+         $p = [Environment]::GetEnvironmentVariable('Path','User'); \
+         if ([string]::IsNullOrEmpty($p)) {{ \
+           [Environment]::SetEnvironmentVariable('Path', $d, 'User') }} \
+         elseif (($p -split ';') -notcontains $d) {{ \
+           [Environment]::SetEnvironmentVariable('Path', ($p.TrimEnd(';') + ';' + $d), 'User') }}",
+        dir.display()
+    );
+    let ok = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok {
+        Ok(Some(PathBuf::from("your user PATH")))
+    } else {
+        anyhow::bail!("could not update the user PATH")
+    }
+}
+
+/// Make `parsec` callable from a terminal, not just from inside Claude Code.
+///
+/// The plugin binary lives in the plugin cache, whose path changes on every
+/// update, and NOTHING on the Claude Code install route used to leave a
+/// stable, callable copy: `install.sh` only writes the alias + PATH when it
+/// detects codex or opencode, and `refresh_bin_alias` was called only from
+/// those two setups. A plugin-only user therefore had no `parsec` on PATH at
+/// all — so every instruction that says "run `parsec …` in a terminal"
+/// (the Desktop CA step, the interceptor commands, `parsec up`) simply did
+/// not resolve for them.
+///
+/// The alias is always refreshed — cheap, non-destructive (only a symlink we
+/// own is ever replaced), and purged by `parsec uninstall` with the rest of
+/// ~/.parsec. The PATH edit is gated to MANUAL runs: a hook-spawned
+/// `--auto` first run must not silently rewrite someone's shell rc.
+pub(crate) fn ensure_callable(auto: bool) {
+    if let Err(e) = crate::setup_opencode::refresh_bin_alias() {
+        println!("could not refresh the parsec binary alias ({e})");
+        return;
+    }
+    if alias_dir_on_path() {
+        return;
+    }
+    let Some(dir) = crate::setup_opencode::bin_alias_path()
+        .parent()
+        .map(|p| p.to_path_buf())
+    else {
+        return;
+    };
+    if auto {
+        println!(
+            "note: `parsec` is not on your PATH. Run `parsec setup` from a terminal, or add              manually:\n  export PATH=\"{}:$PATH\"",
+            dir.display()
+        );
+        return;
+    }
+    match add_dir_to_path(&dir) {
+        Ok(Some(where_)) => println!(
+            "added {} to PATH in {} — open a new terminal to use `parsec` directly",
+            dir.display(),
+            where_.display()
+        ),
+        Ok(None) => println!(
+            "{} is already in your shell config — open a new terminal to use `parsec`",
+            dir.display()
+        ),
+        Err(e) => println!(
+            "could not update PATH ({e}) — add manually:\n  export PATH=\"{}:$PATH\"",
+            dir.display()
+        ),
+    }
+}
+
 /// `parsec up` — bring the proxy back on the routed port. The manual twin of
 /// the SessionStart hook's autostart, for the rare case the supervisor itself
 /// died MID-session: routing env is read at Claude Code launch and cannot
@@ -207,10 +396,44 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
 /// (A dead *worker* needs no intervention — the supervisor respawns it and
 /// falls back to Anthropic in the gap.) Idempotent —
 /// a live proxy (ours or the user's own) is never double-spawned.
-pub fn up(restart: bool) -> anyhow::Result<()> {
+/// `parsec up` — revive the routed proxy, and (on `--session-start`) hand a
+/// staged Codex trim to the session that is starting.
+///
+/// Codex has no `additionalContext` hook field the way Claude Code does, but
+/// it surfaces a SessionStart hook's STDOUT to the model as a `developer`
+/// message — confirmed in a real rollout, where this function's own
+/// "proxy already listening…" line appears as one. That is the injection
+/// channel: printing the composed trim puts it in the next session's context,
+/// which is exactly what the Claude Code hook achieves through
+/// `additionalContext`.
+///
+/// Gated on the flag rather than on every `up`, so a manual `parsec up`
+/// cannot silently burn a staged payload. `consume_pending` is one-shot and
+/// TTL-bounded, so a resume inside the window gets it once and never again.
+pub fn up(restart: bool, session_start: bool) -> anyhow::Result<()> {
+    if session_start {
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Some(ctx) =
+                crate::trim::consume_pending(&cwd.to_string_lossy(), crate::trim::Source::Codex)
+            {
+                println!("{ctx}");
+            }
+        }
+    }
     let port = routed_port();
     let log = parsec_home().join("proxy.log");
     if crate::hook::port_listening(port) {
+        // Liveness is not identity. Every harness's SessionStart hook calls
+        // this, so a foreign process holding the routed port used to be
+        // reported as a healthy proxy to all of them — including by the very
+        // command warm_proxy tells users to run when a shutdown is refused.
+        if !restart && !parsec_owns(port) {
+            anyhow::bail!(
+                "127.0.0.1:{port} is listening but is NOT a parsec proxy — refusing to \
+                 report it healthy. Routed traffic is going to that process; stop it and \
+                 re-run, or run `parsec setup` to route at a different port."
+            );
+        }
         if !restart {
             println!("proxy already listening on 127.0.0.1:{port} — nothing to do");
             return Ok(());
@@ -357,7 +580,7 @@ pub fn disable() -> anyhow::Result<()> {
 /// Minimal one-shot HTTP exchange with the local proxy. Raw TcpStream on
 /// purpose: no client dep, works the same on every platform, and short
 /// timeouts keep uninstall snappy when nothing is listening.
-fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
+pub(crate) fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
     use std::io::{Read, Write};
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let mut s =
@@ -380,6 +603,72 @@ fn proxy_request(port: u16, method: &str, path: &str) -> Option<String> {
 /// The version a parsec proxy on `port` reports via GET /health, or None
 /// when nothing parsec-shaped answers. Lets the SessionStart hook spot a
 /// proxy left serving by a pre-update binary.
+/// The wire namespaces this build's router actually serves, advertised on
+/// `/health` as `wires`. This exists because `version` cannot do the job:
+/// every plugin build reports the crate version (0.1.0), so a supervisor from
+/// an older plugin release is indistinguishable from the current one by
+/// version alone — which is exactly how an alpha-9 process kept port 8082 and
+/// answered `/health` 200 while 404-ing every Codex route, letting
+/// `parsec setup codex` report success
+/// (bugs/parsec_codex_user_message_trimming_report.md, "Additional setup
+/// defect"). Add an entry here whenever a new namespace is routed; setup
+/// flows require the ones they depend on.
+pub const SERVED_WIRES: &[&str] = &["anthropic", "openai", "chatgpt"];
+
+fn parse_health_wires(resp: &str) -> Option<Vec<String>> {
+    let (_, body) = resp.split_once("\r\n\r\n")?;
+    let v: Value = serde_json::from_str(body.trim()).ok()?;
+    if v.get("service").and_then(Value::as_str) != Some("parsec-proxy") {
+        return None;
+    }
+    Some(
+        v.get("wires")?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(String::from)
+            .collect(),
+    )
+}
+
+/// What the process on `port` is, from the point of view of a setup flow that
+/// needs `required` wires served.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PortOccupant {
+    /// Nothing is listening — spawn freely.
+    Free,
+    /// Ours, and it serves every required wire.
+    Compatible,
+    /// Ours (or at least answers as ours) but cannot serve what is needed —
+    /// an older build. Safe to shut down and replace.
+    StaleParsec,
+    /// Answers, but is not the parsec proxy. NEVER shut down: it belongs to
+    /// something else on this machine.
+    Foreign,
+}
+
+/// Classify the listener on `port` against the wires a setup flow needs.
+/// A build that answers `/health` as ours without a `wires` field predates
+/// the capability advertisement and is treated as stale — it is, by
+/// definition, older than every build that can prove itself.
+pub fn classify_port(port: u16, required: &[&str]) -> PortOccupant {
+    if !crate::hook::port_listening(port) {
+        return PortOccupant::Free;
+    }
+    let Some(resp) = proxy_request(port, "GET", "/health") else {
+        return PortOccupant::Foreign; // listening but mute: not ours to stop
+    };
+    if !resp.contains("parsec-proxy") {
+        return PortOccupant::Foreign;
+    }
+    match parse_health_wires(&resp) {
+        Some(wires) if required.iter().all(|r| wires.iter().any(|w| w == r)) => {
+            PortOccupant::Compatible
+        }
+        _ => PortOccupant::StaleParsec,
+    }
+}
+
 pub(crate) fn proxy_health_version(port: u16) -> Option<String> {
     parse_health_version(&proxy_request(port, "GET", "/health")?)
 }
@@ -467,6 +756,9 @@ pub fn uninstall() -> anyhow::Result<()> {
     // leave it pointing at a port nothing will listen on again.
     crate::setup_opencode::remove_if_managed();
     crate::setup_codex::remove_if_managed();
+    // Same reason for Claude Desktop: an interceptor left running would keep
+    // redirecting Desktop at a port nothing answers on.
+    crate::setup_desktop::remove_if_managed();
     println!("{}", stop_proxy(port));
     let home = parsec_home();
     let (removed, failed) = purge_data_files(&home);
@@ -926,6 +1218,40 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[cfg(unix)]
+    #[test]
+    fn rc_file_matches_the_users_login_shell() {
+        let home = Path::new("/home/u");
+        assert_eq!(
+            rc_for_shell("/bin/zsh", None, None, home),
+            home.join(".zshrc")
+        );
+        assert_eq!(
+            rc_for_shell("/bin/zsh", Some("/home/u/cfg/zsh"), None, home),
+            Path::new("/home/u/cfg/zsh/.zshrc")
+        );
+        assert_eq!(
+            rc_for_shell("/bin/bash", None, None, home),
+            home.join(".bashrc")
+        );
+        // fish gets its own conf.d drop-in — appending `export PATH=` to a
+        // fish config would write a line fish never runs.
+        assert_eq!(
+            rc_for_shell("/usr/local/bin/fish", None, None, home),
+            home.join(".config/fish/conf.d/parsec.fish")
+        );
+        assert_eq!(
+            rc_for_shell("/usr/bin/fish", None, Some("/xdg"), home),
+            Path::new("/xdg/fish/conf.d/parsec.fish")
+        );
+        // Unknown or empty $SHELL falls back to the POSIX profile.
+        assert_eq!(
+            rc_for_shell("/bin/ksh", None, None, home),
+            home.join(".profile")
+        );
+        assert_eq!(rc_for_shell("", None, None, home), home.join(".profile"));
+    }
+
     #[test]
     fn merge_writes_routing_into_empty_settings() {
         let (root, out) = merge_settings(Value::Null, 8082).unwrap();
@@ -1205,6 +1531,73 @@ mod tests {
         // caller treats it as "cannot compare, leave alone".
         let old = "HTTP/1.1 200 OK\r\n\r\n{\"ok\":true,\"service\":\"parsec-proxy\"}";
         assert_eq!(parse_health_version(old), None);
+    }
+
+    fn health(body: &str) -> String {
+        format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{body}")
+    }
+
+    #[test]
+    fn health_wires_parse_only_from_our_own_service() {
+        assert_eq!(
+            parse_health_wires(&health(
+                r#"{"service":"parsec-proxy","wires":["anthropic","openai","chatgpt"]}"#
+            )),
+            Some(vec![
+                "anthropic".to_string(),
+                "openai".to_string(),
+                "chatgpt".to_string()
+            ])
+        );
+        // A build that predates the field cannot prove itself.
+        assert_eq!(
+            parse_health_wires(&health(r#"{"service":"parsec-proxy","version":"0.1.0"}"#)),
+            None
+        );
+        // Somebody else's server never yields wires, whatever it claims.
+        assert_eq!(
+            parse_health_wires(&health(r#"{"service":"other","wires":["openai"]}"#)),
+            None
+        );
+    }
+
+    #[test]
+    fn classify_port_reports_free_when_nothing_listens() {
+        // Port 1 is never listening.
+        assert_eq!(classify_port(1, SERVED_WIRES), PortOccupant::Free);
+    }
+
+    #[test]
+    fn parsec_owns_rejects_a_listener_that_is_not_ours() {
+        // The identity half of the misroute guard, which liveness cannot give:
+        // codex bakes the chosen port into config.toml as literal text and
+        // nothing re-validates it, so mistaking a stranger for our supervisor
+        // points a real session's OAuth Bearer at that process rather than
+        // merely failing. Same accept-and-drop squatter as the scan test
+        // above, so the probe fails fast instead of waiting out the timeout.
+        let squat = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = squat.local_addr().unwrap().port();
+        let held = std::thread::spawn(move || {
+            for _ in 0..2 {
+                if let Ok((s, _)) = squat.accept() {
+                    drop(s); // FIN → the probe reads "" and returns immediately
+                }
+            }
+        });
+        assert!(!port_bindable(port), "squatter should hold the port");
+        assert!(
+            !parsec_owns(port),
+            "a foreign listener must never read as ours"
+        );
+        assert_eq!(classify_port(port, SERVED_WIRES), PortOccupant::Foreign);
+        let _ = held.join();
+    }
+
+    #[test]
+    fn served_wires_covers_every_namespace_setup_flows_require() {
+        for w in ["anthropic", "openai", "chatgpt"] {
+            assert!(SERVED_WIRES.contains(&w), "{w} missing from SERVED_WIRES");
+        }
     }
 
     #[test]

@@ -31,7 +31,7 @@ pub fn tools() -> Vec<ExtraTool> {
         ExtraTool {
             spec: json!({
                 "name": "trim_stage",
-                "description": "Stage a deterministic needed-set trim of the current Claude Code session (step 1 of the /parsec:trim flow): computes which parts of the transcript were actually re-read, edited, or used later and stages them for one-shot injection after /clear. All token numbers are chars/4 ESTIMATES — never present them as measured. After staging, write the STANDING DIRECTIVES block from your own context and call trim_finalize.",
+                "description": "Stage a deterministic needed-set trim of the current session (step 1 of the /parsec:trim flow): computes which parts of the transcript were actually re-read, edited, or used later and stages them for one-shot injection after the context is cleared. Works on Claude Code and Codex sessions — by default it trims whichever transcript for this directory was written most recently. All token numbers are chars/4 ESTIMATES — never present them as measured. After staging, write the STANDING DIRECTIVES block from your own context and call trim_finalize.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -44,6 +44,11 @@ pub fn tools() -> Vec<ExtraTool> {
                         "transcript": {
                             "type": "string",
                             "description": "Session transcript JSONL path (default: the newest transcript for the current project)"
+                        },
+                        "tool": {
+                            "type": "string",
+                            "enum": ["auto", "claude", "codex"],
+                            "description": "Which harness's transcript to trim. Omit for auto — the freshest of the Claude Code and Codex transcripts for this directory, which is the session you are in."
                         }
                     }
                 }
@@ -54,10 +59,12 @@ pub fn tools() -> Vec<ExtraTool> {
                     .get("transcript")
                     .and_then(Value::as_str)
                     .map(PathBuf::from);
-                match trim::stage(transcript.as_deref(), None, None, "", level) {
+                let tool = args.get("tool").and_then(Value::as_str);
+                match trim::stage(transcript.as_deref(), None, None, "", level, tool) {
                     Ok(trim::StageOutcome::Staged(s)) => Ok(format!(
-                        "staged (status: det, level {}): kept {}/{} chunks · {} of {} tokens (est., chars/4) at {}\nnext: extract the STANDING DIRECTIVES from your context and call trim_finalize, then tell the user to run /clear",
+                        "staged (status: det, level {}, {} session): kept {}/{} chunks · {} of {} tokens (est., chars/4) at {}\nnext: extract the STANDING DIRECTIVES from your context and call trim_finalize, then tell the user to clear the context",
                         s.level,
+                        s.source.tag(),
                         s.kept,
                         s.total_chunks,
                         trim::fmt_k(s.tokens_body_est),

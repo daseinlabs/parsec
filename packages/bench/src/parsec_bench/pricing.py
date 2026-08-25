@@ -9,9 +9,12 @@ newly-appended tokens are billed at the expensive CACHE-WRITE rate; output is
 billed flat. Pricing a run at a single flat input rate massively overstates the
 bill, so we reconstruct the cache frame from the per-call usage series.
 
-PRICE_TABLE is $/MTok. Rates are seeded for common Sonnet/Opus/Haiku and a few
-OpenAI/Gemini rows; override or extend at the call site. All figures are public
-list-price approximations — confirm against your provider's current rates.
+PRICE_TABLE is $/MTok. Rates are seeded for common Sonnet/Opus/Haiku, the
+OpenAI gpt-5 family and a few Gemini rows; override or extend at the call site.
+All figures are public list price — confirm against your provider's current
+rates. A model id matching no row falls back to DEFAULT_RATES, which is the
+Sonnet frame: pricing an OpenAI run against a missing row silently bills it at
+Anthropic rates, so add the row rather than relying on the fallback.
 
 Two pricing paths, in priority order:
 
@@ -57,7 +60,24 @@ PRICE_TABLE: dict[str, dict[str, float]] = {
     "claude-sonnet": {"input": 3.0,  "cache_write": 3.75, "cache_read": 0.30, "output": 15.0},
     "claude-opus":   {"input": 5.0,  "cache_write": 6.25, "cache_read": 0.50, "output": 25.0},
     "claude-haiku":  {"input": 1.0,  "cache_write": 1.25, "cache_read": 0.10, "output": 5.0},
-    # OpenAI (approximate; confirm current rates)
+    # OpenAI. Short-context tier, verified against developers.openai.com/api/
+    # docs/pricing 2026-08-24. No cache-write surcharge on this provider, so
+    # cache_write == input. KEEP IN SYNC with parsec_platform.store._PRICING_SEED
+    # (that table prices the shipped ledger; this one prices bench runs).
+    "gpt-5.6-cyber": {"input": 12.5, "cache_write": 12.5, "cache_read": 1.25,  "output": 75.0},
+    "gpt-5.6-sol":   {"input": 4.0,  "cache_write": 4.0,  "cache_read": 0.4,   "output": 20.0},
+    "gpt-5.6-terra": {"input": 2.0,  "cache_write": 2.0,  "cache_read": 0.2,   "output": 12.0},
+    "gpt-5.6-luna":  {"input": 0.2,  "cache_write": 0.2,  "cache_read": 0.02,  "output": 1.2},
+    "gpt-5.3-codex": {"input": 1.75, "cache_write": 1.75, "cache_read": 0.175, "output": 14.0},
+    "gpt-5.2-codex": {"input": 1.75, "cache_write": 1.75, "cache_read": 0.175, "output": 14.0},
+    "gpt-5-codex":   {"input": 1.25, "cache_write": 1.25, "cache_read": 0.125, "output": 10.0},
+    # gpt-5-pro publishes no cached-input rate: no caching discount, not a guess.
+    "gpt-5-pro":     {"input": 15.0, "cache_write": 15.0, "cache_read": 15.0,  "output": 120.0},
+    "gpt-5-mini":    {"input": 0.25, "cache_write": 0.25, "cache_read": 0.025, "output": 2.0},
+    "gpt-5-nano":    {"input": 0.05, "cache_write": 0.05, "cache_read": 0.005, "output": 0.4},
+    # Bare "gpt-5" is last of the gpt-5 rows on purpose: rates_for matches by
+    # LONGEST substring, so gpt-5-mini &c. still resolve to their own rows.
+    "gpt-5":         {"input": 1.25, "cache_write": 1.25, "cache_read": 0.125, "output": 10.0},
     "gpt-4o":        {"input": 2.50, "cache_write": 2.50, "cache_read": 1.25, "output": 10.0},
     "gpt-4o-mini":   {"input": 0.15, "cache_write": 0.15, "cache_read": 0.075, "output": 0.60},
     # Google Gemini (approximate; implicit caching)

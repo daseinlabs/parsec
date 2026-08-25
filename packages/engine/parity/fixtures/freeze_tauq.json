@@ -492,7 +492,7 @@
       },
       {
        "role": "assistant",
-       "content": "Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handler_1 looks fine.\n[... 47 lines (~492 tokens) omitted ...]\nObservation 49: handler_1 looks fine.",
+       "content": "Observation 0: handler_0 looks wrong 🐍.\nObservation 1: handler_1 looks fine.\n[... 47 lines (~465 tokens) omitted ...]\nObservation 49: handler_1 looks fine.",
        "extra": {
         "actions": [
          {

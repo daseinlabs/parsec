@@ -398,6 +398,13 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/messages", post(messages))
         .route("/v1/messages/count_tokens", post(count_tokens_passthrough))
+        // Model listing — verbatim GET passthrough, no curation, no memo.
+        // Nothing on the serving path needs it; it exists because Claude
+        // Desktop calls it and the interceptor redirects whole hosts, not
+        // individual routes (docs/claude-desktop-integration.md §2). A 404
+        // here would surface in Desktop as a broken model picker.
+        .route("/v1/models", axum::routing::get(models_passthrough))
+        .route("/v1/models/{id}", axum::routing::get(models_passthrough))
         // OpenAI Responses wire, namespaced so the wires can never be
         // confused: `/openai/v1` is the BYOK provider base_url, `/chatgpt`
         // the subscription-mode `openai_base_url` (upstream chatgpt.com's
@@ -413,6 +420,7 @@ pub fn router(state: Arc<AppState>) -> Router {
                     "ok": true,
                     "service": "parsec-proxy",
                     "version": env!("CARGO_PKG_VERSION"),
+                    "wires": crate::setup::SERVED_WIRES,
                 }))
             }),
         )
@@ -597,6 +605,18 @@ pub(crate) struct PlanStats {
     /// Internal-view chars/4 the freezer trimmed THIS call (uncut − rendered)
     /// — a diagnostic, never a savings claim (§8.4).
     pub(crate) freeze_cut_tokens: i64,
+    /// chars/4 the curator wanted to cut from HUMAN-authored content and was
+    /// refused (protect::restore_protected). 0 on a correctly-typed wire;
+    /// non-zero is the over-cut-onto-instructions alarm.
+    pub(crate) freeze_cut_protected_tokens: i64,
+    /// Per-internal-role chars/4 breakdown of what WAS cut — the role-aware
+    /// accounting that made the user-message defect invisible by its absence.
+    pub(crate) freeze_cut_roles: std::collections::BTreeMap<String, i64>,
+    /// What the local BPE measured for this request (counterfact.rs). Some
+    /// only on wires with no count_tokens endpoint; write_ledger turns it
+    /// into a counterfactual anchored to billed usage and stamps the row
+    /// `counterfactual_source: "local_bpe"`.
+    pub(crate) counterfactual_local: Option<crate::counterfact::LocalCount>,
     /// Insist-valve fires THIS call: the agent re-asked for content the
     /// curator had cut, and the valve served it full. The per-request
     /// over-cut (regret) signal — 0 on a well-calibrated cut.
@@ -733,6 +753,10 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         anyhow::bail!("body has no messages array");
     }
     let internal = to_internal(body);
+    // Human-authored entries the curator may score but must never rewrite
+    // (protect.rs). Built from the inbound body, so it stays a pure
+    // function of the prefix like everything else on this path.
+    let protected = crate::internal::protected_mask(body);
     let conv_id = conversation_id(headers, &internal);
     tracing::debug!(
         conv = %conv_id,
@@ -876,7 +900,21 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
             );
         }
         match served {
-            Ok(c) => {
+            Ok(mut c) => {
+                // Human turns get their original bytes back BEFORE anything
+                // measures or folds: apply_curation's equality branch then
+                // forwards them verbatim, and freeze_cut_tokens counts only
+                // what was actually cut.
+                stats.freeze_cut_protected_tokens =
+                    crate::protect::restore_protected(&internal, &mut c, &protected);
+                if stats.freeze_cut_protected_tokens > 0 {
+                    tracing::warn!(
+                        conv = %conv_id,
+                        refused_tokens = stats.freeze_cut_protected_tokens,
+                        "curator: cut refused on human-authored content — served verbatim"
+                    );
+                }
+                stats.freeze_cut_roles = crate::protect::cut_by_role(&internal, &c);
                 stats.freeze_cut_tokens = (internal_mass(&internal) - internal_mass(&c)).max(0);
                 tracing::debug!(
                     conv = %conv_id,
@@ -1531,6 +1569,21 @@ pub(crate) fn write_ledger(
             .and_then(Value::as_i64)
             .unwrap_or(0)
     };
+    // The input side the provider actually billed — also the anchor a
+    // local-BPE counterfactual is expressed against.
+    let billed_side =
+        g("input_tokens") + g("cache_read_input_tokens") + g("cache_creation_input_tokens");
+    // §8.4 keeps its shape: a PROBED counterfactual always wins, a missing one
+    // is null, and the locally-counted delta only fills a hole the provider
+    // gave us no way to fill. The two never pool silently — the row says which.
+    let (counterfactual, cf_source) = match (counterfactual, stats.counterfactual_local) {
+        (Some(cf), _) => (Some(cf), Some("count_tokens")),
+        (None, Some(m)) => {
+            crate::counterfact::sanity_check(m.served, billed_side);
+            (Some(billed_side + m.delta), Some("local_bpe"))
+        }
+        (None, None) => (None, None),
+    };
     let mut row = json!({
         "contract_version": "savings-ledger/v0",
         "request_id": request_id(),
@@ -1548,8 +1601,6 @@ pub(crate) fn write_ledger(
     // The live savings line — what `tail -f ~/.parsec/proxy.log` (or the
     // proxy terminal) shows per request. Token-denominated per §8.4; the
     // input-side billed sum is uncached + cache read + cache write.
-    let billed_side =
-        g("input_tokens") + g("cache_read_input_tokens") + g("cache_creation_input_tokens");
 
     // Governor accumulator (mode != off): billed input-side tokens per
     // conversation feed the kill floor + runaway numerator. Post-response by
@@ -1565,6 +1616,7 @@ pub(crate) fn write_ledger(
     }
     match counterfactual {
         Some(cf) => tracing::info!(
+            source = cf_source.unwrap_or("?"),
             conv = %&conv_id[..conv_id.len().min(12)],
             model = model.unwrap_or("?"),
             counterfactual_in = cf,
@@ -1611,6 +1663,21 @@ pub(crate) fn write_ledger(
         }
         if stats.freeze_cut_tokens > 0 {
             o.insert("freeze_cut_tokens".into(), json!(stats.freeze_cut_tokens));
+        }
+        if let Some(src) = cf_source {
+            o.insert("counterfactual_source".into(), json!(src));
+        }
+        if !stats.freeze_cut_roles.is_empty() {
+            o.insert(
+                "freeze_cut_roles".into(),
+                json!(stats.freeze_cut_roles.clone()),
+            );
+        }
+        if stats.freeze_cut_protected_tokens > 0 {
+            o.insert(
+                "freeze_cut_protected_tokens".into(),
+                json!(stats.freeze_cut_protected_tokens),
+            );
         }
         if stats.curator_insists > 0 {
             o.insert("curator_insists".into(), json!(stats.curator_insists));
@@ -1778,6 +1845,37 @@ async fn relay_buffered(st: &AppState, path: &str, headers: &HeaderMap, raw: Byt
         .post(st.url(path))
         .headers(forward_auth_headers(headers))
         .body(raw)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            let ct = resp.headers().get(header::CONTENT_TYPE).cloned();
+            let bytes = resp.bytes().await.unwrap_or_default();
+            respond(status, ct, Body::from(bytes))
+        }
+        Err(e) => bad_gateway(&e),
+    }
+}
+
+/// GET /v1/models[/{id}] — verbatim passthrough. Deliberately no session or
+/// memo touch (same discipline as count_tokens): it carries no conversation,
+/// so letting it mutate curation state would be a pure source of drift.
+async fn models_passthrough(
+    State(st): State<Arc<AppState>>,
+    uri: axum::http::Uri,
+    headers: HeaderMap,
+) -> Response {
+    let _guard = InFlight::enter(&st);
+    let path = uri
+        .path_and_query()
+        .map(|p| p.as_str())
+        .unwrap_or("/v1/models");
+    tracing::debug!(path, "inbound /v1/models — verbatim passthrough");
+    match st
+        .client
+        .get(st.url(path))
+        .headers(forward_auth_headers(&headers))
         .send()
         .await
     {

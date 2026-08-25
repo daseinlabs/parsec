@@ -229,36 +229,46 @@ def fold_daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # Anthropic: cache_write = 5-minute TTL = 1.25x input; 1-hour TTL would be 2x —
 # the ledger stores a single billed_cache_write_tokens and can't distinguish
 # TTL, so the 5m default is used.
-# OpenAI (Codex/ChatGPT traffic): cache_read = 0.1x input, cache_write = 1.25x
-# input per the published gpt-5.6 rates; rates are the short-context tier —
-# the >272K long-context tier bills higher but a single flat row can't
-# represent it, so long-context savings are undervalued, never overvalued.
+# OpenAI (Codex/ChatGPT traffic): cache_read = 0.1x input, and cache_write =
+# the base input rate because OpenAI has NO cache-write charge — its pricing
+# table is input / cached input / output only. Rates verified against
+# developers.openai.com/api/docs/pricing on 2026-08-24; the short-context tier,
+# since the long-context tier bills higher and a single flat row can't express
+# a tier break, so long-context spend is undervalued, never overvalued.
 # Gemini: cache_read = 0.1x input; no per-token cache-write surcharge (explicit
 # caching bills hourly storage, not representable here), so cache_write = the
 # base input rate. Pro rows are the ≤200K tier; 3.7/3.6-flash rates are
 # promotional through 2026-12-31.
-# KEEP IN SYNC with migrations/0002_*.sql + 0004_*.sql + 0005_*.sql
-# model_pricing seeds.
+# KEEP IN SYNC with migrations/0002_*.sql + 0004_*.sql + 0005_*.sql +
+# 0006_*.sql + 0007_*.sql model_pricing seeds. NB the seed is applied with
+# INSERT OR IGNORE, so a corrected rate only reaches a SQLite DB created after
+# the change; Postgres gets it from the migration's UPDATE.
 _PRICING_SEED = (
     # model,               input, output, cache_read, cache_write
     ("claude-fable-5", 10.0, 50.0, 1.0, 12.5),
+    ("claude-opus-5", 5.0, 25.0, 0.5, 6.25),
     ("claude-opus-4-8", 5.0, 25.0, 0.5, 6.25),
     ("claude-opus-4-7", 5.0, 25.0, 0.5, 6.25),
     ("claude-opus-4-6", 5.0, 25.0, 0.5, 6.25),
     ("claude-sonnet-5", 3.0, 15.0, 0.3, 3.75),
     ("claude-sonnet-4-6", 3.0, 15.0, 0.3, 3.75),
     ("claude-haiku-4-5", 1.0, 5.0, 0.1, 1.25),
-    ("gpt-5.6-sol", 5.0, 30.0, 0.5, 6.25),
-    ("gpt-5.6-terra", 2.0, 12.0, 0.2, 2.5),
-    ("gpt-5.6-luna", 0.2, 1.2, 0.02, 0.25),
-    ("gpt-5.5", 5.0, 30.0, 0.5, 6.25),
-    ("gpt-5.4-mini", 0.75, 4.5, 0.075, 0.9375),
-    ("gpt-5.4-nano", 0.2, 1.25, 0.02, 0.25),
-    ("gpt-5.3-codex", 1.75, 14.0, 0.175, 2.1875),
-    ("gpt-5.2-codex", 1.75, 14.0, 0.175, 2.1875),
-    ("gpt-5-codex", 1.25, 10.0, 0.125, 1.5625),
-    ("gpt-5-mini", 0.25, 2.0, 0.025, 0.3125),
-    ("gpt-5-nano", 0.05, 0.4, 0.005, 0.0625),
+    ("claude-haiku-4-5-20251001", 1.0, 5.0, 0.1, 1.25),
+    ("gpt-5.6-cyber", 12.5, 75.0, 1.25, 12.5),
+    ("gpt-5.6-sol", 4.0, 20.0, 0.4, 4.0),
+    ("gpt-5.6-terra", 2.0, 12.0, 0.2, 2.0),
+    ("gpt-5.6-luna", 0.2, 1.2, 0.02, 0.2),
+    ("gpt-5.5", 5.0, 30.0, 0.5, 5.0),
+    ("gpt-5.4-mini", 0.75, 4.5, 0.075, 0.75),
+    ("gpt-5.4-nano", 0.2, 1.25, 0.02, 0.2),
+    ("gpt-5.3-codex", 1.75, 14.0, 0.175, 1.75),
+    ("gpt-5.2-codex", 1.75, 14.0, 0.175, 1.75),
+    ("gpt-5-codex", 1.25, 10.0, 0.125, 1.25),
+    # gpt-5-pro publishes no cached-input rate — no discount, not a guess.
+    ("gpt-5-pro", 15.0, 120.0, 15.0, 15.0),
+    ("gpt-5", 1.25, 10.0, 0.125, 1.25),
+    ("gpt-5-mini", 0.25, 2.0, 0.025, 0.25),
+    ("gpt-5-nano", 0.05, 0.4, 0.005, 0.05),
     ("gemini-3.7-flash", 0.75, 3.75, 0.075, 0.75),
     ("gemini-3.6-flash", 0.75, 3.75, 0.075, 0.75),
     ("gemini-3.5-flash", 1.5, 9.0, 0.15, 1.5),
@@ -268,6 +278,7 @@ _PRICING_SEED = (
     ("gemini-2.5-pro", 1.25, 10.0, 0.125, 1.25),
     ("gemini-2.5-flash", 0.3, 2.5, 0.03, 0.3),
     ("gemini-2.5-flash-lite", 0.1, 0.4, 0.01, 0.1),
+    ("gemini-flash", 0.75, 3.75, 0.075, 0.75),
 )
 
 _SCHEMA = """

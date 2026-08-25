@@ -690,10 +690,22 @@ impl<S: ChunkScorer> Freezer<S> {
     ///
     /// Renders head(<=2 lines) + an omission marker + tail(1 line). The tail
     /// is served whenever the body has >= 3 non-blank lines: at exactly three,
-    /// head(2)+tail(1) is the whole body and `omitted` is 0, so no line is
-    /// lost. Gating the tail on `> 3` drops the third line while still printing
-    /// "0 lines omitted" (silent truncation) — fixed here and in the reference.
-    fn digest(m: &Value, ntok: i64, file: Option<&str>, lo: Option<i64>, hi: Option<i64>) -> Value {
+    /// head(2)+tail(1) is the whole body, so no line is lost. Gating the tail
+    /// on `> 3` drops the third line (silent truncation) — fixed here and in
+    /// the reference.
+    ///
+    /// The marker's COUNTS ARE MEASURED against the bytes about to be served,
+    /// not handed in by the caller. This used to take the summed tokens of
+    /// every dropped chunk in the message and print that as "omitted" even
+    /// though head + tail + the returncode line are still served — and print
+    /// it unconditionally, so a body that fits entirely in head+tail rendered
+    /// as "0 lines (~N tokens) omitted" while omitting nothing at all. A
+    /// marker the agent cannot trust is worse than no marker: it makes
+    /// present content look absent, which is exactly the failure mode the
+    /// curator exists to avoid. Blank lines are excluded from the LINE count
+    /// (they carry nothing) but are reflected in the token figure, as is any
+    /// 300-char clipping of a kept line.
+    fn digest(m: &Value, file: Option<&str>, lo: Option<i64>, hi: Option<i64>) -> Value {
         let txt = m_text(m);
         let lines = py_splitlines(&txt);
         let rc_idx = lines
@@ -706,23 +718,54 @@ impl<S: ChunkScorer> Freezer<S> {
             .filter(|(i, ln)| py_has_content(ln) && Some(*i) != rc_idx)
             .map(|(_, ln)| *ln)
             .collect();
-        let mut parts: Vec<String> = Vec::new();
+        let mut head: Vec<String> = Vec::new();
         if let Some(ri) = rc_idx {
-            parts.push(py_strip(lines[ri]).to_string());
+            head.push(py_strip(lines[ri]).to_string());
         }
         for ln in body.iter().take(2) {
-            parts.push(char_prefix(ln, 300).to_string());
+            head.push(char_prefix(ln, 300).to_string());
         }
-        let omitted = body.len().saturating_sub(3);
-        parts.push(format!(
-            "[... {} lines (~{} tokens){} omitted ...]",
-            omitted,
-            ntok,
-            Self::ptr(file, lo, hi)
-        ));
-        if body.len() >= 3 {
-            parts.push(char_prefix(body[body.len() - 1], 300).to_string());
-        }
+        let tail: Vec<String> = if body.len() >= 3 {
+            vec![char_prefix(body[body.len() - 1], 300).to_string()]
+        } else {
+            Vec::new()
+        };
+        let omitted_lines = body.len().saturating_sub(body.len().min(2) + tail.len());
+        let kept_mass = {
+            let kept = head
+                .iter()
+                .chain(tail.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n");
+            char_len(&kept) as i64 / 4
+        };
+        let omitted_tok = (char_len(&txt) as i64 / 4 - kept_mass).max(0);
+        let marker = if omitted_lines > 0 {
+            format!(
+                "[... {} lines (~{} tokens){} omitted ...]",
+                omitted_lines,
+                omitted_tok,
+                Self::ptr(file, lo, hi)
+            )
+        } else if omitted_tok > 0 {
+            // Nothing whole was dropped, only clipped: same shape as the
+            // partial-run marker, which is already tokens-only.
+            format!(
+                "[... ~{} tokens{} omitted ...]",
+                omitted_tok,
+                Self::ptr(file, lo, hi)
+            )
+        } else {
+            // Head + tail already cover the whole observation. Nothing to
+            // announce, so the message is served exactly as it arrived.
+            return m.clone();
+        };
+        let parts: Vec<String> = head
+            .into_iter()
+            .chain(std::iter::once(marker))
+            .chain(tail)
+            .collect();
         let mut out = m.as_object().cloned().unwrap_or_default();
         out.insert("content".into(), Value::String(parts.join("\n")));
         Value::Object(out)
@@ -800,8 +843,7 @@ impl<S: ChunkScorer> Freezer<S> {
                 .collect();
             if flags.iter().all(|&f| f) {
                 let (f, lo, hi) = Self::span(p, &cont);
-                let ntok: i64 = cont.iter().map(|&g| p.chunks[g].tokens).sum();
-                r = Self::digest(&r, ntok, f.as_deref(), lo, hi);
+                r = Self::digest(&r, f.as_deref(), lo, hi);
             } else if flags.iter().any(|&f| f) {
                 let mut parts: Vec<String> = Vec::new();
                 let mut run: i64 = 0;
@@ -973,7 +1015,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let m = json!({ "role": "user", "content": body });
-        Freezer::<PassthroughScorer>::digest(&m, 10, None, None, None)
+        Freezer::<PassthroughScorer>::digest(&m, None, None, None)
             .get("content")
             .and_then(Value::as_str)
             .unwrap()
@@ -982,13 +1024,65 @@ mod tests {
 
     /// Regression for the served-bytes truncation: an observation digested down
     /// to exactly three body lines MUST keep its last line. The reference's
-    /// `> 3` tail guard dropped `L2` here while still printing "0 lines
-    /// omitted" — the model saw the observation with its end silently cut off.
+    /// `> 3` tail guard dropped `L2` here.
+    ///
+    /// And with all three lines served there is nothing to announce, so no
+    /// marker is emitted at all — this used to read
+    /// "L0\nL1\n[... 0 lines (~10 tokens) omitted ...]\nL2", a marker that
+    /// named a token count while omitting nothing.
     #[test]
-    fn digest_keeps_tail_line_at_three_lines() {
+    fn digest_keeps_tail_line_at_three_lines_without_a_false_marker() {
+        assert_eq!(digest_text(3), "L0\nL1\nL2");
+    }
+
+    /// The marker's counts are MEASURED against the served bytes: 10 body
+    /// lines render as head(2) + marker + tail(1), so exactly 7 lines are
+    /// omitted and the token figure is the mass of what actually went.
+    #[test]
+    fn digest_marker_counts_match_the_bytes_actually_dropped() {
+        let out = digest_text(10);
+        let (head, tail) = ("L0\nL1\n", "\nL9");
+        assert!(out.starts_with(head) && out.ends_with(tail), "shape: {out}");
+        let marker = &out[head.len()..out.len() - tail.len()];
+        assert_eq!(marker, "[... 7 lines (~5 tokens) omitted ...]");
+        // The claim is checkable: whole text mass minus served mass.
+        let full = (0..10)
+            .map(|i| format!("L{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let kept = "L0\nL1\nL9";
         assert_eq!(
-            digest_text(3),
-            "L0\nL1\n[... 0 lines (~10 tokens) omitted ...]\nL2"
+            char_len(&full) as i64 / 4 - char_len(kept) as i64 / 4,
+            5,
+            "the marker must state the real delta"
+        );
+    }
+
+    /// A body that fits in head+tail but whose kept lines get CLIPPED at 300
+    /// chars still lost content — announced tokens-only, since no whole line
+    /// went missing.
+    #[test]
+    fn digest_announces_clipped_lines_without_claiming_whole_lines() {
+        let m = json!({ "role": "user", "content": format!("{}\nshort", "x".repeat(1000)) });
+        let out = Freezer::<PassthroughScorer>::digest(&m, None, None, None);
+        let txt = out.get("content").and_then(Value::as_str).unwrap();
+        assert!(
+            txt.contains("[... ~175 tokens omitted ...]"),
+            "clipped mass must be announced, got: {txt}"
+        );
+        assert!(!txt.contains("lines"), "no whole line was dropped: {txt}");
+    }
+
+    /// Blank lines are dropped from the render but carry nothing, so they
+    /// never inflate the LINE count — and when that is all that went, the
+    /// message is served unchanged rather than carrying an empty claim.
+    #[test]
+    fn digest_does_not_count_blank_lines_as_omitted_content() {
+        let m = json!({ "role": "user", "content": "L0\n\n\nL1" });
+        let out = Freezer::<PassthroughScorer>::digest(&m, None, None, None);
+        assert_eq!(
+            out.get("content").and_then(Value::as_str).unwrap(),
+            "L0\n\n\nL1"
         );
     }
 
@@ -1008,24 +1102,23 @@ mod tests {
         }
     }
 
-    /// Shapes the fix must leave byte-identical to the reference: len 1/2 keep
-    /// their (spurious but content-lossless) "0 omitted" marker — pinned by the
-    /// freeze parity fixtures — and len >= 4 omits exactly the middle lines
-    /// while serving head(2) + tail(1).
+    /// Boundaries. 1 and 2 body lines used to carry a spurious "0 lines
+    /// (~N tokens) omitted" marker over content that was served in full; they
+    /// now ride through untouched. From 4 lines up the middle really is
+    /// omitted, and both numbers describe that omission — the token figure is
+    /// the chars/4 delta of what went, so it rounds down to ~0 when a single
+    /// short line is all that is missing.
     #[test]
-    fn digest_boundaries_off_the_bug_are_unchanged() {
-        assert_eq!(digest_text(1), "L0\n[... 0 lines (~10 tokens) omitted ...]");
-        assert_eq!(
-            digest_text(2),
-            "L0\nL1\n[... 0 lines (~10 tokens) omitted ...]"
-        );
+    fn digest_boundaries() {
+        assert_eq!(digest_text(1), "L0");
+        assert_eq!(digest_text(2), "L0\nL1");
         assert_eq!(
             digest_text(4),
-            "L0\nL1\n[... 1 lines (~10 tokens) omitted ...]\nL3"
+            "L0\nL1\n[... 1 lines (~0 tokens) omitted ...]\nL3"
         );
         assert_eq!(
             digest_text(5),
-            "L0\nL1\n[... 2 lines (~10 tokens) omitted ...]\nL4"
+            "L0\nL1\n[... 2 lines (~1 tokens) omitted ...]\nL4"
         );
     }
 
@@ -1051,15 +1144,31 @@ mod tests {
         assert_ne!(ckey(7, &a), ckey(8, &a));
     }
 
-    /// The re-read pointer and the returncode line both still ride along with
-    /// the (now-preserved) tail line at the three-line boundary.
+    /// The re-read pointer and the returncode line ride along with the
+    /// (now-preserved) tail line — and no marker appears at the three-line
+    /// boundary, where head+tail already serve everything.
     #[test]
     fn digest_three_lines_with_returncode_and_pointer() {
+        // Three body lines: head+tail cover them, nothing is omitted, so the
+        // message rides through whole — pointer and all, because there is
+        // nothing to point AT.
         let m = json!({ "role": "user", "content": "returncode: 0\nL0\nL1\nL2" });
-        let out = Freezer::<PassthroughScorer>::digest(&m, 10, Some("f.py"), Some(5), Some(9));
+        let out = Freezer::<PassthroughScorer>::digest(&m, Some("f.py"), Some(5), Some(9));
         assert_eq!(
             out.get("content").and_then(Value::as_str).unwrap(),
-            "returncode: 0\nL0\nL1\n[... 0 lines (~10 tokens) · re-read f.py:L5-9 omitted ...]\nL2"
+            "returncode: 0\nL0\nL1\nL2"
+        );
+        // Once there IS something to omit, the returncode line and the
+        // recoverable-range pointer both still ride along with the tail.
+        let body = (0..8)
+            .map(|i| format!("L{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let m = json!({ "role": "user", "content": format!("returncode: 0\n{body}") });
+        let out = Freezer::<PassthroughScorer>::digest(&m, Some("f.py"), Some(5), Some(9));
+        assert_eq!(
+            out.get("content").and_then(Value::as_str).unwrap(),
+            "returncode: 0\nL0\nL1\n[... 5 lines (~4 tokens) · re-read f.py:L5-9 omitted ...]\nL7"
         );
     }
 }

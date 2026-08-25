@@ -122,7 +122,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // savings/statusline.
             let mut additional_context: Option<String> = None;
             if matches!(source, "clear" | "startup") {
-                if let Some(ctx) = crate::trim::consume_pending(&cwd) {
+                if let Some(ctx) = crate::trim::consume_pending(&cwd, crate::trim::Source::Claude) {
                     additional_context = Some(ctx);
                     msgs.push(
                         "injected the /parsec:trim payload from your previous session".into(),
@@ -394,8 +394,17 @@ fn maybe_upgrade_proxy() -> Option<String> {
     let running = crate::setup::proxy_health_version(port)?;
     let installed = env!("CARGO_PKG_VERSION");
     // Any mismatch (downgrade included) restarts: the binary on disk is what
-    // the plugin cache says this machine should be running.
-    if running == installed {
+    // the plugin cache says this machine should be running. Version alone is
+    // not enough — every plugin build reports the same crate version, so a
+    // supervisor from an older release can hold the port while missing whole
+    // route namespaces (that is how an alpha-9 process 404-ed every Codex
+    // route behind a 200 /health). Replace it if it cannot serve what this
+    // build serves.
+    let wires_ok = matches!(
+        crate::setup::classify_port(port, crate::setup::SERVED_WIRES),
+        crate::setup::PortOccupant::Compatible
+    );
+    if running == installed && wires_ok {
         return None;
     }
     if !crate::setup::shutdown_parsec_on(port) {

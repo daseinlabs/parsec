@@ -41,6 +41,13 @@ pub struct TrimPayload {
     pub session_id: Option<String>,
     /// Unix seconds, hook-lifecycle metadata only — NEVER a label input.
     pub created_at: u64,
+    /// Which harness the transcript came from: "claude" | "codex". A trim is
+    /// only ever injected back into the tool it was computed from — the two
+    /// share `~/.parsec/trim/<project-key>.json` (one project, one pending
+    /// trim), and a Codex trim surfacing in a Claude session would be a
+    /// summary of a conversation that session never had.
+    #[serde(default = "default_tool")]
+    pub tool: String,
     /// "det" (computed) | "ready" (directives attached).
     pub status: String,
     pub body: String,
@@ -58,6 +65,12 @@ pub struct TrimPayload {
 
 fn default_level() -> u8 {
     3
+}
+
+/// Payloads written before the tool tag existed can only have come from the
+/// Claude Code hook, which was the sole staging path.
+fn default_tool() -> String {
+    "claude".to_string()
 }
 
 /// Resolve the trim level: explicit flag > PARSEC_TRIM_LEVEL env > 3 (det).
@@ -89,6 +102,8 @@ pub struct TrimArgs {
     pub finalize: bool,
     /// Aggressiveness 1..=5 (None = PARSEC_TRIM_LEVEL env, then 3).
     pub level: Option<u8>,
+    /// "auto" (default) | "claude" | "codex" — which harness's transcript.
+    pub tool: Option<String>,
 }
 
 /// Claude Code's own project-directory munge: every non-alphanumeric byte
@@ -106,6 +121,67 @@ fn trim_dir() -> PathBuf {
 
 pub fn pending_path(cwd: &str) -> PathBuf {
     trim_dir().join(format!("{}.json", project_key(cwd)))
+}
+
+/// Where a trim's input came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Claude,
+    Codex,
+}
+
+impl Source {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Source::Claude => "claude",
+            Source::Codex => "codex",
+        }
+    }
+    fn parse(s: &str) -> anyhow::Result<Option<Self>> {
+        match s.trim().to_lowercase().as_str() {
+            "auto" => Ok(None),
+            "claude" | "claude-code" => Ok(Some(Source::Claude)),
+            "codex" => Ok(Some(Source::Codex)),
+            other => anyhow::bail!("unknown --tool {other:?} (expected auto, claude, or codex)"),
+        }
+    }
+}
+
+/// Pick the transcript to trim. An explicit `--tool` wins; otherwise the
+/// FRESHER of the two harnesses' transcripts for this directory does.
+///
+/// Recency is the right discriminator because /trim always means "compact the
+/// session I am in", and the session you are in is the one still being
+/// written. It is also what stops the cross-tool accident: before this,
+/// running `parsec trim` from Codex in a project that also had Claude Code
+/// history silently trimmed a stale Claude transcript and staged it for the
+/// next Claude session.
+fn pick_source(cwd: &str, forced: Option<Source>) -> Option<(Source, PathBuf)> {
+    let claude = match forced {
+        Some(Source::Codex) => None,
+        _ => discover_transcript(cwd).map(|p| {
+            let t = std::fs::metadata(&p)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            (t, p)
+        }),
+    };
+    let codex = match forced {
+        Some(Source::Claude) => None,
+        _ => crate::codex::discover_rollout(cwd).map(|(p, t)| (t, p)),
+    };
+    match (claude, codex) {
+        (Some((tc, pc)), Some((tx, px))) => {
+            if tx > tc {
+                Some((Source::Codex, px))
+            } else {
+                Some((Source::Claude, pc))
+            }
+        }
+        (Some((_, p)), None) => Some((Source::Claude, p)),
+        (None, Some((_, p))) => Some((Source::Codex, p)),
+        (None, None) => None,
+    }
 }
 
 /// Newest session JSONL for this project under ~/.claude/projects/<key>/.
@@ -185,6 +261,7 @@ pub struct StagedStats {
     pub tokens_total_est: i64,
     pub tokens_body_est: i64,
     pub level: u8,
+    pub source: Source,
     pub path: PathBuf,
 }
 
@@ -205,22 +282,37 @@ pub fn stage(
     out: Option<&Path>,
     patch: &str,
     level_flag: Option<u8>,
+    tool_flag: Option<&str>,
 ) -> anyhow::Result<StageOutcome> {
     let level = resolve_level(level_flag)?;
-    let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
-    let transcript = match transcript
-        .map(Path::to_path_buf)
-        .or_else(|| discover_transcript(&cwd))
-    {
-        Some(t) => t,
-        None => {
-            return Ok(StageOutcome::Nothing(format!(
-                "no session transcript found for this project (looked under ~/.claude/projects/{}/) — pass the transcript path explicitly",
-                project_key(&cwd)
-            )));
-        }
+    let forced = match tool_flag {
+        Some(t) => Source::parse(t)?,
+        None => None,
     };
-    let messages = crate::adjudicator::messages_from_transcript_full(&transcript.to_string_lossy());
+    let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
+    // An explicit path is read with the reader its --tool names; without
+    // --tool an explicit path is a Claude Code transcript, which is what it
+    // has always meant.
+    let (source, transcript) = match transcript.map(Path::to_path_buf) {
+        Some(p) => (forced.unwrap_or(Source::Claude), p),
+        None => match pick_source(&cwd, forced) {
+            Some(hit) => hit,
+            None => {
+                return Ok(StageOutcome::Nothing(format!(
+                    "no session transcript found for this project (looked under \
+                     ~/.claude/projects/{}/ and ~/.codex/sessions/) — pass the \
+                     transcript path explicitly",
+                    project_key(&cwd)
+                )));
+            }
+        },
+    };
+    let messages = match source {
+        Source::Claude => {
+            crate::adjudicator::messages_from_transcript_full(&transcript.to_string_lossy())
+        }
+        Source::Codex => crate::codex::messages_from_rollout(&transcript.to_string_lossy()),
+    };
     let d = match det_trim_with(&messages, patch, &NeedCfg::level(level)) {
         Ok(d) => d,
         Err(skip) => {
@@ -255,6 +347,7 @@ pub fn stage(
         project_dir: cwd.clone(),
         session_id: session_id.map(str::to_string),
         created_at: now_secs(),
+        tool: source.tag().to_string(),
         status: "det".into(),
         body,
         directives: None,
@@ -273,6 +366,7 @@ pub fn stage(
         tokens_total_est: d.tokens_total,
         tokens_body_est: body_est,
         level,
+        source,
         path,
     }))
 }
@@ -288,6 +382,7 @@ fn compute(args: &TrimArgs) -> anyhow::Result<()> {
         args.out.as_deref(),
         &patch,
         args.level,
+        args.tool.as_deref(),
     )? {
         StageOutcome::Staged(s) => s,
         StageOutcome::Nothing(msg) => {
@@ -307,16 +402,18 @@ fn compute(args: &TrimArgs) -> anyhow::Result<()> {
                 "pending_path": s.path.to_string_lossy(),
                 "status": "det",
                 "level": s.level,
+                "tool": s.source.tag(),
             })
         );
     } else {
         println!(
-            "kept {}/{} chunks · {} of {} tokens (est., chars/4) · level {}",
+            "kept {}/{} chunks · {} of {} tokens (est., chars/4) · level {} · {} session",
             s.kept,
             s.total_chunks,
             fmt_k(s.tokens_body_est),
             fmt_k(s.tokens_total_est),
             s.level,
+            s.source.tag(),
         );
         println!("staged: {} (status: det)", s.path.to_string_lossy());
         println!("next: pipe STANDING DIRECTIVES into `parsec trim --finalize`, then run /clear");
@@ -402,7 +499,7 @@ fn finalize(args: &TrimArgs) -> anyhow::Result<()> {
 /// returning it (if the delete fails, nothing is injected: a hook that can't
 /// consume must not replay the same context into every future session).
 /// Every error path returns None — the hook never fails the session.
-pub fn consume_pending(cwd: &str) -> Option<String> {
+pub fn consume_pending(cwd: &str, tool: Source) -> Option<String> {
     let path = pending_path(cwd);
     let data = std::fs::read_to_string(&path).ok()?;
     let payload: TrimPayload = match serde_json::from_str(&data) {
@@ -413,6 +510,11 @@ pub fn consume_pending(cwd: &str) -> Option<String> {
         }
     };
     if payload.version != TRIM_VERSION || payload.project_dir != cwd {
+        return None;
+    }
+    // Staged by the OTHER harness: leave it for that one to pick up rather
+    // than injecting a summary of a conversation this session never had.
+    if payload.tool != tool.tag() {
         return None;
     }
     let age = now_secs().saturating_sub(payload.created_at);

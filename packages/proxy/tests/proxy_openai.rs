@@ -2,8 +2,8 @@
 //! Codex Milestone A): a mock OpenAI upstream records what the proxy
 //! actually sends, so the wire invariants — verbatim body relay, header
 //! forwarding (auth in, x-parsec-tool never out), WebSocket deflection,
-//! SSE byte-identity, ledger attribution with a null counterfactual — are
-//! asserted end to end.
+//! SSE byte-identity, ledger attribution with a locally-measured
+//! counterfactual — are asserted end to end.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -332,7 +332,12 @@ async fn responses_body_and_headers_relay_verbatim_tag_stays_local() {
     let row = &rows[0];
     assert_eq!(row["tool"], "codex");
     assert_eq!(row["model"], "gpt-5.6-codex");
-    assert_eq!(row["counterfactual_input_tokens"], Value::Null);
+    // Unentitled/uncurated on this wire still MEASURES: the counterfactual is
+    // the local o200k_base count, which equals the billed input side when
+    // nothing was cut. It used to be null forever — OpenAI ships no
+    // count_tokens endpoint (counterfact.rs).
+    assert_eq!(row["counterfactual_source"], "local_bpe");
+    assert_eq!(row["counterfactual_input_tokens"], 100);
     assert_eq!(row["billed_input_tokens"], 60);
     assert_eq!(row["billed_cache_read_tokens"], 40);
     assert_eq!(row["billed_cache_write_tokens"], 0);
@@ -528,6 +533,45 @@ async fn brain_scores_trim_codex_tool_output() {
     assert_eq!(rows[0]["checkpoint_id"], "c".repeat(64));
     assert!(rows[0]["freeze_cut_tokens"].as_i64().unwrap() > 0);
     assert!(rows[0].get("scorer_fail_opens").is_none());
+
+    // §8.4 hole closed: OpenAI has no count_tokens endpoint, so the row's
+    // counterfactual is the local o200k_base count — labeled as such, and
+    // anchored to the billed input side so savings = the measured delta.
+    assert_eq!(rows[0]["counterfactual_source"], "local_bpe");
+    let cf = rows[0]["counterfactual_input_tokens"].as_i64().unwrap();
+    let billed = rows[0]["billed_input_tokens"].as_i64().unwrap()
+        + rows[0]["billed_cache_read_tokens"].as_i64().unwrap()
+        + rows[0]["billed_cache_write_tokens"].as_i64().unwrap();
+    assert!(
+        cf > billed,
+        "a request that cut content must measure above what it billed: {cf} vs {billed}"
+    );
+    // Role-aware accounting: the cut came out of tool output, never a user turn.
+    let roles = rows[0]["freeze_cut_roles"].as_object().unwrap();
+    assert!(
+        roles.get("tool").is_some(),
+        "tool output should show as cut: {roles:?}"
+    );
+    assert!(
+        roles.get("user").is_none(),
+        "no user turn may be cut: {roles:?}"
+    );
+}
+
+/// A passthrough (no brain) cut nothing, so it measures exactly zero saved —
+/// a measured zero, not the null a missing endpoint used to force.
+#[tokio::test]
+async fn passthrough_openai_row_measures_zero_saved_not_null() {
+    let ctx = setup_full(true, false).await;
+    let sent = brain_body(codex_turn1());
+    assert_eq!(post_responses(&ctx, &sent).await.status(), 200);
+    let rows = wait_rows(&ctx, 1).await;
+    assert_eq!(rows[0]["counterfactual_source"], "local_bpe");
+    let cf = rows[0]["counterfactual_input_tokens"].as_i64().unwrap();
+    let billed = rows[0]["billed_input_tokens"].as_i64().unwrap()
+        + rows[0]["billed_cache_read_tokens"].as_i64().unwrap()
+        + rows[0]["billed_cache_write_tokens"].as_i64().unwrap();
+    assert_eq!(cf, billed, "nothing was cut, so nothing was saved");
 }
 
 /// Resident turns replay byte-identically across calls — the fold map is
@@ -627,7 +671,8 @@ async fn chatgpt_route_relays_oauth_surface_and_infers_attribution() {
 
     let rows = wait_rows(&ctx, 1).await;
     assert_eq!(rows[0]["tool"], "codex", "attribution inferred from route");
-    assert_eq!(rows[0]["counterfactual_input_tokens"], Value::Null);
+    assert_eq!(rows[0]["counterfactual_source"], "local_bpe");
+    assert_eq!(rows[0]["counterfactual_input_tokens"], 100);
     assert_eq!(rows[0]["billed_input_tokens"], 60);
 }
 

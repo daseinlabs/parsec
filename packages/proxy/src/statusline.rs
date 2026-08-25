@@ -158,6 +158,9 @@ pub(crate) struct LedgerAgg {
     pub(crate) null_probes: u64,
     pub(crate) fail_open: u64,
     pub(crate) scorer_fail_opens: u64,
+    /// Savings from rows whose counterfactual came from the LOCAL BPE count
+    /// (wires with no count_tokens endpoint) rather than a provider probe.
+    pub(crate) local_bpe_saved: i64,
     pub(crate) counterfactual: i64,
     pub(crate) billed_input_side: i64,
     pub(crate) cache_read: i64,
@@ -171,6 +174,22 @@ pub(crate) struct LedgerAgg {
     /// model id -> (probed requests, counterfactual, saved) — token-
     /// denominated per model; dollarize with packages/bench pricing.
     pub(crate) by_model: std::collections::BTreeMap<String, (u64, i64, i64)>,
+    /// calling tool -> (rows, probed requests, counterfactual, saved,
+    /// locally-counted requests). The ledger has carried `tool` since the
+    /// opencode port, but nothing read it — every savings surface blended
+    /// the harnesses into one number. Rows are counted here even when
+    /// unprobed, so a wire with no counterfactual shows its request volume
+    /// instead of vanishing from the report entirely.
+    ///
+    /// The last element tracks `counterfactual_source == "local_bpe"`
+    /// separately, because those two instruments are NOT interchangeable:
+    /// a provider probe is authoritative, a local BPE count is our own
+    /// tokenizer's opinion. Pooling them under one "measured" label is
+    /// exactly the blend §8.4 exists to prevent, and per-tool is where the
+    /// blend would bite — the local counter is what makes codex rows
+    /// countable at all, so codex's line would otherwise be the one number
+    /// in the report that silently changes meaning.
+    pub(crate) by_tool: std::collections::BTreeMap<String, (u64, u64, i64, i64, u64)>,
 }
 
 pub(crate) fn aggregate_ledger(lines: &str) -> LedgerAgg {
@@ -198,6 +217,21 @@ pub(crate) fn aggregate_ledger(lines: &str) -> LedgerAgg {
             a.fail_open += 1;
         }
         a.scorer_fail_opens += g("scorer_fail_opens") as u64;
+        // Which KIND of counterfactual this row carries. Provider-probed and
+        // locally-counted rows are both measured, but by different
+        // instruments, so the report names the split instead of pooling them
+        // into one unqualified number (§8.4).
+        if row.get("counterfactual_source").and_then(Value::as_str) == Some("local_bpe") {
+            if let Some(cf) = row
+                .get("counterfactual_input_tokens")
+                .and_then(Value::as_i64)
+            {
+                a.local_bpe_saved += cf
+                    - (g("billed_input_tokens")
+                        + g("billed_cache_read_tokens")
+                        + g("billed_cache_write_tokens"));
+            }
+        }
         a.freeze_cut += g("freeze_cut_tokens");
         a.cache_read += g("billed_cache_read_tokens");
         a.cache_write += g("billed_cache_write_tokens");
@@ -224,6 +258,35 @@ pub(crate) fn aggregate_ledger(lines: &str) -> LedgerAgg {
                 m.2 += cf - billed;
             }
             None => a.null_probes += 1,
+        }
+        // Per-harness attribution. A row minted by a non-Claude-Code client
+        // carries the charset-gated `tool` tag (server.rs tool_from_headers);
+        // absent ⇒ Claude Code, which is what the contract means by the
+        // field being optional. Kept out of the match above so an unprobed
+        // row still counts toward its tool's request volume.
+        let t = a
+            .by_tool
+            .entry(
+                row.get("tool")
+                    .and_then(Value::as_str)
+                    .unwrap_or("claude-code")
+                    .to_string(),
+            )
+            .or_default();
+        t.0 += 1;
+        if let Some(cf) = row
+            .get("counterfactual_input_tokens")
+            .and_then(Value::as_i64)
+        {
+            t.1 += 1;
+            t.2 += cf;
+            t.3 += cf
+                - (g("billed_input_tokens")
+                    + g("billed_cache_read_tokens")
+                    + g("billed_cache_write_tokens"));
+            if row.get("counterfactual_source").and_then(Value::as_str) == Some("local_bpe") {
+                t.4 += 1;
+            }
         }
     }
     a
@@ -359,6 +422,14 @@ pub fn savings_report() -> anyhow::Result<()> {
                 a.saved,
                 pct
             );
+            if a.local_bpe_saved != 0 {
+                println!(
+                    "    of which {} tok measured locally (o200k_base token delta — that \
+                     wire has no count_tokens endpoint; excludes per-message framing, so \
+                     it is a floor)",
+                    a.local_bpe_saved
+                );
+            }
             let ratio = if a.cache_write > 0 {
                 format!("{:.1}:1", a.cache_read as f64 / a.cache_write as f64)
             } else {
@@ -378,6 +449,37 @@ pub fn savings_report() -> anyhow::Result<()> {
                     "    {model}: {n} req · {saved} tok saved ({pct:.1}%) — dollarize \
                      with packages/bench pricing"
                 );
+            }
+            // Split by harness whenever the blend would mislead: more than
+            // one tool in the ledger, or a tool whose wire mints no
+            // counterfactual (codex/Responses — §8.4 forbids estimating one,
+            // so "0 saved" would read as a measurement rather than a gap).
+            let unmeasured = a.by_tool.values().any(|(_, probed, _, _, _)| *probed == 0);
+            if a.by_tool.len() > 1 || unmeasured {
+                println!("  by tool:");
+                for (tool, (rows, probed, cf, saved, local)) in &a.by_tool {
+                    if *probed == 0 {
+                        println!(
+                            "    {tool}: {rows} req · unmeasured — this wire has no \
+                             counterfactual (§8.4: never estimated)"
+                        );
+                        continue;
+                    }
+                    let pct = if *cf > 0 {
+                        100.0 * *saved as f64 / *cf as f64
+                    } else {
+                        0.0
+                    };
+                    // Name the instrument whenever any of the tool's rows were
+                    // counted locally rather than probed — an unqualified
+                    // number here would read as provider-authoritative.
+                    let how = match *local {
+                        0 => format!("{probed} measured"),
+                        n if n == *probed => "locally counted, not provider-probed".to_string(),
+                        n => format!("{} probed + {n} locally counted", probed - n),
+                    };
+                    println!("    {tool}: {rows} req ({how}) · {saved} tok saved ({pct:.1}%)");
+                }
             }
             if a.fail_open > 0 || a.scorer_fail_opens > 0 || a.null_probes > 0 {
                 println!(
@@ -479,6 +581,57 @@ mod tests {
         // (pre-upgrade ledgers) and other sessions stay out of the sum.
         assert_eq!(session_saved_from_lines(lines, "s-1"), Some(247 - 20));
         assert_eq!(session_saved_from_lines(lines, "s-2"), None);
+
+        // Untagged rows are Claude Code's, per the ledger contract.
+        assert_eq!(a.by_tool["claude-code"], (3, 2, 467 + 100, 247 - 20, 0));
+    }
+
+    #[test]
+    fn ledger_splits_by_calling_tool_and_flags_unmeasured_wires() {
+        // The regression this locks: `tool` was written by the opencode and
+        // codex ports and read by nothing, so one blended number covered
+        // three harnesses — and codex, whose wire mints no counterfactual,
+        // contributed rows that silently dragged nothing into the average.
+        let lines = concat!(
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":400,"billed_input_tokens":100,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#,
+            "\n",
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"b","tool":"opencode","counterfactual_input_tokens":200,"billed_input_tokens":50,"billed_cache_read_tokens":10,"billed_cache_write_tokens":0,"fail_open":false}"#,
+            "\n",
+            // codex/Responses: billed usage recorded, counterfactual null.
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"c","tool":"codex","counterfactual_input_tokens":null,"billed_input_tokens":900,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false,"freeze_cut_tokens":120}"#,
+            "\n",
+        );
+        let a = aggregate_ledger(lines);
+        assert_eq!(a.by_tool["claude-code"], (1, 1, 400, 300, 0));
+        assert_eq!(a.by_tool["opencode"], (1, 1, 200, 140, 0));
+        // Present with its request volume, but probed == 0 → the report says
+        // "unmeasured" rather than implying zero savings were measured.
+        assert_eq!(a.by_tool["codex"], (1, 0, 0, 0, 0));
+        // …and it stays out of the measured totals entirely (§8.4).
+        assert_eq!(a.saved, 300 + 140);
+        assert_eq!(a.null_probes, 1);
+    }
+
+    #[test]
+    fn per_tool_split_keeps_local_counts_distinct_from_provider_probes() {
+        // The local BPE counterfactual makes codex rows countable at all, so
+        // without this the codex line would flip from an honest "unmeasured"
+        // to an unqualified "measured" — the same number, silently promoted
+        // from our tokenizer's opinion to a provider-authoritative figure.
+        let lines = concat!(
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":400,"billed_input_tokens":100,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#,
+            "\n",
+            r#"{"contract_version":"savings-ledger/v0","conv_id":"c","tool":"codex","counterfactual_source":"local_bpe","counterfactual_input_tokens":300,"billed_input_tokens":80,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#,
+            "\n",
+        );
+        let a = aggregate_ledger(lines);
+        // Claude Code's row was provider-probed: local count stays 0.
+        assert_eq!(a.by_tool["claude-code"], (1, 1, 400, 300, 0));
+        // codex: probed==1 AND local==1 ⇒ the report says "locally counted,
+        // not provider-probed" rather than "1 measured".
+        assert_eq!(a.by_tool["codex"], (1, 1, 300, 220, 1));
+        // The aggregate split the other session added must agree with ours.
+        assert_eq!(a.local_bpe_saved, 220);
     }
 
     #[test]

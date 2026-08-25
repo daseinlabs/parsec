@@ -33,8 +33,28 @@ use crate::splice::{orig_fingerprint, FoldMap};
 
 /// Content-part types that carry curatable text in a `message` item.
 const MSG_TEXT_TYPES: &[&str] = &["input_text", "output_text", "text"];
-/// ... and in a `function_call_output` item's `output` list.
-const OUT_TEXT_TYPES: &[&str] = &["output_text", "text"];
+/// ... and in a tool-output item's `output` list. `input_text` is in here
+/// because that is what Codex's `custom_tool_call_output` actually uses for
+/// its parts — captured from a real rollout, not from the wire docs.
+const OUT_TEXT_TYPES: &[&str] = &["output_text", "text", "input_text"];
+
+/// Tool-output item types whose text the curator may digest. `function_call_output`
+/// is the documented Responses shape; `custom_tool_call_output` is what Codex
+/// 0.147 emits for its `exec` tool and `local_shell_call_output` for the
+/// local-shell tool. Until these were listed they fell to the `opaque` arm of
+/// [`internal_entry`], which meant the curator could not see tool output on
+/// this wire AT ALL — it produced no chunks, so the only cuttable mass left in
+/// a Codex conversation was the user's own prose. That is the other half of
+/// bugs/parsec_codex_user_message_trimming_report.md: parsec was cutting only
+/// what it must never cut, and never cutting what it exists to cut.
+const TOOL_OUTPUT_TYPES: &[&str] = &[
+    "function_call_output",
+    "custom_tool_call_output",
+    "local_shell_call_output",
+];
+
+/// Assistant tool-invocation item types.
+const TOOL_CALL_TYPES: &[&str] = &["function_call", "custom_tool_call", "local_shell_call"];
 
 /// Is this input item a message? Codex sends `type: "message"` explicitly;
 /// a typeless item with a `role` is treated as one (the wire allows it).
@@ -54,9 +74,84 @@ pub fn item_text(item: &Value) -> String {
         return parts_text(item.get("content"), MSG_TEXT_TYPES);
     }
     match item.get("type").and_then(Value::as_str) {
-        Some("function_call_output") => parts_text(item.get("output"), OUT_TEXT_TYPES),
+        Some(t) if TOOL_OUTPUT_TYPES.contains(&t) => parts_text(item.get("output"), OUT_TEXT_TYPES),
         _ => String::new(),
     }
+}
+
+/// The shell command behind a tool call, for the bash-twin projection.
+///
+/// Three shapes in the wild, in the order they are tried:
+///   * `arguments` JSON with a `command` key — the documented `function_call`
+///     (argv array or string; [`coerce_argv_command`] handles both);
+///   * `action.command` argv — `local_shell_call`;
+///   * a `cmd:"…"` field inside Codex's `custom_tool_call.input`, which is a
+///     JavaScript SNIPPET (`await tools.exec_command({cmd:"sed -n '1,240p' f"})`),
+///     not JSON. Without this the twin sees no command at all, chunk typing
+///     falls back to "other", and the needed-set's read/grep regexes have
+///     nothing to match.
+fn call_command(item: &Value) -> Option<String> {
+    if let Some(argv) = item.pointer("/action/command").and_then(Value::as_array) {
+        let joined = argv
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !joined.is_empty() {
+            return Some(joined);
+        }
+    }
+    let input = item.get("input").and_then(Value::as_str)?;
+    // A JSON object input (some custom tools) before the snippet scrape.
+    if let Ok(Value::Object(o)) = serde_json::from_str::<Value>(input) {
+        for k in ["command", "cmd"] {
+            if let Some(c) = o.get(k).and_then(Value::as_str) {
+                if !c.is_empty() {
+                    return Some(c.to_string());
+                }
+            }
+        }
+    }
+    extract_cmd_field(input)
+}
+
+/// Pull the value of a `cmd:"…"` / `command:"…"` field out of a JS snippet,
+/// honouring backslash escapes so an embedded quote does not end the scan.
+fn extract_cmd_field(src: &str) -> Option<String> {
+    for key in ["cmd", "command"] {
+        let mut from = 0usize;
+        while let Some(rel) = src[from..].find(key) {
+            let at = from + rel;
+            from = at + key.len();
+            // key must be followed by optional space, a colon, optional space, a quote
+            let rest = src[at + key.len()..].trim_start();
+            let Some(rest) = rest.strip_prefix(':') else {
+                continue;
+            };
+            let rest = rest.trim_start();
+            let Some(rest) = rest.strip_prefix('"') else {
+                continue;
+            };
+            let mut out = String::new();
+            let mut chars = rest.chars();
+            while let Some(c) = chars.next() {
+                match c {
+                    '\\' => match chars.next() {
+                        Some('n') => out.push('\n'),
+                        Some('t') => out.push('\t'),
+                        Some('r') => out.push('\r'),
+                        Some(other) => out.push(other),
+                        None => break,
+                    },
+                    '"' => {
+                        return (!out.is_empty()).then_some(out);
+                    }
+                    other => out.push(other),
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Flatten a content value (string, or list of typed parts) to text:
@@ -105,6 +200,45 @@ fn coerce_argv_command(args: &Value) -> Value {
     Value::Object(out)
 }
 
+/// Which entries of [`to_internal`]'s output are HUMAN-AUTHORED and must
+/// reach the model byte-for-byte (`protect::restore_protected`). Aligned to
+/// that output index-for-index, system entry included.
+///
+/// This wire draws the line the Anthropic one cannot: tool output is its own
+/// `function_call_output` item, so a `role: "user"` message here is ALWAYS a
+/// human turn. Every one of them is protected — the first (which
+/// `freeze::parse` exempts as the task anyway) and, critically, every later
+/// one, which the shared "user == observation" typing would otherwise chunk
+/// and digest down to a head line, an omission marker, and a tail line.
+///
+/// `developer`/`system` items project to `role: "system"` and are never
+/// chunked; assistant text and reasoning stay curatable (model output, not
+/// instructions); unrecognized item types project as inert `opaque` entries.
+pub fn protected_mask(body: &Value) -> Vec<bool> {
+    let mut mask: Vec<bool> = Vec::new();
+    if body
+        .get("instructions")
+        .and_then(Value::as_str)
+        .is_some_and(|i| !i.is_empty())
+    {
+        mask.push(false); // instructions are never chunked, so never restored
+    }
+    for item in body
+        .get("input")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let human = is_message(item)
+            && !matches!(
+                item.get("role").and_then(Value::as_str),
+                Some("assistant") | Some("system") | Some("developer")
+            );
+        mask.push(human);
+    }
+    mask
+}
+
 /// Responses body → internal flat message list: optional
 /// `{"role":"system"}` from `instructions` first, then one entry per input
 /// item, same order. `function_call` items become assistant entries with
@@ -131,7 +265,11 @@ pub fn to_internal(body: &Value) -> Vec<Value> {
     msgs
 }
 
-fn internal_entry(item: &Value) -> Value {
+/// One input item → its internal entry. Public because the Codex transcript
+/// reader (`codex.rs`) reshapes exactly this projection for /trim, so the
+/// action vocabulary a trim labels against is the same one the live curator
+/// sees — one definition, not two that can drift.
+pub fn internal_entry(item: &Value) -> Value {
     if is_message(item) {
         let role = match item.get("role").and_then(Value::as_str) {
             Some("assistant") => "assistant",
@@ -143,7 +281,7 @@ fn internal_entry(item: &Value) -> Value {
         return json!({"role": role, "content": item_text(item)});
     }
     match item.get("type").and_then(Value::as_str) {
-        Some("function_call") => {
+        Some(t) if TOOL_CALL_TYPES.contains(&t) => {
             let name = py_strip(item.get("name").and_then(Value::as_str).unwrap_or(""));
             let args_raw = item.get("arguments").and_then(Value::as_str).unwrap_or("");
             let args: Value = serde_json::from_str::<Value>(args_raw)
@@ -159,8 +297,11 @@ fn internal_entry(item: &Value) -> Value {
                     act.insert(k.clone(), v.clone());
                 }
             }
-            let command = bash_twin_command(name, &twin_args)
-                .filter(|t| !t.is_empty())
+            // The item's own command field wins when it has one (Codex's
+            // `exec`/`local_shell_call` keep the command outside `arguments`);
+            // otherwise the documented function_call path applies.
+            let command = call_command(item)
+                .or_else(|| bash_twin_command(name, &twin_args).filter(|t| !t.is_empty()))
                 .unwrap_or_else(|| derive_command(name, &twin_args));
             act.insert("command".into(), Value::String(command));
             let q = derive_query(name, &args);
@@ -181,7 +322,7 @@ fn internal_entry(item: &Value) -> Value {
                 "extra": {"actions": [Value::Object(act)]},
             })
         }
-        Some("function_call_output") => {
+        Some(t) if TOOL_OUTPUT_TYPES.contains(&t) => {
             json!({"role": "tool", "content": item_text(item)})
         }
         // reasoning (encrypted_content), web_search_call, computer_call,
@@ -276,7 +417,11 @@ fn rewrite_item_text(item: &Value, new_text: &str) -> Value {
         }
         return Value::Object(no);
     }
-    if item.get("type").and_then(Value::as_str) == Some("function_call_output") {
+    if item
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|t| TOOL_OUTPUT_TYPES.contains(&t))
+    {
         let mut no = o.clone();
         if let Some(out_v) = o.get("output") {
             no.insert(
