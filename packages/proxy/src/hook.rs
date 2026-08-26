@@ -432,10 +432,17 @@ fn maybe_upgrade_proxy() -> Option<String> {
     }
     for _ in 0..40 {
         if port_listening(port) {
-            return Some(format!(
+            let mut msg = format!(
                 "⌁ parsec: plugin updated — proxy {running} → {installed} restarted on \
                  127.0.0.1:{port}"
-            ));
+            );
+            // Advisory, not an action: this hook's stdout is a single JSON
+            // object, so the interceptor restart (which prints, and on Windows
+            // needs elevation the hook does not have) is the user's to run.
+            if let Some(n) = crate::setup_desktop::stale_interceptor_notice() {
+                msg.push_str(&format!("; {n}"));
+            }
+            return Some(msg);
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }

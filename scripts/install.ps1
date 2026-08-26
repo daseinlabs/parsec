@@ -198,11 +198,66 @@ function Stop-ParsecProxy {
     try {
         $h = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2
         if ("$($h.service)" -ne "parsec-proxy") { return }
+    }
+    catch { return } # nothing listening, or not ours -- nothing to stop
+    try {
         Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/shutdown" -TimeoutSec 2 | Out-Null
         Write-Host "stopped the running parsec proxy on port $port (old binary)"
-        Start-Sleep -Milliseconds 800
     }
-    catch {}
+    catch {
+        # The supervisor answers /shutdown and THEN exits, so a throw here can
+        # still mean a shutdown already in flight. Fall through to the poll
+        # rather than assume it either worked or did not.
+        Write-Host "shutdown request to port $port errored - checking whether it exits anyway"
+    }
+    # Poll instead of sleeping a fixed 800ms. The swap below races a process
+    # that has ACKed the shutdown but not yet released its image, and a fixed
+    # sleep is either wasted time or -- on a loaded machine -- not enough,
+    # which surfaces as the "something still holds it" error at Move-Item.
+    for ($i = 0; $i -lt 40; $i++) {
+        try { Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 1 | Out-Null }
+        catch { return } # connection refused = really gone
+        Start-Sleep -Milliseconds 100
+    }
+    Write-Warning "the proxy on port $port acknowledged shutdown but is still listening"
+}
+
+# The tray runs `parsec.exe tray run` -- the SAME image the swap replaces, and
+# Windows locks a running exe. Nothing else stops it: `parsec tray uninstall`
+# deliberately leaves a running icon alone. Without this, an upgrade on any
+# machine that ever ran -Tray (its HKCU Run entry starts it at every sign-in)
+# fails at Move-Item with a sharing violation. Returns whether it stopped one,
+# so the caller can bring it back on the NEW binary.
+function Stop-ParsecTray {
+    $stopped = $false
+    try { $procs = Get-CimInstance Win32_Process -Filter "Name = 'parsec.exe'" -ErrorAction Stop }
+    catch { return $false }
+    foreach ($p in $procs) {
+        # Match the command line, never just the path: a proxy, an MCP server
+        # and the tray are all parsec.exe, and only the tray is ours to kill
+        # here (the proxy got a graceful /shutdown above).
+        if (-not ($p.CommandLine -and $p.CommandLine -match '\btray\s+run\b')) { continue }
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        $stopped = $true
+    }
+    if ($stopped) {
+        Write-Host "stopped the running parsec tray (it holds parsec.exe open)"
+        Start-Sleep -Milliseconds 300
+    }
+    return $stopped
+}
+
+function Start-ParsecTray {
+    param([string]$Exe)
+    # Re-launch through the same .vbs the Run key uses, so a restarted tray is
+    # identical to a sign-in one (hidden console window and all).
+    $launcher = Join-Path $env:USERPROFILE ".parsec\parsec-tray.vbs"
+    if (Test-Path $launcher) {
+        Start-Process wscript.exe -ArgumentList "`"$launcher`"" -WindowStyle Hidden
+        Write-Host "restarted the parsec tray on the new binary"
+        return
+    }
+    & $Exe tray install | Out-Null # older install with no launcher -- rebuild it
 }
 
 # -- auto-detect --------------------------------------------------------------
@@ -277,6 +332,8 @@ if ($needsBinary) {
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     # Download beside the destination, verify it runs, then move into place.
     $tmp = Join-Path $destDir ("parsec-download-{0}.exe" -f ([IO.Path]::GetRandomFileName() -replace "\..*$", ""))
+    $stagedDlls = @{}
+    $trayWasRunning = $false
     try {
         Write-Host "downloading parsec (win-x64)..."
         Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/parsec.exe" -OutFile $tmp -UseBasicParsing
@@ -286,21 +343,42 @@ if ($needsBinary) {
         # dies before main() with 0xC0000135 and no stderr. release.yml ships
         # them beside the exe for exactly this reason -- downloading the exe
         # alone reproduced the bug the bundling exists to prevent.
+        #
+        # STAGED rather than written straight into $destDir: on an upgrade the
+        # running proxy and tray have these DLLs LOADED and Windows denies the
+        # overwrite, so the direct write reported "(no <dll> published)" on
+        # every upgrade -- blaming the release for a file lock -- and silently
+        # kept the old CRT. Downloading first keeps the proxy up while the
+        # bytes come down; the swap happens after everything is stopped.
         foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            $stage = Join-Path $destDir "$dll.parsec-new"
             try {
                 Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/$dll" `
-                    -OutFile (Join-Path $destDir $dll) -UseBasicParsing
+                    -OutFile $stage -UseBasicParsing
+                $stagedDlls[$dll] = $stage
             }
             catch {
                 # A release that no longer needs the CRT will not publish them;
                 # the --version check below is the real gate either way.
                 Write-Host "(no $dll published - continuing)"
+                if (Test-Path $stage) { Remove-Item -Force $stage }
             }
         }
+        # Everything holding the old image goes down together, BEFORE any file
+        # in $destDir is replaced: the proxy first (it owns the routed port and
+        # gets a graceful /shutdown), then the tray (it owns nothing but the
+        # lock, and no command stops it).
+        Stop-ParsecProxy
+        $trayWasRunning = Stop-ParsecTray
+        foreach ($dll in @($stagedDlls.Keys)) {
+            try { Move-Item -Force $stagedDlls[$dll] (Join-Path $destDir $dll) }
+            catch { Write-Warning "could not replace $dll (still in use) - keeping the existing one" }
+        }
+        # Runs AFTER the CRT is in place: on a clean box the check itself needs
+        # those DLLs, so verifying before the move would fail on the very
+        # machines the bundling exists for.
         & $tmp --version | Out-Null # refuse to install a binary that cannot run
         if ($LASTEXITCODE -ne 0) { throw "downloaded binary failed --version" }
-        # Windows locks a running exe -- stop an old proxy BEFORE the swap.
-        Stop-ParsecProxy
         try {
             Move-Item -Force $tmp $dest
         }
@@ -310,13 +388,32 @@ if ($needsBinary) {
     }
     finally {
         if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        foreach ($stage in $stagedDlls.Values) {
+            if (Test-Path $stage) { Remove-Item -Force $stage }
+        }
     }
     # A proxy that predates this install keeps serving the OLD binary --
     # restart so the fresh one owns the port (identity-checked: a foreign
     # process on the port is never killed). In-flight requests from other
     # sessions see one brief blip and recover on their next request.
-    & $dest up --restart
-    if ($LASTEXITCODE -ne 0) { Write-Error "proxy restart failed" }
+    # `up --restart` also bounces the Claude Desktop interceptor, so an
+    # updated proxy is never left behind a mitmdump holding the old addon.
+    # Not from HERE though: this shell is unelevated and the interceptor runs
+    # elevated for WinDivert, so the stop could only fail. The elevated
+    # `parsec setup desktop` below restarts it properly.
+    if ($Tools -contains "desktop") { $env:PARSEC_SKIP_DESKTOP_BOUNCE = "1" }
+    try {
+        & $dest up --restart
+        if ($LASTEXITCODE -ne 0) { Write-Error "proxy restart failed" }
+    }
+    finally {
+        Remove-Item Env:\PARSEC_SKIP_DESKTOP_BOUNCE -ErrorAction SilentlyContinue
+    }
+    # The tray is parsec.exe too: it was stopped only to free the file lock, so
+    # bring it back on the NEW binary. Skipped under -Tray, where `tray install`
+    # below starts it anyway -- doing both would leave two icons. Never started
+    # when it was not already running: a login item is -Tray's to add.
+    if ($trayWasRunning -and -not $Tray) { Start-ParsecTray -Exe $dest }
     # Stable PATH entry so the skills/shims' `parsec` fallback resolves
     # (user-scope; no admin). Current session too.
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

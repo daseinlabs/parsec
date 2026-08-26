@@ -104,15 +104,39 @@ qualifier.
 | `parsec desktop start [--autostart]` | Start intercepting with what setup provisioned. Refreshes the addon first, so a moved routed port is picked up. |
 | `parsec desktop stop [--keep-autostart]` | Stop. Also removes the boot service unless `--keep-autostart`, so "stopped" does not silently un-stop itself at next login. |
 | `parsec desktop restart` | Stop and start, preserving the auto-start choice. |
-| `parsec desktop status` | Configured / running / auto-start / Desktop present / mitmproxy / CA / extension approval / routed scope. Changes nothing. |
+| `parsec desktop status` | Configured / running / auto-start / Desktop present / mitmproxy / CA trust state / extension approval / routed scope. Changes nothing. |
 | `parsec disable desktop` | Full teardown: stop, remove the boot service, the addon, and the state file; print the CA removal command. |
+
+### From the macOS installer
+
+`scripts/install.sh` mirrors it: auto-detect adds `desktop` when
+`/Applications/Claude.app` or `~/Applications/Claude.app` exists (with an
+`mdfind` fallback for relocated installs), then `brew install mitmproxy` if
+missing and `parsec setup desktop --install-ca`. The CA step is `sudo
+security add-trusted-cert`, which prompts on `/dev/tty` and so works fine
+under `curl | bash`. Same opt-outs: `--no-desktop`, `--no-ca`,
+`PARSEC_NO_DESKTOP`, `PARSEC_NO_CA`.
+
+**macOS is a two-pass install, and that is not a bug in the script.**
+`gate_extension()` stops the first run: mitmproxy's Network Extension must be
+installed by running `mitmdump` once by hand and then approved in System
+Settings, and no flag gets past a system toggle. The installer treats that
+exit as pass one — it prints the command to re-run rather than reporting a
+failure — and `parsec desktop status` tells you which state you are in. This
+is the same gate the tray's "Set up Claude Desktop…" item waits on.
+
+Unlike Windows, nothing here needs a root-owned interceptor: the Network
+Extension carries the privilege, so `parsec desktop stop` works unprivileged.
 
 ### From the Windows installer
 
 `scripts/install.ps1` sets Desktop up as part of its normal run: auto-detect
-adds `desktop` whenever `%LOCALAPPDATA%\AnthropicClaude\Claude.exe` exists —
-the same location `claude_desktop_installed()` probes, so the script and the
-binary cannot disagree about what is installed. It then installs mitmproxy via
+adds `desktop` whenever it finds Desktop — the running process first, then a
+list of known install roots. `claude_desktop_installed()` checks the same two
+ways for the same reason: they used to disagree, and a machine with Desktop
+open on screen could get `NOT FOUND` from `parsec desktop status` right after
+the installer had enabled desktop on it. The probe warns and never gates, so
+the disagreement was cosmetic — but it reads as a broken setup. It then installs mitmproxy via
 winget if missing and runs `parsec setup desktop --install-ca`.
 
 **Windows needs administrator for the whole provision, not just the CA.**
@@ -302,6 +326,17 @@ own decision, not a parity gap.
   rather than wrong, which is the correct side to err on under the
   measurement-honesty rule.
 - **Linux** needs kernel ≥ 6.8 for mitmproxy's eBPF local mode; **Windows**
-  WinDivert prompts for elevation on each launch. Both paths are implemented
-  and neither has been exercised on real hardware yet — macOS is the tested
-  platform.
+  WinDivert prompts for elevation on each launch. The Linux path has not been
+  exercised on real hardware yet; macOS is the tested platform. Windows has
+  now had one real run, which is where the elevation trap below came from.
+- **Windows, stopping the interceptor**: it runs elevated, so `taskkill` from
+  an unelevated shell is DENIED. `stop()` verifies the process is really gone
+  before clearing the pidfile and reports `StopOutcome::Failed` otherwise —
+  the earlier version discarded the exit code and deleted the pidfile anyway,
+  orphaning a live mitmdump that still held the local-mode hook while
+  `running()` went blind to it. The symptom is a second interceptor that
+  starts cleanly and captures nothing.
+- **CA trust is checked, not assumed**: `ca_trust_state()` compares SHA-1
+  fingerprints rather than matching on the name `mitmproxy`, because a
+  regenerated CA leaves the old one trusted — the store then says "trusted"
+  while every intercepted connection still fails (`CaTrust::Stale`).

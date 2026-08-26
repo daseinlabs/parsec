@@ -147,11 +147,27 @@ pub fn claude_desktop_installed() -> bool {
 /// every arm has to compile everywhere. Off Windows the env vars are absent
 /// and it answers false without touching the disk.
 fn windows_desktop_present() -> bool {
+    // 1. Running right now — the most authoritative answer available, and the
+    //    one `Find-ClaudeDesktop` in install.ps1 has always checked first.
+    //    Without it the installer could enable desktop on a machine where
+    //    `parsec desktop status` then reported NOT FOUND for a Desktop that
+    //    was open on screen, which reads as a broken setup and is not.
+    if desktop_process_running() {
+        return true;
+    }
     let mut roots: Vec<PathBuf> = Vec::new();
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         let local = PathBuf::from(local);
         roots.push(local.join("AnthropicClaude").join("Claude.exe"));
         roots.push(local.join("Programs").join("Claude").join("Claude.exe"));
+        // Some Desktop builds ship under this name. install.ps1 probes it;
+        // this did not, which is the other half of the same disagreement.
+        roots.push(
+            local
+                .join("Programs")
+                .join("claude-desktop")
+                .join("Claude.exe"),
+        );
     }
     for var in ["ProgramFiles", "ProgramFiles(x86)"] {
         if let Ok(dir) = std::env::var(var) {
@@ -374,6 +390,122 @@ fn generate_ca(mitmdump: &Path) -> anyhow::Result<()> {
             "mitmdump ran but did not create {} — run `mitmdump` once by hand and check its output",
             ca_cert_path().display()
         )
+    }
+}
+
+/// Whether the CA sitting in `~/.mitmproxy` is the one the system actually
+/// trusts. Fingerprints are compared, never names: mitmproxy mints a NEW CA
+/// whenever its directory is recreated, and the old one stays in the trust
+/// store — so a name match happily reports "mitmproxy is trusted" while every
+/// intercepted connection still fails. That is the failure this exists to
+/// name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaTrust {
+    /// The CA on disk is in the trust store.
+    Trusted,
+    /// SOME mitmproxy CA is trusted, but not this one — a regenerated CA.
+    Stale,
+    /// No mitmproxy CA in the trust store.
+    NotTrusted,
+    /// The store could not be queried. Reported as unknown rather than
+    /// guessed: both wrong answers actively mislead.
+    Unknown,
+}
+
+/// SHA-1 fingerprints (uppercase hex, separators stripped) on lines carrying
+/// `marker`. Works across `certutil`, `security` and `openssl` output because
+/// all three print the digest after a label on its own line.
+fn hex_after_marker(text: &str, marker: &str) -> Vec<String> {
+    let m = marker.to_lowercase();
+    text.lines()
+        .filter_map(|l| {
+            // Index and slice the SAME lowercased string: `to_lowercase` can
+            // change byte length, so mixing the two would panic mid-char.
+            let low = l.to_lowercase();
+            let i = low.find(&m)?;
+            let hex: String = low[i + m.len()..]
+                .chars()
+                .filter(char::is_ascii_hexdigit)
+                .collect();
+            (hex.len() == 40).then(|| hex.to_uppercase())
+        })
+        .collect()
+}
+
+/// SHA-1 of the CA parsec would have Desktop trust.
+fn ca_file_sha1() -> Option<String> {
+    let ca = ca_cert_path();
+    if !ca.exists() {
+        return None;
+    }
+    let (prog, args, marker): (&str, Vec<&str>, &str) = if cfg!(target_os = "windows") {
+        ("certutil", vec!["-dump"], "cert hash(sha1)")
+    } else {
+        (
+            "openssl",
+            vec!["x509", "-noout", "-fingerprint", "-sha1", "-in"],
+            "fingerprint",
+        )
+    };
+    let out = Command::new(prog).args(args).arg(&ca).output().ok()?;
+    hex_after_marker(&String::from_utf8_lossy(&out.stdout), marker)
+        .into_iter()
+        .next()
+}
+
+/// Every mitmproxy CA the platform trust store holds. `Some(vec![])` is a real
+/// answer ("none trusted"); `None` means we could not ask.
+fn trusted_mitmproxy_sha1s() -> Option<Vec<String>> {
+    if cfg!(target_os = "windows") {
+        // Exits non-zero on a miss, so the exit code is not consulted — an
+        // empty parse IS the "nothing trusted" answer.
+        let out = Command::new("certutil")
+            .args(["-store", "root", "mitmproxy"])
+            .output()
+            .ok()?;
+        Some(hex_after_marker(
+            &String::from_utf8_lossy(&out.stdout),
+            "cert hash(sha1)",
+        ))
+    } else if cfg!(target_os = "macos") {
+        let out = Command::new("security")
+            .args([
+                "find-certificate",
+                "-a",
+                "-c",
+                "mitmproxy",
+                "-Z",
+                "/Library/Keychains/System.keychain",
+            ])
+            .output()
+            .ok()?;
+        Some(hex_after_marker(
+            &String::from_utf8_lossy(&out.stdout),
+            "sha-1 hash",
+        ))
+    } else {
+        // No portable query across Linux trust stores — say unknown.
+        None
+    }
+}
+
+/// Trust state of the CA on disk. Never mutates anything.
+pub fn ca_trust_state() -> CaTrust {
+    let (Some(mine), Some(trusted)) = (ca_file_sha1(), trusted_mitmproxy_sha1s()) else {
+        return CaTrust::Unknown;
+    };
+    classify_trust(&mine, &trusted)
+}
+
+/// Split out from the shell-outs so the three-way call is pinned by tests
+/// rather than by a live trust store.
+fn classify_trust(mine: &str, trusted: &[String]) -> CaTrust {
+    if trusted.iter().any(|t| t == mine) {
+        CaTrust::Trusted
+    } else if trusted.is_empty() {
+        CaTrust::NotTrusted
+    } else {
+        CaTrust::Stale
     }
 }
 
@@ -718,6 +850,31 @@ fn pid_is_mitmdump(pid: u32) -> bool {
     }
 }
 
+/// Is a Claude Desktop process live right now? Presence probe only, used
+/// where the INSTALL PATH is the unreliable part — Desktop is a Squirrel app
+/// with per-user, machine-wide and versioned-payload layouts, so the process
+/// table answers a question the filesystem keeps getting wrong.
+fn desktop_process_running() -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+    let Ok(out) = Command::new("tasklist")
+        .args([
+            "/FI",
+            &format!("IMAGENAME eq {}", desktop_process_name()),
+            "/NH",
+        ])
+        .output()
+    else {
+        return false;
+    };
+    // tasklist prints an INFO line ("No tasks are running which match…") on a
+    // miss, so match the image name rather than trusting non-empty output.
+    String::from_utf8_lossy(&out.stdout)
+        .to_lowercase()
+        .contains(&desktop_process_name().to_lowercase())
+}
+
 fn mitmdump_args(addon: &Path) -> Vec<String> {
     vec![
         "--mode".into(),
@@ -764,25 +921,73 @@ fn spawn_interceptor(mitmdump: &Path, target: &str) -> anyhow::Result<u32> {
     Ok(pid)
 }
 
-/// Stop the interceptor we started. Never kills a PID that is not mitmdump.
-pub fn stop() -> bool {
+/// What `stop()` achieved. The three-way distinction is load-bearing on
+/// Windows: the interceptor runs elevated (WinDivert needs its driver), so
+/// `taskkill` from an unelevated shell is DENIED. A stop that swallowed that
+/// failure and deleted the pidfile anyway orphaned a live mitmdump nothing
+/// could ever reap — `running()` went blind, `status` reported "stopped", and
+/// the orphan kept the local-mode hook so every later interceptor captured
+/// nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopOutcome {
+    /// Nothing of ours was running: no pidfile, or it named a dead or
+    /// recycled PID.
+    NotRunning,
+    /// Signalled, and confirmed gone from the process table.
+    Stopped,
+    /// Still alive after the kill. The pidfile is KEPT, so a retry (or
+    /// `status`) can still find it.
+    Failed(u32),
+}
+
+/// Stop the interceptor we started. Never kills a PID that is not mitmdump,
+/// and never reports a success it did not verify.
+pub fn stop() -> StopOutcome {
     let Some(pid) = read_pid() else {
-        return false;
+        return StopOutcome::NotRunning;
     };
-    let alive = pid_is_mitmdump(pid);
-    if alive {
-        if cfg!(target_os = "windows") {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/F"])
-                .status();
-        } else {
-            let _ = Command::new("kill")
-                .args(["-TERM", &pid.to_string()])
-                .status();
-        }
+    if !pid_is_mitmdump(pid) {
+        // Stale pidfile: the process is gone, or the PID has been recycled by
+        // something unrelated. Clearing it is safe precisely because we refuse
+        // to kill a PID we could not identify as ours.
+        let _ = std::fs::remove_file(pid_path());
+        return StopOutcome::NotRunning;
     }
-    let _ = std::fs::remove_file(pid_path());
-    alive
+    if cfg!(target_os = "windows") {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status();
+    } else {
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status();
+    }
+    // The process table is the authority here, not the killer's exit code:
+    // `taskkill` can report success for a process that outlives it, and
+    // SIGTERM is asynchronous either way. Poll until it is really gone.
+    if wait_for(|| !pid_is_mitmdump(pid)) {
+        let _ = std::fs::remove_file(pid_path());
+        StopOutcome::Stopped
+    } else {
+        StopOutcome::Failed(pid)
+    }
+}
+
+/// What to tell someone whose stop was refused. Windows is the only platform
+/// where this is routine rather than pathological.
+pub fn stop_failure_hint(pid: u32) -> String {
+    if cfg!(target_os = "windows") {
+        format!(
+            "could not stop the interceptor (pid {pid}): it runs elevated for WinDivert, so \
+             stopping it needs an administrator PowerShell:\n\n  taskkill /PID {pid} /F\n\n\
+             The pidfile is kept, so parsec has not lost track of it."
+        )
+    } else {
+        format!(
+            "could not stop the interceptor (pid {pid}): it did not exit after SIGTERM. \
+             Force it with:\n\n  kill -9 {pid}"
+        )
+    }
 }
 
 // ── boot service (opt-in: --autostart) ──────────────────────────────────────
@@ -912,8 +1117,12 @@ fn win_launcher_script(mitmdump: &Path, target: &str) -> String {
 
 fn install_service(mitmdump: &Path, target: &str) -> anyhow::Result<()> {
     // The OS service takes over process ownership — a hand-spawned mitmdump
-    // would fight it for the same local-mode hook.
-    stop();
+    // would fight it for the same local-mode hook, so a stop we could not
+    // verify has to fail here rather than install a service that captures
+    // nothing.
+    if let StopOutcome::Failed(pid) = stop() {
+        anyhow::bail!("{}", stop_failure_hint(pid));
+    }
     if cfg!(target_os = "macos") {
         let plist = launchd_plist();
         std::fs::create_dir_all(plist.parent().unwrap())?;
@@ -1194,8 +1403,11 @@ fn run_start(autostart: bool, restart_proxy: bool) -> anyhow::Result<()> {
         st.autostart = true;
         println!("interceptor installed as a boot service; it starts on login");
     } else {
-        if running() {
-            stop();
+        // No `running()` guard: stop() reports NotRunning on its own, and
+        // starting a second mitmdump while the first still holds the
+        // local-mode hook is exactly the silent-capture-nothing failure.
+        if let StopOutcome::Failed(pid) = stop() {
+            anyhow::bail!("{}", stop_failure_hint(pid));
         }
         let pid = spawn_interceptor(&mitmdump, &target)?;
         std::thread::sleep(std::time::Duration::from_millis(1500));
@@ -1219,7 +1431,7 @@ fn run_start(autostart: bool, restart_proxy: bool) -> anyhow::Result<()> {
 /// removes the boot service — otherwise "stopped" would silently un-stop
 /// itself at the next login, which is CC-Router's reason for the same flag.
 pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
-    let was_running = stop();
+    let outcome = stop();
     let mut st = load_desktop_state().unwrap_or_default();
     if !keep_autostart {
         if uninstall_service() {
@@ -1230,14 +1442,15 @@ pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
         println!("boot service kept — the interceptor returns at next login");
     }
     let _ = save_desktop_state(&st);
-    println!(
-        "interceptor {}",
-        if was_running {
-            "stopped"
-        } else {
-            "was not running"
+    match outcome {
+        StopOutcome::Stopped => println!("interceptor stopped"),
+        StopOutcome::NotRunning => println!("interceptor was not running"),
+        // Not an error exit: the boot-service and state changes above already
+        // happened and are worth keeping. But it must not read as success.
+        StopOutcome::Failed(pid) => {
+            println!("interceptor STILL RUNNING — {}", stop_failure_hint(pid))
         }
-    );
+    }
     println!("Quit and relaunch Claude Desktop to drop any intercepted connections.");
     Ok(())
 }
@@ -1246,8 +1459,72 @@ pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
 /// addon without re-running setup.
 pub fn restart() -> anyhow::Result<()> {
     let autostart = load_desktop_state().map(|s| s.autostart).unwrap_or(false);
-    stop();
+    if let StopOutcome::Failed(pid) = stop() {
+        anyhow::bail!("{}", stop_failure_hint(pid));
+    }
     start(autostart)
+}
+
+/// " from an administrator PowerShell" where that is what the user will need.
+fn elevation_note() -> &'static str {
+    if cfg!(target_os = "windows") {
+        " from an administrator PowerShell"
+    } else {
+        ""
+    }
+}
+
+/// Bounce the interceptor after the proxy underneath it was replaced. Part of
+/// every update path rather than a separate chore, for two reasons: the addon
+/// is re-rendered against the live port, and the OLD mitmdump keeps the
+/// process-local hook — plus, on Windows, a WinDivert driver handle — until it
+/// is reaped. A fresh proxy behind a stale interceptor captures nothing and
+/// says nothing, which is the worst outcome this file has.
+///
+/// Never fails the caller: an update must not break because interception could
+/// not be bounced. It reports instead.
+pub fn restart_after_update() {
+    // install.ps1 sets this for its unelevated `up --restart`: on Windows the
+    // interceptor runs elevated, so a bounce from that shell can only fail —
+    // and the elevated `parsec setup desktop` a few lines later does it
+    // properly. Skipping beats warning about something already being fixed.
+    if std::env::var("PARSEC_SKIP_DESKTOP_BOUNCE").ok().as_deref() == Some("1") {
+        return;
+    }
+    let Some(st) = load_desktop_state() else {
+        return;
+    };
+    if !st.enabled {
+        return;
+    }
+    // Configured but deliberately stopped stays stopped: an update is not a
+    // reason to start intercepting on someone's behalf.
+    if !running() && !st.autostart {
+        return;
+    }
+    println!("\nrestarting the Claude Desktop interceptor against the new build…");
+    if let Err(e) = restart() {
+        println!(
+            "could not restart the Claude Desktop interceptor: {e}\n  Desktop stays on the \
+             PREVIOUS interception until you run `parsec desktop restart`{}",
+            elevation_note()
+        );
+    }
+}
+
+/// One line for an update path that must NOT print — the hook writes a single
+/// JSON object to stdout, so anything else there corrupts it. None when no
+/// live interception is at stake.
+pub fn stale_interceptor_notice() -> Option<String> {
+    let st = load_desktop_state()?;
+    if !st.enabled || !running() {
+        return None;
+    }
+    Some(format!(
+        "the Claude Desktop interceptor is still the pre-update process — run \
+         `parsec desktop restart`{} and relaunch Desktop",
+        elevation_note()
+    ))
 }
 
 fn print_relaunch_reminder() {
@@ -1393,7 +1670,27 @@ pub fn status() -> anyhow::Result<()> {
         }
     );
     if ca_cert_present() {
-        println!("    trust with:      {}", ca_install_command());
+        // This used to print `trust with:` unconditionally, which read as a
+        // trust indicator while saying nothing about the store at all — the
+        // single most misleading line in this report.
+        match ca_trust_state() {
+            CaTrust::Trusted => println!("    trust store:     TRUSTED"),
+            CaTrust::NotTrusted => println!(
+                "    trust store:     NOT TRUSTED — Claude Desktop will reject the \
+                 intercepted connection\n    trust with:      {}",
+                ca_install_command()
+            ),
+            CaTrust::Stale => println!(
+                "    trust store:     STALE — a DIFFERENT mitmproxy CA is trusted, not this \
+                 one (the CA was regenerated)\n    remove it:       {}\n    then trust:      {}",
+                ca_remove_command(),
+                ca_install_command()
+            ),
+            CaTrust::Unknown => println!(
+                "    trust store:     unknown (could not query it)\n    trust with:      {}",
+                ca_install_command()
+            ),
+        }
     }
     if cfg!(target_os = "macos") {
         let line = match extension_status() {
@@ -1426,20 +1723,19 @@ pub fn status() -> anyhow::Result<()> {
 /// did except the trust-store entry, which it never made silently and will
 /// not remove silently either.
 pub fn disable() -> anyhow::Result<()> {
-    let was_running = stop();
+    let outcome = stop();
     let had_service = uninstall_service();
     let addon_removed = remove_addon_if_managed();
     let mcp_removed = unregister_mcp();
     let _ = std::fs::remove_file(state_file());
 
-    println!(
-        "interceptor: {}",
-        if was_running {
-            "stopped"
-        } else {
-            "was not running"
+    match outcome {
+        StopOutcome::Stopped => println!("interceptor: stopped"),
+        StopOutcome::NotRunning => println!("interceptor: was not running"),
+        StopOutcome::Failed(pid) => {
+            println!("interceptor: STILL RUNNING — {}", stop_failure_hint(pid))
         }
-    );
+    }
     println!(
         "boot service: {}",
         if had_service { "removed" } else { "none" }
@@ -1481,7 +1777,11 @@ fn remove_addon_if_managed() -> bool {
 /// interceptor aiming Desktop at a port nothing will answer again. Quiet
 /// and best-effort — uninstall keeps going regardless.
 pub fn remove_if_managed() {
-    let stopped = stop();
+    let outcome = stop();
+    if let StopOutcome::Failed(pid) = outcome {
+        println!("{}", stop_failure_hint(pid));
+    }
+    let stopped = matches!(outcome, StopOutcome::Stopped);
     let service = uninstall_service();
     let addon = remove_addon_if_managed();
     let mcp = unregister_mcp();
@@ -1498,6 +1798,72 @@ pub fn remove_if_managed() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The three trust-store output shapes we parse. Real samples: `certutil`
+    /// (Windows), `security -Z` (macOS), `openssl -fingerprint` (the CA file
+    /// off Windows). Colon-separated and bare hex both have to survive.
+    #[test]
+    fn ca_fingerprints_parse_from_every_platform_tool() {
+        let certutil = "Serial Number: 1c1a980d\n\
+             Issuer: O=mitmproxy, CN=mitmproxy\n\
+             Cert Hash(sha1): 9cb6093e452105dcc2e49f3ff7ce22a9058d6e0b\n\
+             No key provider information";
+        assert_eq!(
+            hex_after_marker(certutil, "cert hash(sha1)"),
+            vec!["9CB6093E452105DCC2E49F3FF7CE22A9058D6E0B"]
+        );
+
+        let security = "SHA-1 hash: 9CB6093E452105DCC2E49F3FF7CE22A9058D6E0B\n\
+             keychain: \"/Library/Keychains/System.keychain\"";
+        assert_eq!(
+            hex_after_marker(security, "sha-1 hash"),
+            vec!["9CB6093E452105DCC2E49F3FF7CE22A9058D6E0B"]
+        );
+
+        // openssl separates every byte with a colon — stripped, not split on.
+        let openssl =
+            "SHA1 Fingerprint=9C:B6:09:3E:45:21:05:DC:C2:E4:9F:3F:F7:CE:22:A9:05:8D:6E:0B";
+        assert_eq!(
+            hex_after_marker(openssl, "fingerprint"),
+            vec!["9CB6093E452105DCC2E49F3FF7CE22A9058D6E0B"]
+        );
+    }
+
+    /// A miss must parse as "none trusted", never as a fingerprint: certutil
+    /// prints prose on a miss and the serial number on a hit, and a serial is
+    /// hex too. Only 40-hex-digit runs after the digest label count.
+    #[test]
+    fn non_digest_lines_are_not_mistaken_for_fingerprints() {
+        let miss = "root \"Trusted Root Certification Authorities\"\n\
+             CertUtil: -store command completed successfully.";
+        assert!(hex_after_marker(miss, "cert hash(sha1)").is_empty());
+        // A serial on its own line is hex but carries no digest label.
+        let serial = "Serial Number: 1c1a980daf932ece635bc524e6627192d4301191";
+        assert!(hex_after_marker(serial, "cert hash(sha1)").is_empty());
+    }
+
+    /// The distinction the old status line could not make: a REGENERATED CA
+    /// leaves the old one trusted, so a name match says "trusted" while every
+    /// intercepted connection still fails.
+    #[test]
+    fn a_regenerated_ca_reads_as_stale_not_trusted() {
+        let mine = "AAAA093E452105DCC2E49F3FF7CE22A9058D6E0B".to_string();
+        let other = "BBBB093E452105DCC2E49F3FF7CE22A9058D6E0B".to_string();
+        assert_eq!(
+            classify_trust(&mine, std::slice::from_ref(&mine)),
+            CaTrust::Trusted
+        );
+        assert_eq!(classify_trust(&mine, &[]), CaTrust::NotTrusted);
+        assert_eq!(
+            classify_trust(&mine, std::slice::from_ref(&other)),
+            CaTrust::Stale
+        );
+        // Both present (trusted, then regenerated, then re-trusted) is trusted.
+        assert_eq!(
+            classify_trust(&mine, &[other, mine.clone()]),
+            CaTrust::Trusted
+        );
+    }
 
     #[test]
     fn mcp_merge_is_additive_and_never_clobbers_the_users_config() {

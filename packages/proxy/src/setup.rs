@@ -477,6 +477,14 @@ pub fn up(restart: bool, session_start: bool) -> anyhow::Result<()> {
                  request (log: {})",
                 log.display()
             );
+            // An update replaces BOTH halves or neither: Claude Desktop's
+            // interceptor holds an addon rendered against the old build, so a
+            // restarted proxy behind an untouched mitmdump is a silent
+            // half-upgrade. Only on --restart; a plain `up` is a liveness
+            // check and must not disturb a healthy interceptor.
+            if restart {
+                crate::setup_desktop::restart_after_update();
+            }
             return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
