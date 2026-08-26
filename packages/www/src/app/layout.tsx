@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
+import { GoogleTagManager } from "@next/third-parties/google";
 import "./globals.css";
 import { Nav } from "@/components/nav";
 import { Footer } from "@/components/footer";
@@ -68,6 +69,7 @@ export default function RootLayout({
       className={`${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <GoogleTagManager gtmId="GTM-WWJ8KMCL" />
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
         <Script
@@ -93,6 +95,14 @@ gtag('config', 'G-BQPR460BVF');`}
           
       </head>
       <body className="flex min-h-full flex-col bg-void text-ink">
+        <noscript>
+          <iframe
+            src="https://www.googletagmanager.com/ns.html?id=GTM-WWJ8KMCL"
+            height="0"
+            width="0"
+            style={{ display: "none", visibility: "hidden" }}
+          />
+        </noscript>
         <Nav />
         <div className="flex-1">{children}</div>
         <Footer />
