@@ -52,14 +52,6 @@ cargo test
 
 Python packages are independent uv/pip projects under `packages/{brain,trainer,bench}`.
 
-## License
-
-The repo default is [MIT](LICENSE) (copyright 2026 Dasein Labs) — it covers
-the OSS packages in the table above (`plugin`, `proxy`, `engine`, `mapgen`,
-`contracts`). The private packages (`brain`, `trainer`, `platform`, plus
-checkpoints and the trace corpus) are **not** open source and carry their own
-`LICENSE` notice overriding the root; see DIRECTION.md §7 for the rationale
-(open-source the deterministic shell; sell the brain).
 
 ## Invariants (CI-enforced from day one — DIRECTION.md §8)
 
