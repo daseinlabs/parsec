@@ -76,6 +76,23 @@ export default function RootLayout({
           src="https://www.googletagmanager.com/gtag/js?id=G-BQPR460BVF"
           strategy="afterInteractive"
         />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-BQPR460BVF');`}
+        </Script>
+        
+        <!-- X conversion tracking base code -->
+        <script>
+        !function(e,t,n,s,u,a){e.twq||(s=e.twq=function(){s.exe?s.exe.apply(s,arguments):s.queue.push(arguments);
+        },s.version='1.1',s.queue=[],u=t.createElement(n),u.async=!0,u.src='https://static.ads-twitter.com/uwt.js',
+        a=t.getElementsByTagName(n)[0],a.parentNode.insertBefore(u,a))}(window,document,'script');
+        twq.integration='gtm-ad-manager';
+        twq('config','repbw');
+        </script>
+        <!-- End X conversion tracking base code -->
+          
       </head>
       <body className="flex min-h-full flex-col bg-void text-ink">
         <noscript>
