@@ -7,12 +7,21 @@ behind it.
 ## The flow
 
 Nothing ships from pushes to `main` — they run the cross-platform build matrix
-as CI and stop. A release is created by pushing a tag:
+as CI and stop. A release is cut with:
 
 ```
-git tag v0.4.0 && git push origin v0.4.0     # stable — rolled out to everyone
-git tag v0.4.1 && git push origin v0.4.1     # patch  — opt-in only
+make release VERSION=0.4.0    # stable — rolled out to everyone
+make release VERSION=0.4.1    # patch  — opt-in only
+git push origin main v0.4.1   # pushing the tag is what publishes
 ```
+
+`make release` bumps the workspace version in the root `Cargo.toml` — the
+single source of truth that `parsec --version`, `/health`, and hook.rs's
+plugin-updated check all report — then commits and tags in one step so tag
+and binary can never disagree. release.yml enforces this: a hand-cut tag
+whose version differs from `Cargo.toml` (or from what the built binary
+actually reports) fails the publish. Pre-release suffixes (`-alpha`, `-rc.1`)
+are allowed and always classify as patch.
 
 The tag pattern is the channel switch:
 

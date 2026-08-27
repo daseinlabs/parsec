@@ -181,6 +181,18 @@ jobs:
           fi
           echo "publishing v$VERSION (channel: $CHANNEL)"
 
+          # The binary reports CARGO_PKG_VERSION — the workspace version in
+          # the root Cargo.toml — so a tag that disagrees with it would ship
+          # binaries that lie about what they are, blinding the hook's
+          # plugin-updated restart and every future OTA comparison. `make
+          # release VERSION=…` keeps them in step; this catches hand-cut tags.
+          CARGO_VERSION="$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+          if [ "$CARGO_VERSION" != "$VERSION" ]; then
+            echo "tag v$VERSION != workspace version $CARGO_VERSION (Cargo.toml)." >&2
+            echo "cut releases with: make release VERSION=$VERSION" >&2
+            exit 1
+          fi
+
           # Release assets: per-platform binaries, the win-x64 CRT DLLs, the
           # plugin zip, and a sha256 manifest. These — not the git tree — are
           # the permanent versioned history: immutable, per-tag, and free of
@@ -192,6 +204,14 @@ jobs:
           cp artifacts/parsec-win-x64/parsec.exe assets/parsec-win-x64.exe
           cp artifacts/parsec-win-x64/*.dll assets/
           cp dist/parsec-plugin.zip assets/
+          # Belt and braces: the built artifact must agree with the tag too
+          # (artifact download drops exec bits, hence the chmod).
+          chmod +x assets/parsec-darwin-arm64 assets/parsec-linux-x64
+          BIN_VERSION="$(assets/parsec-linux-x64 --version)"
+          if [ "$BIN_VERSION" != "parsec $VERSION" ]; then
+            echo "built binary reports '$BIN_VERSION', expected 'parsec $VERSION'" >&2
+            exit 1
+          fi
           (cd assets && sha256sum -- * \
             | jq -Rn '[inputs | split("  ") | {(.[1]): .[0]}] | add') > sums.json
           jq -n --arg v "$VERSION" --arg tag "v$VERSION" --slurpfile s sums.json \
