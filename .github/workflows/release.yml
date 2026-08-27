@@ -3,11 +3,25 @@ name: release
 # Builds the per-platform `parsec` binaries and publishes the assembled plugin
 # to the public marketplace repo daseinlabs/plugins (DIRECTION.md §7b:
 # distribution is git-clone with no build step, so binaries ship prebuilt).
-# Publishes on every push to main (dev version stamped from git describe) and
-# on v* tags (version stamped from the tag; also attached to a GitHub Release).
-# The marketplace repo's history is force-pushed as a single squashed commit
-# per publish so user clones stay small. Requires the PLUGIN_PUBLISH_TOKEN
-# secret: a fine-grained PAT with contents:write on daseinlabs/plugins.
+#
+# Publishing is TAG-ONLY (docs/release-channels.md). Pushes to main still run
+# the cross-platform build matrix — ci.yml is Linux-only, so this is where a
+# macOS or Windows build break surfaces before a release — but nothing ships.
+# Tags classify into two channels:
+#   v0.X.0 (stable) — the plugins repo tree is refreshed (plugin + binaries +
+#                     install scripts) and BOTH channels of latest.json
+#                     advance. Marketplace and install-script users live here.
+#   v0.X.Y (patch)  — only latest.json's `patch` channel advances (text-only
+#                     commit); the tree stays at the last stable. Patch
+#                     binaries exist solely as release assets.
+# Every tag also becomes a GitHub Release ON daseinlabs/plugins carrying the
+# per-platform binaries and a sha256 manifest — that is the permanent
+# versioned history. The plugins repo history is append-only (normal commits,
+# one per release, tagged); binaries land in the tree only on minors, which
+# is what keeps user clones from growing ~80 MB per publish without the old
+# force-push-a-single-squashed-commit trick.
+# Requires the PLUGIN_PUBLISH_TOKEN secret: a fine-grained PAT with
+# contents:write on daseinlabs/plugins.
 
 on:
   push:
@@ -15,10 +29,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:  # manual run to test the matrix without publishing
 
-# Serialize runs per ref so two quick pushes to main can't land their
-# marketplace force-pushes out of order (last build must win).
+# One static group, not per-ref: publishes now APPEND to the plugins repo, so
+# two tag runs racing would fail the second push on non-fast-forward. Main
+# builds queue behind a publish occasionally; that beats a broken release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -149,43 +164,90 @@ jobs:
       #   claude plugin marketplace add https://github.com/daseinlabs/plugins
       #   claude plugin install parsec@parsec-marketplace
       - name: Publish to daseinlabs/plugins
-        # Tag pushes and main pushes publish; workflow_dispatch stays a dry
-        # run of the build matrix.
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        # Tags ONLY — main pushes and workflow_dispatch are dry runs of the
+        # build matrix. Stable (v0.X.0) refreshes the whole tree; patch
+        # (v0.X.Y) touches nothing but latest.json's `patch` channel. See the
+        # header and docs/release-channels.md.
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           PUBLISH_TOKEN: ${{ secrets.PLUGIN_PUBLISH_TOKEN }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.0$ ]]; then
+            CHANNEL=stable
           else
-            # main push: stamp a dev version from the last tag (e.g.
-            # 0.0.5-alpha-3-g620f3cc) so marketplace installs are
-            # distinguishable from tagged releases.
-            VERSION="$(git describe --tags --match 'v*' --always)"
-            VERSION="${VERSION#v}"
+            CHANNEL=patch
           fi
-          rm -rf publish && mkdir -p publish/plugins
-          cp -R packages/marketplace/. publish/
-          cp -R dist/parsec publish/plugins/parsec
-          # The one-line installer (`curl …/install.sh | bash`, auto-detects
-          # codex + opencode) ships beside the binaries it downloads, from
-          # the same commit, so the URL layout it assumes can never drift
-          # from the tree it lives in. install-opencode.sh is a compat stub:
-          # that URL shipped in earlier releases and must keep working.
-          install -m 755 scripts/install.sh publish/install.sh
-          install -m 755 scripts/install-opencode.sh publish/install-opencode.sh
-          install -m 644 scripts/install.ps1 publish/install.ps1
-          # plugin.json `version` is the update channel — stamp it from the tag.
-          jq --arg v "$VERSION" '.version = $v' \
-            publish/plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
-          mv plugin.json.tmp publish/plugins/parsec/.claude-plugin/plugin.json
+          echo "publishing v$VERSION (channel: $CHANNEL)"
+
+          # Release assets: per-platform binaries, the win-x64 CRT DLLs, the
+          # plugin zip, and a sha256 manifest. These — not the git tree — are
+          # the permanent versioned history: immutable, per-tag, and free of
+          # clone bloat. The future self-updater downloads from here.
+          rm -rf assets publish
+          mkdir -p assets
+          cp artifacts/parsec-darwin-arm64/parsec assets/parsec-darwin-arm64
+          cp artifacts/parsec-linux-x64/parsec assets/parsec-linux-x64
+          cp artifacts/parsec-win-x64/parsec.exe assets/parsec-win-x64.exe
+          cp artifacts/parsec-win-x64/*.dll assets/
+          cp dist/parsec-plugin.zip assets/
+          (cd assets && sha256sum -- * \
+            | jq -Rn '[inputs | split("  ") | {(.[1]): .[0]}] | add') > sums.json
+          jq -n --arg v "$VERSION" --arg tag "v$VERSION" --slurpfile s sums.json \
+            '{version: $v, tag: $tag, assets: $s[0]}' > entry.json
+          cp entry.json assets/manifest.json
+
+          # Append one commit to the plugins repo — never force-push. Clone
+          # is what makes append possible: we build on the published history
+          # instead of re-initializing it.
+          git clone "https://x-access-token:${PUBLISH_TOKEN}@github.com/daseinlabs/plugins.git" publish
           cd publish
-          git init -b main
           git config user.name "dasein-release"
           git config user.email "release@daseinlabs.ai"
+          if [[ "$CHANNEL" == stable ]]; then
+            # Refresh the whole tree: marketplace files, plugin + binaries,
+            # install scripts. The one-line installer (`curl …/install.sh |
+            # bash`) ships beside the binaries it downloads, from the same
+            # commit, so the URL layout it assumes can never drift from the
+            # tree it lives in. install-opencode.sh is a compat stub: that
+            # URL shipped in earlier releases and must keep working.
+            find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+            cp -R "$GITHUB_WORKSPACE/packages/marketplace/." .
+            mkdir -p plugins
+            cp -R "$GITHUB_WORKSPACE/dist/parsec" plugins/parsec
+            install -m 755 "$GITHUB_WORKSPACE/scripts/install.sh" install.sh
+            install -m 755 "$GITHUB_WORKSPACE/scripts/install-opencode.sh" install-opencode.sh
+            install -m 644 "$GITHUB_WORKSPACE/scripts/install.ps1" install.ps1
+            # plugin.json `version` is the marketplace update channel — it
+            # advances only on stable, so plugin users never see patches.
+            jq --arg v "$VERSION" '.version = $v' \
+              plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
+            mv plugin.json.tmp plugins/parsec/.claude-plugin/plugin.json
+          fi
+          # latest.json is the pollable two-channel pointer (docs/
+          # release-channels.md): `stable` is pushed to everyone, `patch` is
+          # opt-in. A stable release supersedes any patch on the previous
+          # minor, so both channels advance together.
+          [ -f latest.json ] || echo '{}' > latest.json
+          if [[ "$CHANNEL" == stable ]]; then
+            jq --slurpfile e ../entry.json '.stable = $e[0] | .patch = $e[0]' \
+              latest.json > latest.json.tmp
+          else
+            jq --slurpfile e ../entry.json '.patch = $e[0]' \
+              latest.json > latest.json.tmp
+          fi
+          mv latest.json.tmp latest.json
           git add -A
-          git commit -m "parsec v$VERSION"
-          git push --force \
-            "https://x-access-token:${PUBLISH_TOKEN}@github.com/daseinlabs/plugins.git" \
-            main
+          git commit -m "parsec v$VERSION ($CHANNEL)"
+          git tag "v$VERSION"
+          git push origin main "v$VERSION"
+
+          # The public, versioned artifact store: a GitHub Release on the
+          # plugins repo itself (the parsec source repo is private, so its
+          # releases cannot serve downloads).
+          GH_TOKEN="$PUBLISH_TOKEN" gh release create "v$VERSION" \
+            --repo daseinlabs/plugins \
+            --title "parsec v$VERSION" \
+            --notes "channel: $CHANNEL — see latest.json / manifest.json for sha256s" \
+            ../assets/*

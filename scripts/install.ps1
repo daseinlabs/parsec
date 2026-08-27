@@ -14,8 +14,10 @@
 # endpoint setting, so parsec reaches it by process-scoped TLS interception --
 # which means installing mitmproxy (winget) and trusting its CA in the machine
 # root store. That last step is machine-wide, so it always goes through a
-# visible Windows administrator prompt, never silently. Skip it with
-# -NoDesktop, or take the interception without the CA with -NoCa.
+# visible Windows administrator prompt, never silently. A boot service (HKCU
+# Run entry) is installed too, so interception survives reboots -- skip that
+# with -NoAutostart. Skip Desktop entirely with -NoDesktop, or take the
+# interception without the CA with -NoCa.
 # Nothing is written outside ~\.parsec and the tools' own config dirs; no
 # admin rights needed -- except the Claude Desktop CA, which is machine-wide
 # and prompts for administrator approval. Undo:
@@ -32,8 +34,8 @@
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools desktop -NoCa
 #
 # (or set $env:PARSEC_TOOLS = "codex" / $env:PARSEC_BYOK = "1" /
-# $env:PARSEC_NO_DESKTOP = "1" / $env:PARSEC_NO_CA = "1" before the plain
-# irm|iex form.)
+# $env:PARSEC_NO_DESKTOP = "1" / $env:PARSEC_NO_CA = "1" /
+# $env:PARSEC_NO_AUTOSTART = "1" before the plain irm|iex form.)
 #
 # Source of truth: scripts/install.ps1 in the parsec repo; release.yml
 # publishes it next to the binaries it references, so script and binaries
@@ -49,6 +51,11 @@ param(
     # command and Desktop stays unintercepted until it is run. For anyone who
     # wants to read the command before a root cert lands in their trust store.
     [switch]$NoCa,
+    # Skip the boot service (HKCU Run entry) that keeps Desktop interception
+    # alive across reboots. Default is to install it: without it the
+    # interceptor dies with the session and Desktop silently goes unrouted
+    # (fail open) until someone runs `parsec desktop start`.
+    [switch]$NoAutostart,
     # Install the tray app (notification area + taskbar) and register it to
     # start at sign-in. Opt-in: a login item is a persistent, visible addition
     # to someone's machine and should not appear because they installed a CLI.
@@ -72,6 +79,7 @@ if (-not $Tools -and $env:PARSEC_TOOLS) { $Tools = $env:PARSEC_TOOLS -split "[ ,
 if ($env:PARSEC_BYOK -eq "1") { $Byok = $true }
 if ($env:PARSEC_NO_DESKTOP -eq "1") { $NoDesktop = $true }
 if ($env:PARSEC_NO_CA -eq "1") { $NoCa = $true }
+if ($env:PARSEC_NO_AUTOSTART -eq "1") { $NoAutostart = $true }
 $Tools = @($Tools | ForEach-Object { if ($_ -eq "claude-code") { "claude" } else { $_ } })
 foreach ($t in $Tools) {
     if ($t -notin @("claude", "codex", "opencode", "desktop")) {
@@ -435,7 +443,7 @@ if ($needsBinary) {
 # provision under it. Doing it any other way loses a race: setup_desktop.rs
 # spawns mitmdump detached and requires it alive 1.5s later, which a human
 # approving a UAC dialog cannot beat.
-function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa) {
+function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa, [bool]$Autostart) {
     # Reached with -Tools desktop even when Find-ClaudeDesktop came up empty:
     # the interceptor matches the PROCESS NAME, so an install we could not
     # locate on disk still gets captured once Desktop is running. Say so, so
@@ -469,6 +477,10 @@ function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa) {
 
     $setupArgs = @("setup", "desktop")
     if ($TrustCa) { $setupArgs += "--install-ca" }
+    if ($Autostart) {
+        $setupArgs += "--autostart"
+        Write-Host "installing the boot service too, so interception survives reboots (skip with -NoAutostart)."
+    }
 
     if (Test-Admin) {
         try { & $Exe @setupArgs }
@@ -531,7 +543,7 @@ foreach ($t in $Tools) {
             & $dest setup opencode
         }
         "desktop" {
-            Install-ParsecDesktop -Exe $dest -TrustCa (-not $NoCa)
+            Install-ParsecDesktop -Exe $dest -TrustCa (-not $NoCa) -Autostart (-not $NoAutostart)
         }
     }
 }
@@ -565,5 +577,8 @@ if ($Tools -contains "desktop") {
     Write-Host "desktop: quit Claude Desktop COMPLETELY (tray icon -> Quit, not just the window) and reopen it - mitmproxy hooks the process at launch."
     Write-Host "         only Cowork / Agent mode is routed; the normal chat sidebar is not. Check with: parsec desktop status"
     Write-Host "         the interceptor runs elevated (WinDivert), so stopping it needs an admin shell: parsec desktop stop"
+    if ($NoAutostart) {
+        Write-Host "         -NoAutostart: interception stops at reboot - bring it back with: parsec desktop start"
+    }
 }
 Write-Host "undo: parsec disable codex|opencode|desktop - parsec tray uninstall - claude plugin uninstall parsec"

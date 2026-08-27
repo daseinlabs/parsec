@@ -16,8 +16,10 @@
 # Claude Desktop is detected and set up too (macOS). It is the one surface
 # with no endpoint setting, so parsec reaches it by process-scoped TLS
 # interception, which means installing mitmproxy (brew) and trusting its CA
-# in the System keychain — the one step that asks for `sudo`. Skip Desktop
-# with --no-desktop, or take it without the CA with --no-ca. macOS also gates
+# in the System keychain — the one step that asks for `sudo`. A launchd boot
+# service is installed too, so interception survives reboots (skip that one
+# with --no-autostart). Skip Desktop entirely with --no-desktop, or take it
+# without the CA with --no-ca. macOS also gates
 # mitmproxy behind a Network Extension approval that CANNOT be scripted, so
 # Desktop is a two-pass install: this script stops with instructions, you
 # approve in System Settings, then re-run `parsec setup desktop`.
@@ -33,9 +35,11 @@
 #   … | bash -s -- desktop          # just Claude Desktop interception
 #   … | bash -s -- --no-desktop     # auto-detect, but leave Desktop alone
 #   … | bash -s -- desktop --no-ca  # set Desktop up, do not trust the CA
+#   … | bash -s -- desktop --no-autostart  # no boot service — interception
+#                                   # stops at reboot until `parsec desktop start`
 #
-# (or set PARSEC_NO_DESKTOP=1 / PARSEC_NO_CA=1 before the plain curl | bash
-# form.)
+# (or set PARSEC_NO_DESKTOP=1 / PARSEC_NO_CA=1 / PARSEC_NO_AUTOSTART=1 before
+# the plain curl | bash form.)
 #
 # Source of truth: scripts/install.sh in the parsec repo; release.yml
 # publishes it next to the binaries it references, so script and binaries
@@ -50,6 +54,7 @@ tools="" # space-separated; empty ⇒ auto-detect
 byok=0
 no_desktop="${PARSEC_NO_DESKTOP:-0}"
 no_ca="${PARSEC_NO_CA:-0}"
+no_autostart="${PARSEC_NO_AUTOSTART:-0}"
 for a in "$@"; do
   case "$a" in
     codex | opencode | claude | desktop) tools="$tools $a" ;;
@@ -57,8 +62,9 @@ for a in "$@"; do
     --byok) byok=1 ;;
     --no-desktop) no_desktop=1 ;;
     --no-ca) no_ca=1 ;;
+    --no-autostart) no_autostart=1 ;;
     *)
-      echo "unknown argument: $a (expected: claude, codex, opencode, desktop, --byok, --no-desktop, --no-ca)" >&2
+      echo "unknown argument: $a (expected: claude, codex, opencode, desktop, --byok, --no-desktop, --no-ca, --no-autostart)" >&2
       exit 1
       ;;
   esac
@@ -87,6 +93,17 @@ find_claude_desktop() {
   return 1
 }
 
+# ── platform ─────────────────────────────────────────────────────────────────
+# Which prebuilt binary this machine can run. Decided BEFORE auto-detect so a
+# Desktop found on a platform with no binary (an Intel Mac, say) is dropped
+# with a warning instead of aborting an install that could still set Claude
+# Code up — the same degradation install.ps1 applies on ARM64 Windows.
+plat=""
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) plat=darwin-arm64 ;;
+  Linux-x86_64) plat=linux-x64 ;;
+esac
+
 # ── auto-detect ──────────────────────────────────────────────────────────────
 if [ -z "$tools" ]; then
   # Claude Code needs its CLI present (the plugin installs through it);
@@ -107,7 +124,14 @@ if [ -z "$tools" ]; then
   if [ "$no_desktop" != 1 ] && [ "$(uname -s)" = Darwin ]; then
     desktop_app="$(find_claude_desktop || true)"
     if [ -n "$desktop_app" ]; then
-      tools="$tools desktop"
+      if [ -n "$plat" ]; then
+        tools="$tools desktop"
+      else
+        # AUTO-detected only: an explicit `desktop` still hits the hard error
+        # below — that was a request, not a guess.
+        echo "skipping Claude Desktop: it needs the parsec binary, which is not published for $(uname -s) $(uname -m)" >&2
+        desktop_app=""
+      fi
     fi
   fi
   if [ -z "$tools" ]; then
@@ -139,11 +163,6 @@ fi
 # own copy — this is the one on PATH.
 dest="$HOME/.parsec/bin/parsec"
 path_hint=""
-plat=""
-case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64) plat=darwin-arm64 ;;
-  Linux-x86_64) plat=linux-x64 ;;
-esac
 if [ -z "$plat" ]; then
   # codex/opencode/desktop all run THROUGH the binary; claude does not.
   if printf '%s' "$tools" | grep -qwE 'codex|opencode|desktop'; then
@@ -240,6 +259,13 @@ install_parsec_desktop() {
     set -- "$@" --install-ca
     echo "the CA goes into the System keychain — macOS will ask for your password (sudo)."
   fi
+  if [ "$no_autostart" != 1 ]; then
+    # Out-of-the-box means surviving a reboot: without the boot service the
+    # interceptor dies with the session and Desktop silently goes unrouted
+    # (fail open) until someone runs `parsec desktop start`.
+    set -- "$@" --autostart
+    echo "installing the launchd boot service so interception survives reboots (skip with --no-autostart)."
+  fi
   if "$dest" "$@"; then
     return 0
   fi
@@ -297,6 +323,7 @@ case "$tools" in
   *desktop*)
     echo "desktop: quit Claude Desktop completely (⌘Q, not just the window) and reopen it — mitmproxy hooks the process at launch."
     echo "         only Cowork / Agent mode is routed; the normal chat sidebar is not. Check with: parsec desktop status"
+    [ "$no_autostart" = 1 ] && echo "         --no-autostart: interception stops at reboot — bring it back with: parsec desktop start"
     ;;
 esac
 [ -n "$path_hint" ] && echo "$path_hint"
