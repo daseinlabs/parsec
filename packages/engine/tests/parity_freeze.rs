@@ -38,6 +38,8 @@ fn config_of(fx: &Value) -> (FreezeConfig, Option<i64>) {
         mode: ChunkMode::Fixed,
         tau_fixed_q: tau_q,
         min_run_tokens: 10,
+        // Reference behaviour: the Python freezer cuts assistant prose.
+        cut_assistant: true,
     };
     (cfg, tau_q)
 }
@@ -229,6 +231,8 @@ fn malformed_input_fails_open() {
         mode: ChunkMode::Fixed,
         tau_fixed_q: Some(500_000),
         min_run_tokens: 10,
+        // Reference behaviour: the Python freezer cuts assistant prose.
+        cut_assistant: true,
     };
     let mut fz = Freezer::new(cfg, StubScorer { tau_q: None });
     // Non-string text in a content part: the reference raises out of curate()

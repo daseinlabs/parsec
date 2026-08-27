@@ -54,10 +54,22 @@ if [ -z "$PROJECT" ]; then
   exit 1
 fi
 
+# Hard failure, not a warning: cloudbuild.yaml passes --set-env-vars/--set-secrets,
+# which REPLACE the revision's env rather than merging into it. Omitting these
+# here therefore strips them off a service that had them, so a deploy that only
+# meant to ship new code silently 401s every JWT-gated endpoint (/keys,
+# /ledger/summary, …) while /ledger ingest — keyed by X-Parsec-Key, no JWT — keeps
+# working. That failure is invisible to a smoke test and cost us a live outage.
 if [ -z "$SUPABASE_JWKS_URL" ] && [ -z "$JWT_SECRET_SECRET" ]; then
-  echo "warning: neither SUPABASE_JWKS_URL nor JWT_SECRET_SECRET set —" >&2
-  echo "         JWT-gated endpoints (/keys, /ledger/summary, …) will reject every" >&2
-  echo "         request. Set one before the dashboard can work." >&2
+  echo "refusing to deploy: neither SUPABASE_JWKS_URL nor JWT_SECRET_SECRET is set." >&2
+  echo "  These are not merged into the existing revision — they replace it, so" >&2
+  echo "  deploying without them REMOVES auth from a service that currently has it." >&2
+  echo "  Set one (JWKS wins if both):" >&2
+  echo "    SUPABASE_JWKS_URL=https://<proj>.supabase.co/auth/v1/.well-known/jwks.json $0" >&2
+  echo "  Deliberately deploying an instance no dashboard will authenticate against?" >&2
+  echo "  Re-run with ALLOW_NO_JWT_AUTH=1." >&2
+  [ "${ALLOW_NO_JWT_AUTH:-0}" = "1" ] || exit 1
+  echo "  ALLOW_NO_JWT_AUTH=1 — continuing without JWT verification." >&2
 fi
 
 # Migrations run OUT-OF-BAND, before the code deploy (pgstore.py does not

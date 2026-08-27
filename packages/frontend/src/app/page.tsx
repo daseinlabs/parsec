@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ledgerSummary, ledgerUsage } from "@/lib/platform";
+import { ledgerSummary, ledgerUsage, PlatformHttpError } from "@/lib/platform";
 import type { LedgerSummary, LedgerUsage } from "@/lib/platform";
 import { supabaseServer } from "@/lib/supabase/server";
 import { Lockup, NavLink, SignOut } from "@/components/brand";
@@ -171,6 +171,18 @@ function DailyUsage({ usage }: { usage: LedgerUsage }) {
   );
 }
 
+/** Name the actual fault. Every branch here is a different on-call action. */
+function platformFailureMessage(e: unknown): string {
+  if (!(e instanceof PlatformHttpError)) {
+    // Never got an HTTP status back at all — DNS, TLS, refused connection.
+    return "The platform API is unreachable — check PLATFORM_URL.";
+  }
+  if (e.status === 401 || e.status === 403) {
+    return `The platform API rejected this session (${e.status}). It is reachable, so this is an auth fault — check that SUPABASE_JWKS_URL (or SUPABASE_JWT_SECRET) is set on the platform service.`;
+  }
+  return `The platform API returned ${e.status}.`;
+}
+
 export default async function DashboardPage() {
   const supabase = await supabaseServer();
   if (!supabase) {
@@ -189,11 +201,14 @@ export default async function DashboardPage() {
 
   let summary: LedgerSummary | null = null;
   let usage: LedgerUsage | null = null;
-  let unreachable = false;
+  // Why not a single "unreachable" flag: a 401 and a refused connection are
+  // different outages with different fixes, and collapsing them sent us hunting
+  // PLATFORM_URL while the real fault was the platform's JWT config.
+  let failure: string | null = null;
   try {
     [summary, usage] = await Promise.all([ledgerSummary(), ledgerUsage(30)]);
-  } catch {
-    unreachable = true;
+  } catch (e) {
+    failure = platformFailureMessage(e);
   }
 
   return (
@@ -213,11 +228,7 @@ export default async function DashboardPage() {
         usage &amp; savings
       </h1>
 
-      {unreachable && (
-        <p className="text-sm text-error">
-          The platform API is unreachable — check PLATFORM_URL.
-        </p>
-      )}
+      {failure && <p className="text-sm text-error">{failure}</p>}
       {summary && summary.rows_count === 0 && <Onboarding />}
       {summary && summary.rows_count > 0 && (
         <>

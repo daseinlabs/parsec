@@ -286,7 +286,15 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
         let (fz, served, fails_before, calls_before, insists_before) =
             tokio::task::spawn_blocking(move || {
                 let mut fz = taken.unwrap_or_else(|| {
-                    Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
+                    // Responses/Codex: tool output only. Reasoning is opaque
+                    // (`encrypted_content`) and tool calls are textless, so
+                    // assistant prose would be half the cuttable surface here
+                    // and the plan for the turn lives in it.
+                    let cfg = FreezeConfig {
+                        cut_assistant: false,
+                        ..FreezeConfig::default()
+                    };
+                    Freezer::new(cfg, BrainScorer::new(bcfg2, conv2))
                 });
                 fz.scorer.attach_gf = false;
                 fz.scorer.stats.last_doom_q = None;

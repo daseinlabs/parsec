@@ -488,7 +488,7 @@ pub(crate) fn forward_auth_headers(inbound: &HeaderMap) -> HeaderMap {
 /// (which hashed the `to_internal` view, system entry first), the head is
 /// taken from the INTERNAL view — hashing raw `body.messages[..2]` would
 /// make turn 1 (`[u1]`) and turn 2 (`[u1, a1]`) different conversations.
-fn conversation_id(headers: &HeaderMap, internal: &[Value]) -> String {
+fn conversation_id(headers: &HeaderMap, internal: &[Value], session: Option<&str>) -> String {
     let head: Vec<Value> = internal
         .iter()
         .take(2)
@@ -496,6 +496,18 @@ fn conversation_id(headers: &HeaderMap, internal: &[Value]) -> String {
         .collect();
     let mut h = Sha256::new();
     h.update(py_json_dumps(&Value::Array(head)).as_bytes());
+    // The first two messages are NOT unique across sessions — a shared system
+    // prompt plus a canned opening turn is the norm for the short auxiliary
+    // calls the harness makes, and those all hashed to one id. Colliding
+    // conversations share a Freezer, so each request looks like a prefix
+    // rewrite to the other and trips the purity guard (freeze.rs `serve`):
+    // permanent reset thrash, every request paying a full cold replay. The
+    // session id is stable for the life of a conversation and is already
+    // charset-gated to ids, so it separates them without widening the head.
+    if let Some(sid) = session {
+        h.update(b"\x00session\x00");
+        h.update(sid.as_bytes());
+    }
     let hash = format!("{:x}", h.finalize());
     let hash = &hash[..24];
     match headers.get("x-ccb-run-id").and_then(|v| v.to_str().ok()) {
@@ -573,7 +585,11 @@ fn record_inbound(headers: &HeaderMap, body: &Value, raw: &[u8]) {
     else {
         return;
     };
-    let conv_id = conversation_id(headers, &to_internal(body));
+    let conv_id = conversation_id(
+        headers,
+        &to_internal(body),
+        session_id_from_metadata(body).as_deref(),
+    );
     let res: io::Result<()> = (|| {
         let d = PathBuf::from(dir.trim()).join(&conv_id);
         std::fs::create_dir_all(&d)?;
@@ -638,6 +654,12 @@ pub(crate) struct PlanStats {
     pub(crate) folds_new: usize,
     /// Brain trace round trips this request (birth steps scored/replayed).
     pub(crate) births_scored: u64,
+    /// `ChunkScorer::score` invocations this serve, cache hits included.
+    /// `score_calls - births_scored` is what the same-live-set memo absorbed
+    /// (chiefly the per-owner-pool tau loop, which is mask-only delta).
+    pub(crate) score_calls: u64,
+    /// Of those, how many the memo served without an HTTP round trip.
+    pub(crate) cache_hits: u64,
     /// Message indices carrying a cache anchor in the served body.
     pub(crate) anchors: Vec<usize>,
     pub(crate) curate_ms: f64,
@@ -757,7 +779,11 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
     // (protect.rs). Built from the inbound body, so it stays a pure
     // function of the prefix like everything else on this path.
     let protected = crate::internal::protected_mask(body);
-    let conv_id = conversation_id(headers, &internal);
+    let conv_id = conversation_id(
+        headers,
+        &internal,
+        session_id_from_metadata(body).as_deref(),
+    );
     tracing::debug!(
         conv = %conv_id,
         internal_msgs = internal.len(),
@@ -818,7 +844,11 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                 fz.scorer.attach_gf = attach_gf;
                 fz.scorer.stats.last_doom_q = None;
                 let fails_before = fz.scorer_fail_opens;
-                let calls_before = fz.scorer.stats.trace_calls;
+                let calls_before = (
+                    fz.scorer.stats.trace_calls,
+                    fz.scorer.stats.score_calls,
+                    fz.scorer.stats.cache_hits,
+                );
                 // Cut-registry watermarks for the curator decision log. Deltas
                 // saturate: a memo reset (client edit) mid-conversation clears
                 // the registries, and a from-scratch replay then reads as all-new
@@ -872,7 +902,9 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         stats.scorer_fail_opens = fz.scorer_fail_opens - fails_before;
         stats.brain_ms = fz.scorer.stats.brain_ms;
         stats.checkpoint_id = fz.scorer.stats.checkpoint_id.clone();
-        stats.births_scored = fz.scorer.stats.trace_calls - calls_before;
+        stats.births_scored = fz.scorer.stats.trace_calls - calls_before.0;
+        stats.score_calls = fz.scorer.stats.score_calls - calls_before.1;
+        stats.cache_hits = fz.scorer.stats.cache_hits - calls_before.2;
         gov_doom_q = fz.scorer.stats.last_doom_q;
         lock(&st.convs).entry(conv_id.clone()).or_default().freezer = Some(fz);
         // Curator decision log — the per-cut twin of the tool-prune score
@@ -1664,7 +1696,14 @@ pub(crate) fn write_ledger(
         if stats.freeze_cut_tokens > 0 {
             o.insert("freeze_cut_tokens".into(), json!(stats.freeze_cut_tokens));
         }
-        if let Some(src) = cf_source {
+        // Only the LOCAL instrument is nameable here. The contract's enum is
+        // ["local_bpe"] and its description makes the probed case the absent
+        // one ("Absent = provider-probed"), so stamping "count_tokens" put the
+        // row outside the schema: the platform answers 422 extra/literal and
+        // drops it whole. A probed saving is the honest, measured kind — and
+        // it was the one that never reached the dashboard. `cf_source` still
+        // carries "count_tokens" for the log line above, which is free text.
+        if let Some(src) = cf_source.filter(|s| *s != "count_tokens") {
             o.insert("counterfactual_source".into(), json!(src));
         }
         if !stats.freeze_cut_roles.is_empty() {
@@ -2035,6 +2074,8 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         probe_ms = (probe_ms * 10.0).round() / 10.0,
         upstream_ms = (t_upstream.elapsed().as_secs_f64() * 10_000.0).round() / 10.0,
         births_scored = stats.births_scored,
+        score_calls = stats.score_calls,
+        cache_hits = stats.cache_hits,
         folds_total = stats.folds_total,
         folds_new = stats.folds_new,
         anchors = ?stats.anchors,
@@ -2109,7 +2150,13 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         // derive the id from the body when it parses; "" when it doesn't.
         conv_id: plan.as_ref().map(|p| p.conv_id.clone()).unwrap_or_else(|| {
             body.as_ref()
-                .map(|b| conversation_id(&headers, &to_internal(b)))
+                .map(|b| {
+                    conversation_id(
+                        &headers,
+                        &to_internal(b),
+                        session_id_from_metadata(b).as_deref(),
+                    )
+                })
                 .unwrap_or_default()
         }),
         session_id: body.as_ref().and_then(session_id_from_metadata),
@@ -2272,6 +2319,37 @@ mod tests {
         assert_eq!(evicted, 2);
         assert!(convs.contains_key("hot"));
         assert_eq!(convs.len(), 1);
+    }
+
+    #[test]
+    fn conv_id_separates_sessions_sharing_an_opening_prefix() {
+        // Two sessions, byte-identical first two messages — the shape every
+        // short auxiliary call has. Before the session id was mixed in these
+        // collided onto one Freezer and reset each other's memo every turn.
+        let internal = vec![
+            serde_json::json!({"role": "system", "content": "you are a helpful assistant"}),
+            serde_json::json!({"role": "user", "content": "summarize this"}),
+        ];
+        let h = HeaderMap::new();
+        let a = conversation_id(&h, &internal, Some("8068d98c-4176-4b0e-8e2b-a543aa24f204"));
+        let b = conversation_id(&h, &internal, Some("deadbeef-0000-4000-8000-000000000000"));
+        assert_ne!(
+            a, b,
+            "same opening prefix, different session must not share"
+        );
+        // Stable within a session: the id is what keys the memo across turns,
+        // so it must not drift as the conversation grows past the head.
+        let mut grown = internal.clone();
+        grown.push(serde_json::json!({"role": "assistant", "content": "sure"}));
+        assert_eq!(
+            a,
+            conversation_id(&h, &grown, Some("8068d98c-4176-4b0e-8e2b-a543aa24f204"))
+        );
+        // No session id (non-Claude-Code clients) → previous behaviour, and
+        // still distinct from any session-scoped id.
+        let anon = conversation_id(&h, &internal, None);
+        assert_eq!(anon, conversation_id(&h, &grown, None));
+        assert_ne!(anon, a);
     }
 
     #[test]

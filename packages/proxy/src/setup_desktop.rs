@@ -883,7 +883,12 @@ fn mitmdump_args(addon: &Path) -> Vec<String> {
         addon.display().to_string(),
         "--set".into(),
         "connection_strategy=lazy".into(),
-        "--quiet".into(),
+        // NOT --quiet. It was, and that made a crashed interceptor look
+        // exactly like an idle one: mitmdump kept a live PID while its event
+        // loop was dead, `running()` reported "running", and every Claude
+        // Desktop request hung with nothing written anywhere. Flow lines and
+        // handler errors go to interceptor/mitmdump.log, which is the only
+        // place either failure is visible.
     ]
 }
 
