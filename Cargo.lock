@@ -2074,7 +2074,7 @@ dependencies = [
 
 [[package]]
 name = "parsec-engine"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "regex",
@@ -2096,7 +2096,7 @@ dependencies = [
 
 [[package]]
 name = "parsec-mapgen"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "ignore",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "parsec-proxy"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "axum",
