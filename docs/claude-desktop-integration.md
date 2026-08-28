@@ -265,7 +265,7 @@ Item-by-item against `../../VictorMinemu/CC-Router`
 
 | CC-Router | parsec | Notes |
 |---|---|---|
-| `--mode local:<Claude\|Claude.exe\|claude>` | ✅ `desktop_process_name()` | Same per-platform names |
+| `--mode local:<Claude\|claude.exe,Claude.exe\|claude>` | ✅ `interception_spec()` | mitmproxy_rs matches the spec as a **case-sensitive** substring of the full image path (`intercept_conf.rs`, no normalization). Windows binaries are lowercase `claude.exe` on disk (Squirrel and MSIX both), so a `Claude.exe`-only spec matches nothing — Windows interception was silently dead through v0.2.2. `desktop_process_name()` remains the display/tasklist name. |
 | `checkMitmproxyInstalled()` | ✅ `mitmdump_path()` | Resolved absolutely, for launchd/systemd's minimal PATH |
 | `getNetworkExtensionStatus()` | ✅ `extension_status()` | Same `systemextensionsctl` parse, both output shapes, unit-tested |
 | `openNetworkExtensionSettings()` | ✅ `open_extension_settings()` | Same `x-apple.systempreferences:` deep link + fallback |

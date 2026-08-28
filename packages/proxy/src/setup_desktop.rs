@@ -914,10 +914,32 @@ fn desktop_process_running() -> bool {
         .contains(&desktop_process_name().to_lowercase())
 }
 
+/// The `local:` intercept spec handed to mitmdump. Distinct from
+/// `desktop_process_name()` (display + tasklist, where matching is
+/// case-insensitive) because mitmproxy_rs matches this spec as a
+/// CASE-SENSITIVE substring of the process's full image path
+/// (`intercept_conf.rs::Pattern::matches` — `n.contains(name)`, no
+/// normalization on any platform). On Windows the running binary is
+/// lowercase `claude.exe` in every known layout — Squirrel
+/// `app-X.Y.Z\claude.exe` and MSIX `…\app\claude.exe` — so the old spec
+/// `local:Claude.exe` matched NOTHING, ever: Windows interception was
+/// silently dead while macOS (whose binary really is `Claude`) worked.
+/// Both casings are listed anyway; the comma is mitmproxy's own
+/// multi-pattern separator.
+fn interception_spec() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Claude"
+    } else if cfg!(target_os = "windows") {
+        "claude.exe,Claude.exe"
+    } else {
+        "claude"
+    }
+}
+
 fn mitmdump_args(addon: &Path) -> Vec<String> {
     vec![
         "--mode".into(),
-        format!("local:{}", desktop_process_name()),
+        format!("local:{}", interception_spec()),
         "-s".into(),
         addon.display().to_string(),
         "--set".into(),
@@ -2113,8 +2135,15 @@ mod tests {
     fn mitmdump_args_scope_interception_to_the_desktop_process() {
         let args = mitmdump_args(Path::new("/tmp/addon.py"));
         // local:<process> is what keeps this from being a system-wide MITM.
-        assert!(args.contains(&format!("local:{}", desktop_process_name())));
+        assert!(args.contains(&format!("local:{}", interception_spec())));
         assert!(args.contains(&"connection_strategy=lazy".to_string()));
+        // mitmproxy_rs matches the spec as a case-sensitive substring of the
+        // full image path. On Windows the binary on disk is LOWERCASE
+        // claude.exe in every known install layout; a capitalized-only spec
+        // matches nothing (the bug that made Windows interception silently
+        // dead through v0.2.2).
+        #[cfg(windows)]
+        assert!(interception_spec().split(',').any(|p| p == "claude.exe"));
     }
 
     #[test]
