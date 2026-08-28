@@ -329,6 +329,18 @@ own decision, not a parity gap.
   WinDivert prompts for elevation on each launch. The Linux path has not been
   exercised on real hardware yet; macOS is the tested platform. Windows has
   now had one real run, which is where the elevation trap below came from.
+- **Windows on ARM64 is a hard wall**: the win-x64 parsec binary and mitmdump
+  both run under Windows 11's x64 emulation, but WinDivert is a *kernel*
+  driver and emulation does not extend to kernel drivers — mitmdump launches,
+  fails to load the driver, and dies with a cryptic embedded-Python fatal
+  error (`tstate_delete_common` / `PyInterpreterState_Delete`; nothing to do
+  with system Python, which mitmproxy's standalone build never uses).
+  `gate_windows_arm64()` in `setup_desktop.rs` and the installer both refuse
+  `desktop` on an ARM64 kernel with the real reason. Detection reads the
+  machine-wide `PROCESSOR_ARCHITECTURE` registry value because the
+  environment variable is rewritten to `AMD64` inside emulated shells —
+  which is exactly how one ARM64 install slipped past the first env-var
+  check. Lifting this needs an ARM64 WinDivert build, which does not exist.
 - **Windows, stopping the interceptor**: it runs elevated, so `taskkill` from
   an unelevated shell is DENIED. `stop()` verifies the process is really gone
   before clearing the pidfile and reports `StopOutcome::Failed` otherwise —

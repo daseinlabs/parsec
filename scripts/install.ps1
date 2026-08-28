@@ -185,6 +185,25 @@ function Find-ClaudeDesktop {
     }
     catch {}
 
+    # 7. MSIX package -- the current Desktop installer registers under
+    #    Program Files\WindowsApps. That root denies enumeration, but the
+    #    package's own folder grants Users read, so the resolved path works.
+    #    No Uninstall entry, no .lnk: none of the probes above can see it.
+    try {
+        $pkg = Get-AppxPackage -Name Claude -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($pkg -and $pkg.InstallLocation) {
+            foreach ($rel in @("app\claude.exe", "Claude.exe")) {
+                $exe = Join-Path $pkg.InstallLocation $rel
+                if (Test-Path $exe) { return $exe }
+            }
+            # Layout moved? The registered package is presence enough (that
+            # is all this function is used for -- see the header comment).
+            return $pkg.InstallLocation
+        }
+    }
+    catch {}
+
     return $null
 }
 
@@ -310,12 +329,17 @@ if ($NoCa -and ("desktop" -notin $Tools) -and -not $NoDesktop) {
     Write-Host "note: -NoCa only affects Claude Desktop setup"
 }
 
-$isX64 = $env:PROCESSOR_ARCHITECTURE -eq "AMD64"
+# $env:PROCESSOR_ARCHITECTURE cannot be trusted here: inside an x64-emulated
+# shell on ARM64 hardware the loader rewrites it to AMD64, which made this
+# script install desktop tooling on machines where WinDivert can never load.
+# The machine-wide registry value keeps the real architecture.
+$nativeArch = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment").PROCESSOR_ARCHITECTURE
+$isX64 = $nativeArch -eq "AMD64"
 # Windows 11 on ARM emulates x64 transparently, so the win-x64 binary runs
 # fine there -- the Claude Code plugin's dispatcher has always done exactly
 # that on these machines. Windows 10 on ARM only emulates x86 (build 22000 is
 # the Windows 11 floor), so it stays unsupported.
-$isArm64Emu = ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") -and
+$isArm64Emu = ($nativeArch -eq "ARM64") -and
     ([Environment]::OSVersion.Version.Build -ge 22000)
 
 # Claude Desktop interception is the one thing x64 emulation cannot carry:
@@ -331,7 +355,7 @@ if (-not $isX64 -and ("desktop" -in $Tools)) {
         $Tools = @($Tools | Where-Object { $_ -ne "desktop" })
     }
     else {
-        Write-Error "Claude Desktop interception cannot work on $env:PROCESSOR_ARCHITECTURE (WinDivert's kernel driver has no ARM64 build) - re-run without 'desktop'"
+        Write-Error "Claude Desktop interception cannot work on $nativeArch (WinDivert's kernel driver has no ARM64 build) - re-run without 'desktop'"
     }
 }
 
@@ -347,9 +371,9 @@ $binaryRequired = ($Tools -contains "codex") -or ($Tools -contains "opencode") -
 $needsBinary = $isX64 -or $isArm64Emu
 if (-not $needsBinary) {
     if ($binaryRequired) {
-        Write-Error "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (win-x64 only today; ARM64 needs Windows 11 for x64 emulation - or use WSL / the Claude Code plugin)"
+        Write-Error "unsupported architecture: $nativeArch (win-x64 only today; ARM64 needs Windows 11 for x64 emulation - or use WSL / the Claude Code plugin)"
     }
-    Write-Warning "no parsec binary runs on $env:PROCESSOR_ARCHITECTURE - installing the Claude Code plugin only (it ships its own binary)"
+    Write-Warning "no parsec binary runs on $nativeArch - installing the Claude Code plugin only (it ships its own binary)"
 }
 if ($isArm64Emu) {
     Write-Host "ARM64 Windows 11: installing the win-x64 binary - it runs under the OS's built-in x64 emulation."

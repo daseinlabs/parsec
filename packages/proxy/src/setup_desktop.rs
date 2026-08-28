@@ -168,6 +168,13 @@ fn windows_desktop_present() -> bool {
                 .join("claude-desktop")
                 .join("Claude.exe"),
         );
+        // MSIX install (the current Desktop installer): the payload lands
+        // under Program Files\WindowsApps, whose root denies enumeration —
+        // but every registered package gets a per-user state dir at
+        // LOCALAPPDATA\Packages\<Name>_<publisher-hash>, and the hash is
+        // derived from Anthropic's signing cert, so it is stable across
+        // versions. A directory works fine in the exists() sweep below.
+        roots.push(local.join("Packages").join("Claude_pzs8sxrjxfjjc"));
     }
     for var in ["ProgramFiles", "ProgramFiles(x86)"] {
         if let Ok(dir) = std::env::var(var) {
@@ -201,6 +208,38 @@ pub fn desktop_process_name() -> &'static str {
     } else {
         "claude"
     }
+}
+
+/// Windows only: refuse interception on an ARM64 kernel. mitmproxy's
+/// redirector (WinDivert) is a kernel driver with no ARM64 build, and x64
+/// emulation does not extend to kernel drivers — mitmdump launches under
+/// emulation, fails to load the driver, and dies with a cryptic embedded-
+/// Python fatal error. Detection must NOT use the process environment:
+/// under x64 emulation the loader rewrites PROCESSOR_ARCHITECTURE to AMD64.
+/// The machine-wide registry value keeps the real architecture.
+fn gate_windows_arm64() -> anyhow::Result<()> {
+    #[cfg(windows)]
+    {
+        let arm64 = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+                "/v",
+                "PROCESSOR_ARCHITECTURE",
+            ])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("ARM64"))
+            .unwrap_or(false);
+        if arm64 {
+            anyhow::bail!(
+                "Claude Desktop interception cannot work on ARM64 Windows: mitmproxy's \
+                 redirector (WinDivert) is a kernel driver with no ARM64 build, and x64 \
+                 emulation does not cover kernel drivers.\nEverything else parsec does \
+                 works on this machine — only `desktop` is off the table."
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Absolute path to `mitmdump`, or None when it is not installed. Resolved
@@ -1391,6 +1430,7 @@ pub fn start(autostart: bool) -> anyhow::Result<()> {
 }
 
 fn run_start(autostart: bool, restart_proxy: bool) -> anyhow::Result<()> {
+    gate_windows_arm64()?;
     let Some(mitmdump) = mitmdump_path() else {
         anyhow::bail!("mitmproxy is not installed — {}", install_hint());
     };
@@ -1550,6 +1590,7 @@ pub fn setup(opts: Options) -> anyhow::Result<()> {
     if opts.status_only {
         return status();
     }
+    gate_windows_arm64()?;
 
     print_scope_explainer();
     if !claude_desktop_installed() {
