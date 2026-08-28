@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { Mark } from "@/components/brand";
 import { SITE } from "@/lib/site";
+import { setPendingLeadCookie } from "@/lib/analytics";
 
 const linkClass =
   "text-muted transition-colors duration-150 ease-parsec hover:text-phosphor";
@@ -26,7 +29,12 @@ export function Footer() {
           <a href={SITE.links.github} rel="noopener" className={linkClass}>
             GitHub
           </a>
-          <a href={SITE.links.app} rel="noopener" className={linkClass}>
+          <a
+            href={SITE.links.app}
+            onClick={setPendingLeadCookie}
+            rel="noopener"
+            className={linkClass}
+          >
             Dashboard
           </a>
         </nav>
