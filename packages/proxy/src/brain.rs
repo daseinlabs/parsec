@@ -282,6 +282,12 @@ pub struct BrainStats {
     pub checkpoint_id: Option<String>,
     /// HTTP trace-score round trips (birth steps scored) — tracing seam.
     pub trace_calls: u64,
+    /// `score()` invocations, cache hits included. `score_calls - trace_calls`
+    /// is the memo's yield; the gap between the two is what the per-owner-pool
+    /// tau loop costs (it should be all hits — same live set, mask-only delta).
+    pub score_calls: u64,
+    /// `score()` invocations served from the same-live-set memo without HTTP.
+    pub cache_hits: u64,
     /// Latest doom_q seen (governor consumer resets it per serve).
     pub last_doom_q: Option<i64>,
 }
@@ -370,24 +376,27 @@ impl BrainScorer {
 
 impl ChunkScorer for BrainScorer {
     fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
+        self.stats.score_calls += 1;
         let fp = Self::live_fp(q);
-        if let Some((step, cached_fp, scores, tau)) = self
+        let hit = self
             .cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
-        {
-            if *step == q.cur_step && *cached_fp == fp {
-                tracing::debug!(
-                    conv = %self.conv_id,
-                    cur_step = q.cur_step,
-                    "brain score served from same-live-set cache"
-                );
-                return Ok(ScoreResult {
-                    scores_q: scores.clone(),
-                    tau_q: *tau,
-                });
-            }
+            .filter(|(step, cached_fp, _, _)| *step == q.cur_step && *cached_fp == fp)
+            .map(|(_, _, scores, tau)| ScoreResult {
+                scores_q: scores.clone(),
+                tau_q: *tau,
+            });
+        if let Some(hit) = hit {
+            self.stats.cache_hits += 1;
+            tracing::debug!(
+                conv = %self.conv_id,
+                cur_step = q.cur_step,
+                mask_len = q.mask.len(),
+                "brain score served from same-live-set cache"
+            );
+            return Ok(hit);
         }
 
         let mut body = match self.cfg.contract {

@@ -41,6 +41,7 @@
 # wire, not `/v1/messages`. What this captures is Cowork / Agent-mode
 # inference — the traffic that looks like Claude Code's.
 
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -72,10 +73,49 @@ _REDIRECT_PREFIXES = ("/v1/messages", "/v1/models")
 _TOOL_TAG = "claude-desktop"
 
 
+def responseheaders(flow: http.HTTPFlow) -> None:
+    """Forward bodies incrementally instead of buffering them whole.
+
+    mitmproxy ships `stream_large_bodies` UNSET, so by default it reads an
+    entire body before forwarding one byte. Anthropic's wire is streaming:
+    `/v1/messages` with stream:true is SSE, and the Cowork bridge's work-poll
+    is a long-poll whose body does not complete until work exists. Buffering
+    either makes the client wait for a response that by design does not end —
+    the infinite Claude Desktop hang, and the reason the interceptor looked
+    crashed when it was merely holding every stream open.
+
+    Safe because this addon never reads or rewrites a response body: it
+    redirects requests and stamps one request header. Streaming costs us
+    nothing we use.
+    """
+    flow.response.stream = True
+
+
+# Flow counters. Without these, "captured nothing" and "captured plenty,
+# redirected none" are indistinguishable from outside the process — which is
+# what made a hung Desktop take an evening to diagnose instead of one line.
+_SEEN = {"flows": 0, "redirected": 0}
+
+
 def request(flow: http.HTTPFlow) -> None:
+    host = (flow.request.pretty_host or "").lower()
+
+    # Observability, deliberately narrow. Local mode decrypts EVERY host this
+    # process talks to (docs §7); logging all of them would turn this file
+    # into a browsing history. Only Anthropic/claude.ai, only method + host +
+    # path prefix — never a query string, never a body.
+    if host.endswith("anthropic.com") or host.endswith("claude.ai"):
+        _SEEN["flows"] += 1
+        logging.info(
+            "parsec: saw %s %s%s",
+            flow.request.method,
+            host,
+            flow.request.path.split("?")[0][:80],
+        )
+
     # Case 2 (already aimed at the parsec proxy) falls out here: not
     # api.anthropic.com, so there is nothing to do.
-    if (flow.request.pretty_host or "").lower() != "api.anthropic.com":
+    if host != "api.anthropic.com":
         return
     if not flow.request.path.startswith(_REDIRECT_PREFIXES):
         return
@@ -87,3 +127,11 @@ def request(flow: http.HTTPFlow) -> None:
         f":{_port}" if _port not in (80, 443) else ""
     )
     flow.request.headers["x-parsec-tool"] = _TOOL_TAG
+    _SEEN["redirected"] += 1
+    logging.info(
+        "parsec: redirected -> %s:%d  (%d redirected / %d seen)",
+        _host,
+        _port,
+        _SEEN["redirected"],
+        _SEEN["flows"],
+    )

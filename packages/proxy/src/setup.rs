@@ -477,6 +477,14 @@ pub fn up(restart: bool, session_start: bool) -> anyhow::Result<()> {
                  request (log: {})",
                 log.display()
             );
+            // An update replaces BOTH halves or neither: Claude Desktop's
+            // interceptor holds an addon rendered against the old build, so a
+            // restarted proxy behind an untouched mitmdump is a silent
+            // half-upgrade. Only on --restart; a plain `up` is a liveness
+            // check and must not disturb a healthy interceptor.
+            if restart {
+                crate::setup_desktop::restart_after_update();
+            }
             return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -671,6 +679,27 @@ pub fn classify_port(port: u16, required: &[&str]) -> PortOccupant {
 
 pub(crate) fn proxy_health_version(port: u16) -> Option<String> {
     parse_health_version(&proxy_request(port, "GET", "/health")?)
+}
+
+/// Parse "X.Y.Z" (optionally "vX.Y.Z" or with a "-pre" suffix, which is
+/// ignored for ordering) into a comparable triple. Shared by the two places
+/// that must never DOWNGRADE: the hook's proxy-replacement check and the
+/// plugin's binary-alias refresh. Install scripts resolve `latest.json` and
+/// may legitimately place a patch-channel binary that is NEWER than the
+/// marketplace plugin build — an equality check treats that as drift to
+/// correct, which silently reverts an explicit opt-in every session.
+pub(crate) fn semver_triple(s: &str) -> Option<(u64, u64, u64)> {
+    let core = s.trim().trim_start_matches('v').split('-').next()?;
+    let mut it = core.split('.');
+    let triple = (
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+    );
+    match it.next() {
+        Some(_) => None,
+        None => Some(triple),
+    }
 }
 
 /// Extract `version` from a raw /health HTTP exchange, but only when the

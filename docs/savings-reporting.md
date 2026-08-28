@@ -251,21 +251,34 @@ Client side, so released proxies ship without any per-user config beyond the key
 
 ## Troubleshooting
 
-**Dashboard says "The platform API is unreachable — check PLATFORM_URL."** This
-message fires on *any* failure of the server-side fetch, not just a bad URL.
-Likely causes, in order:
+**Dashboard shows an error under "usage & savings".** The message names the
+fault — read it before touching config.
 
-1. **Platform not running** — `curl -s -o /dev/null -w '%{http_code}'
-   http://127.0.0.1:8080/health` returns `000`/connection-refused. Start it (see
-   above).
-2. **Migration `0002` not applied** — an authenticated request runs the per-model
-   query against `ledger.extra` / `model_pricing`; if missing → 500 → "unreachable".
-   Check: `information_schema.columns` for `ledger.extra`, and that `model_pricing`
-   exists.
-3. **Auth (401)** — platform's Supabase JWT verification misconfigured
-   (`SUPABASE_JWKS_URL` / audience).
-4. **Endpoint 404** — the running platform predates `/ledger/usage`; redeploy the
-   current code.
+**"The platform API is unreachable — check PLATFORM_URL."** The fetch never got
+an HTTP status back at all: DNS, TLS, or a refused connection. Confirm with
+`curl -s -o /dev/null -w '%{http_code}' "$PLATFORM_URL/health"` — `000` means the
+frontend's `PLATFORM_URL` is wrong or the platform is not running (see above).
+
+**"The platform API rejected this session (401)."** The platform is reachable;
+its Supabase JWT verification is broken. Check `SUPABASE_JWKS_URL` (or
+`SUPABASE_JWT_SECRET`) and the audience on the *platform* service — not
+`PLATFORM_URL`.
+
+> This is the failure to suspect right after a platform deploy.
+> `packages/platform/cloudbuild.yaml` passes `--set-env-vars` / `--set-secrets`,
+> which **replace** the revision's env instead of merging, so deploying without
+> `SUPABASE_JWKS_URL` in scope strips auth off a service that had it. Ingest
+> keeps working — `POST /ledger` authenticates with `X-Parsec-Key` and never
+> verifies a JWT — so a smoke test looks green while every dashboard read 401s.
+> `scripts/deploy_platform.sh` now refuses to deploy in this state.
+
+**"The platform API returned 500."** Usually migration `0002` not applied: an
+authenticated request runs the per-model query against `ledger.extra` /
+`model_pricing`. Check `information_schema.columns` for `ledger.extra`, and that
+`model_pricing` exists.
+
+**"The platform API returned 404."** The running platform predates
+`/ledger/usage`; redeploy the current code.
 
 **No rows in the dashboard, but curation is working locally.**
 

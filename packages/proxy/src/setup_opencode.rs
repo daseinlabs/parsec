@@ -159,6 +159,37 @@ pub(crate) fn bin_alias_path() -> PathBuf {
     crate::setup::parsec_home().join("bin").join(name)
 }
 
+/// The version a binary on disk reports (`parsec 0.2.3` → `0.2.3`), or None
+/// when it cannot be run — a missing or broken file is replaceable.
+fn binary_reported_version(path: &Path) -> Option<String> {
+    let out = std::process::Command::new(path)
+        .arg("--version")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    Some(s.split_whitespace().last()?.to_string())
+}
+
+/// True when the real file at the alias path reports a NEWER version than
+/// this running binary. The install scripts resolve `latest.json` and place
+/// the newest published build (patch channel included) at exactly this
+/// path; this refresh runs from every SessionStart hook (`ensure_callable`),
+/// so without this guard the marketplace plugin — stable channel by
+/// construction — would silently revert that opt-in within one session.
+/// Upgrades and same-version refreshes proceed; only downgrades stop.
+fn alias_is_newer_build(alias: &Path) -> bool {
+    let (Some(alias_v), Some(run_v)) = (
+        binary_reported_version(alias).and_then(|v| crate::setup::semver_triple(&v)),
+        crate::setup::semver_triple(env!("CARGO_PKG_VERSION")),
+    ) else {
+        return false;
+    };
+    alias_v > run_v
+}
+
 /// Point `~/.parsec/bin/parsec` at the running binary. Only a symlink is
 /// ever replaced (a symlink there is ours by construction); a real file is
 /// the user's and is left alone. `parsec uninstall` purges the whole dir,
@@ -178,6 +209,12 @@ pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
     // probe path, and it is the image currently running. Relinking it would
     // point the alias at itself.
     if decide_alias(&state, &exe, alias == exe) == AliasAction::Keep {
+        return Ok(());
+    }
+    // A real file NEWER than this build is the installer's latest-channel
+    // download, not a stale leftover — symlinking it away to this older
+    // plugin build would be a downgrade. See `alias_is_newer_build`.
+    if matches!(state, AliasState::RealFile) && alias_is_newer_build(&alias) {
         return Ok(());
     }
     if let Some(dir) = alias.parent() {
@@ -273,6 +310,12 @@ pub(crate) fn refresh_bin_alias() -> anyhow::Result<()> {
     let current = std::fs::metadata(&alias).map(|m| m.len()).unwrap_or(0) == src.len() as u64
         && std::fs::read(&alias).map(|cur| cur == src).unwrap_or(false);
     if current {
+        return Ok(());
+    }
+    // Bytes differ — but a copy NEWER than this build is the installer's
+    // latest-channel download, not staleness. Overwriting it here would
+    // downgrade it on the next hook run. See `alias_is_newer_build`.
+    if alias_is_newer_build(&alias) {
         return Ok(());
     }
     // Temp + rename so a proxy starting concurrently never maps a

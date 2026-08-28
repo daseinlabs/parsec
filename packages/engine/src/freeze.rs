@@ -89,6 +89,13 @@ pub struct FreezeConfig {
     pub tau_fixed_q: Option<i64>,
     /// Contiguous cut-run token floor (reference: 10).
     pub min_run_tokens: i64,
+    /// Whether the agent's own message text is cut-eligible. True on the
+    /// Anthropic path (reference parity). False on the Responses/Codex path:
+    /// reasoning there is `encrypted_content` and tool calls carry no text, so
+    /// assistant prose is one of only two cuttable classes and the cutter
+    /// leans on it — and that prose is where a Codex turn's plan lives.
+    /// Tool output stays cut-eligible either way.
+    pub cut_assistant: bool,
 }
 
 impl Default for FreezeConfig {
@@ -98,6 +105,7 @@ impl Default for FreezeConfig {
             mode: ChunkMode::Fixed,
             tau_fixed_q: None,
             min_run_tokens: 10,
+            cut_assistant: true,
         }
     }
 }
@@ -313,7 +321,7 @@ fn parse(messages: &[Value], cfg: &FreezeConfig) -> Parsed {
         }
     }
     for (mi, at, st) in &asst_items {
-        if *st <= cur_step {
+        if cfg.cut_assistant && *st <= cur_step {
             for c in chunk_assistant(at, *st, DEFAULT_WIN) {
                 chunks.push(c);
                 owner.push(*mi);
@@ -1169,6 +1177,65 @@ mod tests {
         assert_eq!(
             out.get("content").and_then(Value::as_str).unwrap(),
             "returncode: 0\nL0\nL1\n[... 5 lines (~4 tokens) · re-read f.py:L5-9 omitted ...]\nL7"
+        );
+    }
+
+    /// A scorer that wants to cut everything: score 0 < tau, so every live
+    /// chunk is below threshold and only `min_run_tokens` and the eligibility
+    /// gates decide what survives.
+    struct CutAllScorer;
+    impl ChunkScorer for CutAllScorer {
+        fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
+            Ok(ScoreResult {
+                scores_q: vec![0; q.live.len()],
+                tau_q: SCORE_SCALE,
+            })
+        }
+    }
+
+    fn prose(tag: &str, n: usize) -> String {
+        (0..n)
+            .map(|i| format!("{tag} line {i} with enough words on it to carry mass"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// `cut_assistant: false` (the Responses/Codex path) leaves the agent's own
+    /// prose byte-identical while tool output stays cut-eligible. The default
+    /// config (Anthropic path) still cuts both.
+    #[test]
+    fn cut_assistant_false_spares_prose_but_not_tool_output() {
+        let asst = prose("plan", 40);
+        let obs = format!("returncode: 0\n{}", prose("out", 40));
+        let msgs = vec![
+            json!({ "role": "user", "content": "do the thing" }),
+            json!({ "role": "assistant", "content": asst.clone() }),
+            json!({ "role": "user", "content": obs.clone() }),
+            json!({ "role": "user", "content": "and now the next thing" }),
+        ];
+
+        let cfg = FreezeConfig {
+            cut_assistant: false,
+            ..FreezeConfig::default()
+        };
+        let mut fz = Freezer::new(cfg, CutAllScorer);
+        let out = fz.serve(&msgs).unwrap();
+        let served_asst = out[1].get("content").and_then(Value::as_str).unwrap();
+        let served_obs = out[2].get("content").and_then(Value::as_str).unwrap();
+        assert_eq!(
+            served_asst, asst,
+            "assistant prose must ride through verbatim"
+        );
+        assert!(
+            served_obs.contains("omitted"),
+            "tool output must still be cut-eligible: {served_obs}"
+        );
+
+        let mut fz = Freezer::new(FreezeConfig::default(), CutAllScorer);
+        let out = fz.serve(&msgs).unwrap();
+        assert!(
+            out[1].get("content").and_then(Value::as_str).unwrap() != asst,
+            "default config still cuts assistant prose (Anthropic parity)"
         );
     }
 }

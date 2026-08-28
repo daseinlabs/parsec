@@ -1,7 +1,7 @@
 # Thin task runner — targets delegate to scripts/; cargo owns real builds.
 # Keep recipes single-line: stock macOS make is 3.81 (no .ONESHELL).
 .PHONY: help plugin test fmt clippy rust-test check dev dev-down dev-logs \
-	platform-up platform-down platform-reset platform-logs
+	platform-up platform-down platform-reset platform-logs release
 
 help:
 	@echo "make dev      — brain in docker + proxy on the host (manual testing)"
@@ -13,6 +13,7 @@ help:
 	@echo "make plugin   — build + install the local (gitignored) plugin binary"
 	@echo "make test     — run the full test suite (scripts/test_all.sh)"
 	@echo "make check    — rust fmt + clippy + tests (single source for CI and test_all.sh)"
+	@echo "make release VERSION=X.Y.Z — bump workspace version, commit, tag (push = publish)"
 
 # Local loop: brain in a container, proxy as a HOST process (your Claude auth
 # headers must never enter a container — docs/manual-testing.md).
@@ -66,3 +67,10 @@ plugin:
 
 test:
 	scripts/test_all.sh
+
+# Cut a release: bump the workspace version (what `parsec --version` reports),
+# commit, tag. Pushing the tag is what triggers release.yml — left to you.
+# Channel: X.Y.0 = stable (everyone), anything else = patch (opt-in) — see
+# docs/release-channels.md.
+release:
+	VERSION="$(VERSION)" scripts/release.sh

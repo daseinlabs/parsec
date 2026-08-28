@@ -57,6 +57,19 @@ export type LedgerUsage = {
   currency: string;
 };
 
+/** The platform answered, but not with a 2xx. Callers must be able to tell this
+ * apart from a transport failure: a 401 means the platform's JWT verification is
+ * misconfigured, which says nothing about PLATFORM_URL being reachable. */
+export class PlatformHttpError extends Error {
+  constructor(
+    readonly path: string,
+    readonly status: number,
+  ) {
+    super(`platform ${path}: ${status}`);
+    this.name = "PlatformHttpError";
+  }
+}
+
 async function platformFetch(path: string, init?: RequestInit) {
   const token = await accessToken();
   if (!token) return null;
@@ -65,7 +78,7 @@ async function platformFetch(path: string, init?: RequestInit) {
     headers: { ...init?.headers, Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
-  if (!resp.ok) throw new Error(`platform ${path}: ${resp.status}`);
+  if (!resp.ok) throw new PlatformHttpError(path, resp.status);
   return resp.json();
 }
 

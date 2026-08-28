@@ -7,6 +7,9 @@
 # (`claude plugin install parsec@parsec-marketplace`); codex/opencode get
 # the win-x64 parsec binary downloaded to %USERPROFILE%\.parsec\bin\
 # parsec.exe (added to the user PATH) followed by `parsec setup <tool>`.
+# ARM64 Windows 11 gets the same win-x64 binary (runs under the OS's x64
+# emulation); only Claude Desktop interception is excluded there, since
+# WinDivert's kernel driver has no ARM64 build.
 # The app-local VC++ CRT DLLs are downloaded beside it -- the loader only
 # searches next to the exe. Pass -Tray to also install the tray app
 # (notification area + taskbar, HKCU Run entry, no admin).
@@ -14,8 +17,10 @@
 # endpoint setting, so parsec reaches it by process-scoped TLS interception --
 # which means installing mitmproxy (winget) and trusting its CA in the machine
 # root store. That last step is machine-wide, so it always goes through a
-# visible Windows administrator prompt, never silently. Skip it with
-# -NoDesktop, or take the interception without the CA with -NoCa.
+# visible Windows administrator prompt, never silently. A boot service (HKCU
+# Run entry) is installed too, so interception survives reboots -- skip that
+# with -NoAutostart. Skip Desktop entirely with -NoDesktop, or take the
+# interception without the CA with -NoCa.
 # Nothing is written outside ~\.parsec and the tools' own config dirs; no
 # admin rights needed -- except the Claude Desktop CA, which is machine-wide
 # and prompts for administrator approval. Undo:
@@ -32,8 +37,8 @@
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools desktop -NoCa
 #
 # (or set $env:PARSEC_TOOLS = "codex" / $env:PARSEC_BYOK = "1" /
-# $env:PARSEC_NO_DESKTOP = "1" / $env:PARSEC_NO_CA = "1" before the plain
-# irm|iex form.)
+# $env:PARSEC_NO_DESKTOP = "1" / $env:PARSEC_NO_CA = "1" /
+# $env:PARSEC_NO_AUTOSTART = "1" before the plain irm|iex form.)
 #
 # Source of truth: scripts/install.ps1 in the parsec repo; release.yml
 # publishes it next to the binaries it references, so script and binaries
@@ -49,6 +54,11 @@ param(
     # command and Desktop stays unintercepted until it is run. For anyone who
     # wants to read the command before a root cert lands in their trust store.
     [switch]$NoCa,
+    # Skip the boot service (HKCU Run entry) that keeps Desktop interception
+    # alive across reboots. Default is to install it: without it the
+    # interceptor dies with the session and Desktop silently goes unrouted
+    # (fail open) until someone runs `parsec desktop start`.
+    [switch]$NoAutostart,
     # Install the tray app (notification area + taskbar) and register it to
     # start at sign-in. Opt-in: a login item is a persistent, visible addition
     # to someone's machine and should not appear because they installed a CLI.
@@ -72,6 +82,7 @@ if (-not $Tools -and $env:PARSEC_TOOLS) { $Tools = $env:PARSEC_TOOLS -split "[ ,
 if ($env:PARSEC_BYOK -eq "1") { $Byok = $true }
 if ($env:PARSEC_NO_DESKTOP -eq "1") { $NoDesktop = $true }
 if ($env:PARSEC_NO_CA -eq "1") { $NoCa = $true }
+if ($env:PARSEC_NO_AUTOSTART -eq "1") { $NoAutostart = $true }
 $Tools = @($Tools | ForEach-Object { if ($_ -eq "claude-code") { "claude" } else { $_ } })
 foreach ($t in $Tools) {
     if ($t -notin @("claude", "codex", "opencode", "desktop")) {
@@ -174,6 +185,25 @@ function Find-ClaudeDesktop {
     }
     catch {}
 
+    # 7. MSIX package -- the current Desktop installer registers under
+    #    Program Files\WindowsApps. That root denies enumeration, but the
+    #    package's own folder grants Users read, so the resolved path works.
+    #    No Uninstall entry, no .lnk: none of the probes above can see it.
+    try {
+        $pkg = Get-AppxPackage -Name Claude -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($pkg -and $pkg.InstallLocation) {
+            foreach ($rel in @("app\claude.exe", "Claude.exe")) {
+                $exe = Join-Path $pkg.InstallLocation $rel
+                if (Test-Path $exe) { return $exe }
+            }
+            # Layout moved? The registered package is presence enough (that
+            # is all this function is used for -- see the header comment).
+            return $pkg.InstallLocation
+        }
+    }
+    catch {}
+
     return $null
 }
 
@@ -198,11 +228,66 @@ function Stop-ParsecProxy {
     try {
         $h = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2
         if ("$($h.service)" -ne "parsec-proxy") { return }
+    }
+    catch { return } # nothing listening, or not ours -- nothing to stop
+    try {
         Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/shutdown" -TimeoutSec 2 | Out-Null
         Write-Host "stopped the running parsec proxy on port $port (old binary)"
-        Start-Sleep -Milliseconds 800
     }
-    catch {}
+    catch {
+        # The supervisor answers /shutdown and THEN exits, so a throw here can
+        # still mean a shutdown already in flight. Fall through to the poll
+        # rather than assume it either worked or did not.
+        Write-Host "shutdown request to port $port errored - checking whether it exits anyway"
+    }
+    # Poll instead of sleeping a fixed 800ms. The swap below races a process
+    # that has ACKed the shutdown but not yet released its image, and a fixed
+    # sleep is either wasted time or -- on a loaded machine -- not enough,
+    # which surfaces as the "something still holds it" error at Move-Item.
+    for ($i = 0; $i -lt 40; $i++) {
+        try { Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 1 | Out-Null }
+        catch { return } # connection refused = really gone
+        Start-Sleep -Milliseconds 100
+    }
+    Write-Warning "the proxy on port $port acknowledged shutdown but is still listening"
+}
+
+# The tray runs `parsec.exe tray run` -- the SAME image the swap replaces, and
+# Windows locks a running exe. Nothing else stops it: `parsec tray uninstall`
+# deliberately leaves a running icon alone. Without this, an upgrade on any
+# machine that ever ran -Tray (its HKCU Run entry starts it at every sign-in)
+# fails at Move-Item with a sharing violation. Returns whether it stopped one,
+# so the caller can bring it back on the NEW binary.
+function Stop-ParsecTray {
+    $stopped = $false
+    try { $procs = Get-CimInstance Win32_Process -Filter "Name = 'parsec.exe'" -ErrorAction Stop }
+    catch { return $false }
+    foreach ($p in $procs) {
+        # Match the command line, never just the path: a proxy, an MCP server
+        # and the tray are all parsec.exe, and only the tray is ours to kill
+        # here (the proxy got a graceful /shutdown above).
+        if (-not ($p.CommandLine -and $p.CommandLine -match '\btray\s+run\b')) { continue }
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        $stopped = $true
+    }
+    if ($stopped) {
+        Write-Host "stopped the running parsec tray (it holds parsec.exe open)"
+        Start-Sleep -Milliseconds 300
+    }
+    return $stopped
+}
+
+function Start-ParsecTray {
+    param([string]$Exe)
+    # Re-launch through the same .vbs the Run key uses, so a restarted tray is
+    # identical to a sign-in one (hidden console window and all).
+    $launcher = Join-Path $env:USERPROFILE ".parsec\parsec-tray.vbs"
+    if (Test-Path $launcher) {
+        Start-Process wscript.exe -ArgumentList "`"$launcher`"" -WindowStyle Hidden
+        Write-Host "restarted the parsec tray on the new binary"
+        return
+    }
+    & $Exe tray install | Out-Null # older install with no launcher -- rebuild it
 }
 
 # -- auto-detect --------------------------------------------------------------
@@ -244,16 +329,79 @@ if ($NoCa -and ("desktop" -notin $Tools) -and -not $NoDesktop) {
     Write-Host "note: -NoCa only affects Claude Desktop setup"
 }
 
-$isX64 = $env:PROCESSOR_ARCHITECTURE -eq "AMD64"
+# $env:PROCESSOR_ARCHITECTURE cannot be trusted here: inside an x64-emulated
+# shell on ARM64 hardware the loader rewrites it to AMD64, which made this
+# script install desktop tooling on machines where WinDivert can never load.
+# The machine-wide registry value keeps the real architecture.
+$nativeArch = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment").PROCESSOR_ARCHITECTURE
+$isX64 = $nativeArch -eq "AMD64"
+# Windows 11 on ARM emulates x64 transparently, so the win-x64 binary runs
+# fine there -- the Claude Code plugin's dispatcher has always done exactly
+# that on these machines. Windows 10 on ARM only emulates x86 (build 22000 is
+# the Windows 11 floor), so it stays unsupported.
+$isArm64Emu = ($nativeArch -eq "ARM64") -and
+    ([Environment]::OSVersion.Version.Build -ge 22000)
 
-# Desktop needs the parsec binary, which is published for win-x64 only. When
-# desktop was AUTO-detected, drop it here rather than let the architecture
-# check below abort an install that would otherwise have set Claude Code up
-# fine. Asked for explicitly, it still errors -- that was a request, not a
-# guess.
-if ($desktopAuto -and -not $isX64 -and ("desktop" -in $Tools)) {
-    Write-Warning "skipping Claude Desktop: it needs the win-x64 parsec binary, which does not run on $env:PROCESSOR_ARCHITECTURE"
-    $Tools = @($Tools | Where-Object { $_ -ne "desktop" })
+# Claude Desktop interception is the one thing x64 emulation cannot carry:
+# WinDivert is a KERNEL driver, x64 drivers cannot load on an ARM64 kernel,
+# and neither WinDivert nor mitmproxy's redirector ships ARM64. When desktop
+# was AUTO-detected, drop it here rather than let it abort an install that
+# can still set everything else up. Asked for explicitly, error -- with the
+# real reason, since "unsupported architecture" would be wrong now that the
+# binary itself runs.
+if (-not $isX64 -and ("desktop" -in $Tools)) {
+    if ($desktopAuto) {
+        Write-Warning "skipping Claude Desktop: interception needs WinDivert's kernel driver, which has no ARM64 build (x64 emulation does not extend to kernel drivers)"
+        $Tools = @($Tools | Where-Object { $_ -ne "desktop" })
+    }
+    else {
+        Write-Error "Claude Desktop interception cannot work on $nativeArch (WinDivert's kernel driver has no ARM64 build) - re-run without 'desktop'"
+    }
+}
+
+# -- resolve the newest published version (patch channel included) ------------
+# The plugins TREE only advances on stable (v0.X.0) tags, but someone
+# explicitly running the installer is asking for the newest build -- so
+# resolve latest.json (the pointer release.yml maintains) and pull binaries
+# from that tag's GitHub release assets, verified against the sha256 map in
+# the same file. Patch binaries exist ONLY as release assets; the tree would
+# silently serve the previous stable. Resolution failure falls back to the
+# stable tree, and a custom PARSEC_INSTALL_BASE (test installs point at a
+# tree, not at github releases) skips resolution entirely.
+$ReleaseTag = $null
+$ReleaseAssets = $null
+if (-not $env:PARSEC_INSTALL_BASE) {
+    try {
+        $latest = Invoke-RestMethod -Uri "$Base/latest.json" -UseBasicParsing
+        $chan = if ($latest.patch) { $latest.patch } else { $latest.stable }
+        if ($chan -and $chan.tag) {
+            $ReleaseTag = $chan.tag
+            $ReleaseAssets = $chan.assets
+            Write-Host "newest published version: $($chan.version) ($ReleaseTag)"
+        }
+    }
+    catch {
+        Write-Host "(could not resolve latest.json - falling back to the stable tree)"
+    }
+}
+
+# Download one published file: from the resolved release's assets
+# (sha256-verified) when resolution succeeded, else from the stable tree.
+function Get-ParsecAsset([string]$ReleaseName, [string]$TreePath, [string]$OutFile) {
+    if ($ReleaseTag) {
+        Invoke-WebRequest -Uri "https://github.com/daseinlabs/plugins/releases/download/$ReleaseTag/$ReleaseName" `
+            -OutFile $OutFile -UseBasicParsing
+        $expected = if ($ReleaseAssets) { $ReleaseAssets.$ReleaseName } else { $null }
+        if ($expected) {
+            $actual = (Get-FileHash -Algorithm SHA256 $OutFile).Hash.ToLowerInvariant()
+            if ($actual -ne $expected.ToLowerInvariant()) {
+                throw "sha256 mismatch for ${ReleaseName}: expected $expected, got $actual"
+            }
+        }
+    }
+    else {
+        Invoke-WebRequest -Uri "$Base/$TreePath" -OutFile $OutFile -UseBasicParsing
+    }
 }
 
 # -- platform binary ----------------------------------------------------------
@@ -265,42 +413,67 @@ if ($desktopAuto -and -not $isX64 -and ("desktop" -in $Tools)) {
 # on PATH.
 $dest = Join-Path $env:USERPROFILE ".parsec\bin\parsec.exe"
 $binaryRequired = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or ($Tools -contains "desktop") -or $Tray
-if (-not $isX64) {
+$needsBinary = $isX64 -or $isArm64Emu
+if (-not $needsBinary) {
     if ($binaryRequired) {
-        Write-Error "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (only win-x64 today; ARM64 Windows: use WSL or the Claude Code plugin)"
+        Write-Error "unsupported architecture: $nativeArch (win-x64 only today; ARM64 needs Windows 11 for x64 emulation - or use WSL / the Claude Code plugin)"
     }
-    Write-Warning "no win-x64 parsec binary for $env:PROCESSOR_ARCHITECTURE - installing the Claude Code plugin only (it ships its own binary)"
+    Write-Warning "no parsec binary runs on $nativeArch - installing the Claude Code plugin only (it ships its own binary)"
 }
-$needsBinary = $isX64
+if ($isArm64Emu) {
+    Write-Host "ARM64 Windows 11: installing the win-x64 binary - it runs under the OS's built-in x64 emulation."
+}
 if ($needsBinary) {
     $destDir = Split-Path $dest
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     # Download beside the destination, verify it runs, then move into place.
     $tmp = Join-Path $destDir ("parsec-download-{0}.exe" -f ([IO.Path]::GetRandomFileName() -replace "\..*$", ""))
+    $stagedDlls = @{}
+    $trayWasRunning = $false
     try {
         Write-Host "downloading parsec (win-x64)..."
-        Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/parsec.exe" -OutFile $tmp -UseBasicParsing
+        Get-ParsecAsset "parsec-win-x64.exe" "plugins/parsec/bin/win-x64/parsec.exe" $tmp
         # App-local VC++ CRT. parsec.exe imports msvcp140/vcruntime140, which
         # are absent on a clean Windows box; the loader only searches NEXT TO
         # the exe, so these must land in the same directory or the process
         # dies before main() with 0xC0000135 and no stderr. release.yml ships
         # them beside the exe for exactly this reason -- downloading the exe
         # alone reproduced the bug the bundling exists to prevent.
+        #
+        # STAGED rather than written straight into $destDir: on an upgrade the
+        # running proxy and tray have these DLLs LOADED and Windows denies the
+        # overwrite, so the direct write reported "(no <dll> published)" on
+        # every upgrade -- blaming the release for a file lock -- and silently
+        # kept the old CRT. Downloading first keeps the proxy up while the
+        # bytes come down; the swap happens after everything is stopped.
         foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            $stage = Join-Path $destDir "$dll.parsec-new"
             try {
-                Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/$dll" `
-                    -OutFile (Join-Path $destDir $dll) -UseBasicParsing
+                Get-ParsecAsset $dll "plugins/parsec/bin/win-x64/$dll" $stage
+                $stagedDlls[$dll] = $stage
             }
             catch {
                 # A release that no longer needs the CRT will not publish them;
                 # the --version check below is the real gate either way.
                 Write-Host "(no $dll published - continuing)"
+                if (Test-Path $stage) { Remove-Item -Force $stage }
             }
         }
+        # Everything holding the old image goes down together, BEFORE any file
+        # in $destDir is replaced: the proxy first (it owns the routed port and
+        # gets a graceful /shutdown), then the tray (it owns nothing but the
+        # lock, and no command stops it).
+        Stop-ParsecProxy
+        $trayWasRunning = Stop-ParsecTray
+        foreach ($dll in @($stagedDlls.Keys)) {
+            try { Move-Item -Force $stagedDlls[$dll] (Join-Path $destDir $dll) }
+            catch { Write-Warning "could not replace $dll (still in use) - keeping the existing one" }
+        }
+        # Runs AFTER the CRT is in place: on a clean box the check itself needs
+        # those DLLs, so verifying before the move would fail on the very
+        # machines the bundling exists for.
         & $tmp --version | Out-Null # refuse to install a binary that cannot run
         if ($LASTEXITCODE -ne 0) { throw "downloaded binary failed --version" }
-        # Windows locks a running exe -- stop an old proxy BEFORE the swap.
-        Stop-ParsecProxy
         try {
             Move-Item -Force $tmp $dest
         }
@@ -310,13 +483,32 @@ if ($needsBinary) {
     }
     finally {
         if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        foreach ($stage in $stagedDlls.Values) {
+            if (Test-Path $stage) { Remove-Item -Force $stage }
+        }
     }
     # A proxy that predates this install keeps serving the OLD binary --
     # restart so the fresh one owns the port (identity-checked: a foreign
     # process on the port is never killed). In-flight requests from other
     # sessions see one brief blip and recover on their next request.
-    & $dest up --restart
-    if ($LASTEXITCODE -ne 0) { Write-Error "proxy restart failed" }
+    # `up --restart` also bounces the Claude Desktop interceptor, so an
+    # updated proxy is never left behind a mitmdump holding the old addon.
+    # Not from HERE though: this shell is unelevated and the interceptor runs
+    # elevated for WinDivert, so the stop could only fail. The elevated
+    # `parsec setup desktop` below restarts it properly.
+    if ($Tools -contains "desktop") { $env:PARSEC_SKIP_DESKTOP_BOUNCE = "1" }
+    try {
+        & $dest up --restart
+        if ($LASTEXITCODE -ne 0) { Write-Error "proxy restart failed" }
+    }
+    finally {
+        Remove-Item Env:\PARSEC_SKIP_DESKTOP_BOUNCE -ErrorAction SilentlyContinue
+    }
+    # The tray is parsec.exe too: it was stopped only to free the file lock, so
+    # bring it back on the NEW binary. Skipped under -Tray, where `tray install`
+    # below starts it anyway -- doing both would leave two icons. Never started
+    # when it was not already running: a login item is -Tray's to add.
+    if ($trayWasRunning -and -not $Tray) { Start-ParsecTray -Exe $dest }
     # Stable PATH entry so the skills/shims' `parsec` fallback resolves
     # (user-scope; no admin). Current session too.
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -338,7 +530,7 @@ if ($needsBinary) {
 # provision under it. Doing it any other way loses a race: setup_desktop.rs
 # spawns mitmdump detached and requires it alive 1.5s later, which a human
 # approving a UAC dialog cannot beat.
-function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa) {
+function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa, [bool]$Autostart) {
     # Reached with -Tools desktop even when Find-ClaudeDesktop came up empty:
     # the interceptor matches the PROCESS NAME, so an install we could not
     # locate on disk still gets captured once Desktop is running. Say so, so
@@ -372,6 +564,10 @@ function Install-ParsecDesktop([string]$Exe, [bool]$TrustCa) {
 
     $setupArgs = @("setup", "desktop")
     if ($TrustCa) { $setupArgs += "--install-ca" }
+    if ($Autostart) {
+        $setupArgs += "--autostart"
+        Write-Host "installing the boot service too, so interception survives reboots (skip with -NoAutostart)."
+    }
 
     if (Test-Admin) {
         try { & $Exe @setupArgs }
@@ -434,7 +630,7 @@ foreach ($t in $Tools) {
             & $dest setup opencode
         }
         "desktop" {
-            Install-ParsecDesktop -Exe $dest -TrustCa (-not $NoCa)
+            Install-ParsecDesktop -Exe $dest -TrustCa (-not $NoCa) -Autostart (-not $NoAutostart)
         }
     }
 }
@@ -468,5 +664,8 @@ if ($Tools -contains "desktop") {
     Write-Host "desktop: quit Claude Desktop COMPLETELY (tray icon -> Quit, not just the window) and reopen it - mitmproxy hooks the process at launch."
     Write-Host "         only Cowork / Agent mode is routed; the normal chat sidebar is not. Check with: parsec desktop status"
     Write-Host "         the interceptor runs elevated (WinDivert), so stopping it needs an admin shell: parsec desktop stop"
+    if ($NoAutostart) {
+        Write-Host "         -NoAutostart: interception stops at reboot - bring it back with: parsec desktop start"
+    }
 }
 Write-Host "undo: parsec disable codex|opencode|desktop - parsec tray uninstall - claude plugin uninstall parsec"

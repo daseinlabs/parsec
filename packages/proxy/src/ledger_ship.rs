@@ -17,6 +17,7 @@
 //! duplicated row is harmless.
 
 use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Release-baked platform base URL: `PARSEC_DEFAULT_PLATFORM_URL` at BUILD time
 /// (release.yml stamps it, like the brain URL). Runtime `PARSEC_PLATFORM_URL`
@@ -24,6 +25,22 @@ use serde_json::Value;
 const BAKED_PLATFORM_URL: Option<&str> = option_env!("PARSEC_DEFAULT_PLATFORM_URL");
 
 /// Where + how to ship rows. Cloned into each fire-and-forget task.
+/// Rows the platform refused or never received. Fail-open keeps serving, but
+/// the count makes the failure visible instead of silent.
+static SHIP_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// Rows the platform accepted, so a report can state a ratio rather than a
+/// bare failure count.
+static SHIP_OK: AtomicU64 = AtomicU64::new(0);
+
+/// (accepted, failed) since process start — for `parsec key`/status reporting.
+pub fn ship_counters() -> (u64, u64) {
+    (
+        SHIP_OK.load(Ordering::Relaxed),
+        SHIP_FAILURES.load(Ordering::Relaxed),
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct LedgerSink {
     /// `{base}/ledger` receives one POST per row.
@@ -97,11 +114,37 @@ pub fn ship(client: &reqwest::Client, row: &Value) {
             .send()
             .await
         {
-            Ok(r) if r.status().is_success() => {}
+            Ok(r) if r.status().is_success() => {
+                SHIP_OK.fetch_add(1, Ordering::Relaxed);
+            }
             // 4xx/5xx and transport errors are non-fatal: the row is on disk,
             // ingest is idempotent, so a later backfill can re-ship it.
-            Ok(r) => tracing::debug!(status = %r.status(), "ledger ship: platform rejected row"),
-            Err(e) => tracing::debug!("ledger ship: platform unreachable: {e}"),
+            // WARN, not debug. CLAUDE.md requires fail-open events to be
+            // "counted and alertable", and these were neither: the platform
+            // rejected 100% of rows with 422 for months and the proxy looked
+            // healthy at INFO, because the only evidence was a debug line
+            // nobody runs with. An empty dashboard was the first symptom.
+            // Rate-limited so a persistent outage does not flood the log:
+            // first failure, then every 25th, each carrying the running total.
+            Ok(r) => {
+                let n = SHIP_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+                if n == 1 || n.is_multiple_of(25) {
+                    tracing::warn!(
+                        status = %r.status(),
+                        failures = n,
+                        "ledger ship: platform rejected row — savings are NOT reaching the dashboard"
+                    );
+                }
+            }
+            Err(e) => {
+                let n = SHIP_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+                if n == 1 || n.is_multiple_of(25) {
+                    tracing::warn!(
+                        failures = n,
+                        "ledger ship: platform unreachable ({e}) — savings are NOT reaching the dashboard"
+                    );
+                }
+            }
         }
     });
 }
