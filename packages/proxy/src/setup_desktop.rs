@@ -1473,7 +1473,36 @@ fn run_start(autostart: bool, restart_proxy: bool) -> anyhow::Result<()> {
     if autostart {
         install_service(&mitmdump, &target)?;
         st.autostart = true;
-        println!("interceptor installed as a boot service; it starts on login");
+        // Starting the boot service is NOT the same as intercepting now.
+        // macOS `launchctl load` and Linux `systemctl --now` start the
+        // interceptor as part of install_service, but the Windows Run key
+        // only fires at the NEXT login — so on Windows `setup desktop
+        // --autostart` returned having registered autostart while nothing
+        // was actually intercepting, which is why the installer left Windows
+        // users needing a manual `parsec desktop start` that macOS never
+        // did. If the service manager did not already bring it up, start it
+        // now in this (elevated) session.
+        if running() {
+            println!(
+                "interceptor installed as a boot service and is running (pid {})",
+                read_pid().unwrap_or(0)
+            );
+        } else {
+            let pid = spawn_interceptor(&mitmdump, &target)?;
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            if !running() {
+                anyhow::bail!(
+                    "installed the boot service but the interceptor (pid {pid}) exited \
+                     immediately — see {}",
+                    log_path().display()
+                );
+            }
+            println!(
+                "interceptor installed as a boot service and started now (pid {pid}), \
+                 redirecting {}'s /v1/messages + /v1/models → {target}",
+                desktop_process_name()
+            );
+        }
     } else {
         // No `running()` guard: stop() reports NotRunning on its own, and
         // starting a second mitmdump while the first still holds the

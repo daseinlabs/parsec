@@ -206,7 +206,21 @@ nothing.
    `parsec disable`) the port the addon was rendered against.
 7. Spawn `mitmdump` detached (own process group / no console), PID at
    `~/.parsec/interceptor/mitmdump.pid`, log beside it. Under `--autostart`,
-   install a launchd agent / systemd `--user` unit / Run-key entry instead.
+   install a launchd agent / systemd `--user` unit / Run-key entry — **and
+   also start the interceptor now** if the service manager did not. This last
+   clause matters only on Windows: `launchctl load` (macOS) and `systemctl
+   --now` (Linux) bring the interceptor up as part of registration, but the
+   Windows Run key fires only at the NEXT login. Without the now-start,
+   `parsec setup desktop --autostart` (what both install scripts run)
+   returned on Windows having registered autostart while nothing was
+   intercepting — the reason Windows users needed a manual `parsec desktop
+   start` after the installer and macOS users never did.
+
+   ⚠️ Still open: the Windows Run-key launch at login runs **unelevated**, so
+   WinDivert fails there — cross-*reboot* persistence is not yet real on
+   Windows (the in-session now-start above is). The fix is a Scheduled Task
+   with `/RL HIGHEST` instead of the Run key; until then autostart on Windows
+   means "started once, elevated, at setup time", not "survives a reboot".
 
 `stop()` verifies the PID is actually `mitmdump` (via `ps -o comm=` /
 `tasklist`) before signalling it — PIDs get reused, and killing an unrelated
