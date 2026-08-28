@@ -998,8 +998,13 @@ pub fn stop() -> StopOutcome {
         return StopOutcome::NotRunning;
     }
     if cfg!(target_os = "windows") {
+        // /T kills the process TREE. mitmdump on Windows runs as a
+        // parent→child pair (a pip/uv launcher exe spawning the real worker
+        // with an identical command line); killing only the pidfile PID
+        // leaves the child alive and still holding the WinDivert hook — the
+        // orphaned interceptor that makes every later one capture nothing.
         let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/F"])
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
     } else {
         let _ = Command::new("kill")
@@ -1023,7 +1028,7 @@ pub fn stop_failure_hint(pid: u32) -> String {
     if cfg!(target_os = "windows") {
         format!(
             "could not stop the interceptor (pid {pid}): it runs elevated for WinDivert, so \
-             stopping it needs an administrator PowerShell:\n\n  taskkill /PID {pid} /F\n\n\
+             stopping it needs an administrator PowerShell:\n\n  taskkill /PID {pid} /T /F\n\n\
              The pidfile is kept, so parsec has not lost track of it."
         )
     } else {

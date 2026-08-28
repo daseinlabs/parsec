@@ -341,6 +341,13 @@ own decision, not a parity gap.
   environment variable is rewritten to `AMD64` inside emulated shells —
   which is exactly how one ARM64 install slipped past the first env-var
   check. Lifting this needs an ARM64 WinDivert build, which does not exist.
+- **Windows, mitmdump is a process PAIR**: a pip/uv-installed `mitmdump.exe`
+  is a launcher that spawns the real worker as a child with an identical
+  command line (observed live: two PIDs one second apart, child's parent =
+  the pidfile PID). `stop()` therefore kills with `taskkill /T` — killing
+  only the parent orphans a child that still holds the WinDivert hook, which
+  silently blackholes every later interceptor. Two mitmdump processes after
+  one `parsec desktop start` is NORMAL, not an orphan.
 - **Windows, stopping the interceptor**: it runs elevated, so `taskkill` from
   an unelevated shell is DENIED. `stop()` verifies the process is really gone
   before clearing the pidfile and reports `StopOutcome::Failed` otherwise —
