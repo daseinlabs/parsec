@@ -30,11 +30,14 @@ on:
     tags: ["v*"]
   workflow_dispatch:  # manual run to test the matrix without publishing
 
-# One static group, not per-ref: publishes now APPEND to the plugins repo, so
-# two tag runs racing would fail the second push on non-fast-forward. Main
-# builds queue behind a publish occasionally; that beats a broken release.
+# Tag runs PUBLISH (append to the plugins repo), so they must serialize into
+# ONE group or the second push fails non-fast-forward — keep them all in
+# `release`. Main-push runs only build the matrix as CI and must NOT join that
+# group: a main build (or an unrelated PR merge) holding `release` starves the
+# tag run that actually publishes, which is how v0.2.5's tag run was cancelled
+# behind someone else's merge. Non-tag runs get a per-ref group instead.
 concurrency:
-  group: release
+  group: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || format('release-ci-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
