@@ -393,18 +393,30 @@ fn maybe_upgrade_proxy() -> Option<String> {
     }
     let running = crate::setup::proxy_health_version(port)?;
     let installed = env!("CARGO_PKG_VERSION");
-    // Any mismatch (downgrade included) restarts: the binary on disk is what
-    // the plugin cache says this machine should be running. Version alone is
-    // not enough — every plugin build reports the same crate version, so a
+    // Replace on UPGRADE, never on downgrade: a proxy NEWER than this build
+    // is the install scripts' latest-channel download (patches ship only as
+    // release assets, so the marketplace plugin lags it by design) — cycling
+    // it back would revert that opt-in on every session, fighting the
+    // installer forever. Version alone is still not enough in the other
+    // direction — every plugin build reports the same crate version, so a
     // supervisor from an older release can hold the port while missing whole
     // route namespaces (that is how an alpha-9 process 404-ed every Codex
-    // route behind a 200 /health). Replace it if it cannot serve what this
-    // build serves.
+    // route behind a 200 /health). An incompatible wire set therefore forces
+    // the replace regardless of what the version comparison says.
     let wires_ok = matches!(
         crate::setup::classify_port(port, crate::setup::SERVED_WIRES),
         crate::setup::PortOccupant::Compatible
     );
-    if running == installed && wires_ok {
+    let is_upgrade = match (
+        crate::setup::semver_triple(installed),
+        crate::setup::semver_triple(&running),
+    ) {
+        (Some(i), Some(r)) => i > r,
+        // Unparseable version on either side: fall back to the old
+        // any-mismatch rule rather than leaving an unidentifiable build.
+        _ => running != installed,
+    };
+    if !is_upgrade && wires_ok {
         return None;
     }
     if !crate::setup::shutdown_parsec_on(port) {

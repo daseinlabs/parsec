@@ -174,13 +174,49 @@ if [ -z "$plat" ]; then
 fi
 if [ -n "$plat" ]; then
   mkdir -p "$(dirname "$dest")"
+  # ── resolve the newest published version (patch channel included) ──────────
+  # The plugins TREE only advances on stable (v0.X.0) tags, but someone
+  # explicitly running the installer is asking for the newest build — so
+  # resolve latest.json (the pointer release.yml maintains) and pull the
+  # binary from that tag's GitHub release assets, verified against the
+  # sha256 map in the same file. Patch binaries exist ONLY as release
+  # assets; the tree would silently serve the previous stable. Resolution
+  # failure falls back to the stable tree so a GitHub hiccup cannot brick
+  # the installer, and a custom PARSEC_INSTALL_BASE (test installs point at
+  # a tree, not at github releases) skips resolution entirely.
+  release_tag="" release_ver="" release_sha=""
+  if [ -z "${PARSEC_INSTALL_BASE:-}" ]; then
+    latest_json="$(curl -fsSL "$BASE/latest.json" 2>/dev/null || true)"
+    case "$latest_json" in
+      *'"patch"'*) seg="${latest_json#*\"patch\":}" ;;
+      *) seg="$latest_json" ;;
+    esac
+    # First occurrence within the chosen channel's segment (grep -o + head,
+    # never greedy-sed: the file holds BOTH channels' asset maps). The
+    # `: *` tolerates the pretty-printed "key": "value" spacing.
+    release_tag="$(printf '%s' "$seg" | grep -o '"tag": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+    release_ver="$(printf '%s' "$seg" | grep -o '"version": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+    release_sha="$(printf '%s' "$seg" | grep -o "\"parsec-$plat\": *\"[0-9a-f]*\"" | head -1 | cut -d'"' -f4)"
+  fi
   # Download beside the destination (same filesystem), verify it runs, then
   # atomically rename onto a FRESH inode — overwriting an existing binary
   # in place trips the macOS code-sign cache (SIGKILL on next exec).
   tmp="$(mktemp "$dest.XXXXXX")"
   trap 'rm -f "$tmp"' EXIT
-  echo "downloading parsec ($plat)…"
-  curl -fsSL "$BASE/plugins/parsec/bin/$plat/parsec" -o "$tmp"
+  if [ -n "$release_tag" ] &&
+    curl -fsSL "https://github.com/daseinlabs/plugins/releases/download/$release_tag/parsec-$plat" -o "$tmp" 2>/dev/null; then
+    echo "downloaded parsec $release_ver ($plat, from the $release_tag release)"
+    if [ -n "$release_sha" ]; then
+      actual="$( (shasum -a 256 "$tmp" 2>/dev/null || sha256sum "$tmp" 2>/dev/null) | cut -d' ' -f1)"
+      if [ -n "$actual" ] && [ "$actual" != "$release_sha" ]; then
+        echo "sha256 mismatch for parsec-$plat: expected $release_sha, got $actual" >&2
+        exit 1
+      fi
+    fi
+  else
+    echo "downloading parsec ($plat, stable tree)…"
+    curl -fsSL "$BASE/plugins/parsec/bin/$plat/parsec" -o "$tmp"
+  fi
   chmod 755 "$tmp"
   "$tmp" --version >/dev/null # refuse to install a binary that cannot run
   mv "$tmp" "$dest"

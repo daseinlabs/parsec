@@ -359,6 +359,51 @@ if (-not $isX64 -and ("desktop" -in $Tools)) {
     }
 }
 
+# -- resolve the newest published version (patch channel included) ------------
+# The plugins TREE only advances on stable (v0.X.0) tags, but someone
+# explicitly running the installer is asking for the newest build -- so
+# resolve latest.json (the pointer release.yml maintains) and pull binaries
+# from that tag's GitHub release assets, verified against the sha256 map in
+# the same file. Patch binaries exist ONLY as release assets; the tree would
+# silently serve the previous stable. Resolution failure falls back to the
+# stable tree, and a custom PARSEC_INSTALL_BASE (test installs point at a
+# tree, not at github releases) skips resolution entirely.
+$ReleaseTag = $null
+$ReleaseAssets = $null
+if (-not $env:PARSEC_INSTALL_BASE) {
+    try {
+        $latest = Invoke-RestMethod -Uri "$Base/latest.json" -UseBasicParsing
+        $chan = if ($latest.patch) { $latest.patch } else { $latest.stable }
+        if ($chan -and $chan.tag) {
+            $ReleaseTag = $chan.tag
+            $ReleaseAssets = $chan.assets
+            Write-Host "newest published version: $($chan.version) ($ReleaseTag)"
+        }
+    }
+    catch {
+        Write-Host "(could not resolve latest.json - falling back to the stable tree)"
+    }
+}
+
+# Download one published file: from the resolved release's assets
+# (sha256-verified) when resolution succeeded, else from the stable tree.
+function Get-ParsecAsset([string]$ReleaseName, [string]$TreePath, [string]$OutFile) {
+    if ($ReleaseTag) {
+        Invoke-WebRequest -Uri "https://github.com/daseinlabs/plugins/releases/download/$ReleaseTag/$ReleaseName" `
+            -OutFile $OutFile -UseBasicParsing
+        $expected = if ($ReleaseAssets) { $ReleaseAssets.$ReleaseName } else { $null }
+        if ($expected) {
+            $actual = (Get-FileHash -Algorithm SHA256 $OutFile).Hash.ToLowerInvariant()
+            if ($actual -ne $expected.ToLowerInvariant()) {
+                throw "sha256 mismatch for ${ReleaseName}: expected $expected, got $actual"
+            }
+        }
+    }
+    else {
+        Invoke-WebRequest -Uri "$Base/$TreePath" -OutFile $OutFile -UseBasicParsing
+    }
+}
+
 # -- platform binary ----------------------------------------------------------
 # On x64 this is ALWAYS fetched, not just for the tools that cannot work
 # without it. The skills, the status line, and every doc tell people to run
@@ -387,7 +432,7 @@ if ($needsBinary) {
     $trayWasRunning = $false
     try {
         Write-Host "downloading parsec (win-x64)..."
-        Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/parsec.exe" -OutFile $tmp -UseBasicParsing
+        Get-ParsecAsset "parsec-win-x64.exe" "plugins/parsec/bin/win-x64/parsec.exe" $tmp
         # App-local VC++ CRT. parsec.exe imports msvcp140/vcruntime140, which
         # are absent on a clean Windows box; the loader only searches NEXT TO
         # the exe, so these must land in the same directory or the process
@@ -404,8 +449,7 @@ if ($needsBinary) {
         foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
             $stage = Join-Path $destDir "$dll.parsec-new"
             try {
-                Invoke-WebRequest -Uri "$Base/plugins/parsec/bin/win-x64/$dll" `
-                    -OutFile $stage -UseBasicParsing
+                Get-ParsecAsset $dll "plugins/parsec/bin/win-x64/$dll" $stage
                 $stagedDlls[$dll] = $stage
             }
             catch {

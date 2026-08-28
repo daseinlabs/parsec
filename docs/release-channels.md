@@ -28,7 +28,7 @@ The tag pattern is the channel switch:
 | Tag | Channel | Who gets it |
 |---|---|---|
 | `v0.X.0` | **stable** | Everyone: marketplace plugin users, `install.sh` / `install.ps1` users, and (once the self-updater lands) forced auto-update. |
-| `v0.X.Y` (Y > 0) | **patch** | Opt-in only. Reachable through `latest.json`'s `patch` entry and the release assets — the plugins repo *tree* does not change, so marketplace and installer users never see it. |
+| `v0.X.Y` (Y > 0) | **patch** | Opt-in. The plugins repo *tree* does not change, so marketplace plugin users never see it — but **running an install script is itself the opt-in gesture**: the scripts resolve `latest.json` and install the newest published version (patch included) from that tag's release assets. |
 
 ## Why patches are gated and minors are forced
 
@@ -83,10 +83,20 @@ not resuming force-per-publish.
 
 - **Claude Code plugin** (`parsec@parsec-marketplace`): follows `plugin.json`
   at the tree tip — stable channel by construction.
-- **`install.sh` / `install.ps1`**: download from raw `main` tree — stable.
+- **`install.sh` / `install.ps1`**: resolve `latest.json` and install the
+  **newest published version** (patch channel included) from that tag's
+  GitHub release assets, sha256-verified against the same file. Someone
+  explicitly running the installer is asking for the newest build — that IS
+  the patch opt-in. Any resolution failure falls back to the stable tree
+  (and a custom `PARSEC_INSTALL_BASE` skips resolution, so test installs
+  keep pointing at a tree).
+- **Anti-downgrade guards** (what keeps a latest-install from being silently
+  reverted by the stable-channel plugin): `refresh_bin_alias` (runs from
+  every SessionStart hook via `ensure_callable`) leaves a real file at the
+  alias path alone when it reports a NEWER version than the running build,
+  and `hook.rs`'s `maybe_upgrade_proxy` replaces the proxy only on a semver
+  *upgrade* or an incompatible wire set — never on a plain downgrade.
 - **Self-updater / OTA (planned)**: polls `latest.json`; a newer *stable
-  minor* auto-applies, a newer *patch* only notifies unless the user opted in.
-  Note for that work: the SessionStart hook restarts the proxy on *any*
-  version mismatch, downgrade included (`hook.rs`), which would fight an
-  opted-in patch user — the check must become channel-aware (restart on minor
-  mismatch, leave a same-minor-newer-patch proxy alone).
+  minor* auto-applies, a newer *patch* only notifies unless the user opted
+  in. The downgrade half of the old channel-awareness concern is done (see
+  the guards above); the updater still needs the apply/notify split.
