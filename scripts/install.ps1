@@ -7,6 +7,9 @@
 # (`claude plugin install parsec@parsec-marketplace`); codex/opencode get
 # the win-x64 parsec binary downloaded to %USERPROFILE%\.parsec\bin\
 # parsec.exe (added to the user PATH) followed by `parsec setup <tool>`.
+# ARM64 Windows 11 gets the same win-x64 binary (runs under the OS's x64
+# emulation); only Claude Desktop interception is excluded there, since
+# WinDivert's kernel driver has no ARM64 build.
 # The app-local VC++ CRT DLLs are downloaded beside it -- the loader only
 # searches next to the exe. Pass -Tray to also install the tray app
 # (notification area + taskbar, HKCU Run entry, no admin).
@@ -308,15 +311,28 @@ if ($NoCa -and ("desktop" -notin $Tools) -and -not $NoDesktop) {
 }
 
 $isX64 = $env:PROCESSOR_ARCHITECTURE -eq "AMD64"
+# Windows 11 on ARM emulates x64 transparently, so the win-x64 binary runs
+# fine there -- the Claude Code plugin's dispatcher has always done exactly
+# that on these machines. Windows 10 on ARM only emulates x86 (build 22000 is
+# the Windows 11 floor), so it stays unsupported.
+$isArm64Emu = ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") -and
+    ([Environment]::OSVersion.Version.Build -ge 22000)
 
-# Desktop needs the parsec binary, which is published for win-x64 only. When
-# desktop was AUTO-detected, drop it here rather than let the architecture
-# check below abort an install that would otherwise have set Claude Code up
-# fine. Asked for explicitly, it still errors -- that was a request, not a
-# guess.
-if ($desktopAuto -and -not $isX64 -and ("desktop" -in $Tools)) {
-    Write-Warning "skipping Claude Desktop: it needs the win-x64 parsec binary, which does not run on $env:PROCESSOR_ARCHITECTURE"
-    $Tools = @($Tools | Where-Object { $_ -ne "desktop" })
+# Claude Desktop interception is the one thing x64 emulation cannot carry:
+# WinDivert is a KERNEL driver, x64 drivers cannot load on an ARM64 kernel,
+# and neither WinDivert nor mitmproxy's redirector ships ARM64. When desktop
+# was AUTO-detected, drop it here rather than let it abort an install that
+# can still set everything else up. Asked for explicitly, error -- with the
+# real reason, since "unsupported architecture" would be wrong now that the
+# binary itself runs.
+if (-not $isX64 -and ("desktop" -in $Tools)) {
+    if ($desktopAuto) {
+        Write-Warning "skipping Claude Desktop: interception needs WinDivert's kernel driver, which has no ARM64 build (x64 emulation does not extend to kernel drivers)"
+        $Tools = @($Tools | Where-Object { $_ -ne "desktop" })
+    }
+    else {
+        Write-Error "Claude Desktop interception cannot work on $env:PROCESSOR_ARCHITECTURE (WinDivert's kernel driver has no ARM64 build) - re-run without 'desktop'"
+    }
 }
 
 # -- platform binary ----------------------------------------------------------
@@ -328,13 +344,16 @@ if ($desktopAuto -and -not $isX64 -and ("desktop" -in $Tools)) {
 # on PATH.
 $dest = Join-Path $env:USERPROFILE ".parsec\bin\parsec.exe"
 $binaryRequired = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or ($Tools -contains "desktop") -or $Tray
-if (-not $isX64) {
+$needsBinary = $isX64 -or $isArm64Emu
+if (-not $needsBinary) {
     if ($binaryRequired) {
-        Write-Error "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (only win-x64 today; ARM64 Windows: use WSL or the Claude Code plugin)"
+        Write-Error "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (win-x64 only today; ARM64 needs Windows 11 for x64 emulation - or use WSL / the Claude Code plugin)"
     }
-    Write-Warning "no win-x64 parsec binary for $env:PROCESSOR_ARCHITECTURE - installing the Claude Code plugin only (it ships its own binary)"
+    Write-Warning "no parsec binary runs on $env:PROCESSOR_ARCHITECTURE - installing the Claude Code plugin only (it ships its own binary)"
 }
-$needsBinary = $isX64
+if ($isArm64Emu) {
+    Write-Host "ARM64 Windows 11: installing the win-x64 binary - it runs under the OS's built-in x64 emulation."
+}
 if ($needsBinary) {
     $destDir = Split-Path $dest
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null

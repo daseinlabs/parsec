@@ -71,9 +71,11 @@ Every tag, both channels:
 Stable releases additionally refresh the whole tree (plugin + binaries +
 install scripts + `plugin.json` version stamp) and advance **both** channels
 of `latest.json` — a new stable supersedes any patch on the previous minor.
-Patch releases commit only the `latest.json` change: text-only, so the ~80 MB
-of per-publish binaries land in git history at minor cadence, not patch
-cadence. That bound is what made dropping the force-push affordable; if clone
+Patch releases commit only `latest.json` and the install scripts (both
+text-only — the scripts download binaries from the stable tree regardless,
+and an installer fix should not wait for a minor to reach the public URL),
+so the ~80 MB of per-publish binaries land in git history at minor cadence,
+not patch cadence. That bound is what made dropping the force-push affordable; if clone
 size ever becomes a problem again, the fix is squashing ancient history once,
 not resuming force-per-publish.
 

@@ -11,9 +11,10 @@ name: release
 #   v0.X.0 (stable) — the plugins repo tree is refreshed (plugin + binaries +
 #                     install scripts) and BOTH channels of latest.json
 #                     advance. Marketplace and install-script users live here.
-#   v0.X.Y (patch)  — only latest.json's `patch` channel advances (text-only
-#                     commit); the tree stays at the last stable. Patch
-#                     binaries exist solely as release assets.
+#   v0.X.Y (patch)  — latest.json's `patch` channel advances and the install
+#                     scripts refresh (both text-only); the rest of the tree
+#                     stays at the last stable. Patch binaries exist solely
+#                     as release assets.
 # Every tag also becomes a GitHub Release ON daseinlabs/plugins carrying the
 # per-platform binaries and a sha256 manifest — that is the permanent
 # versioned history. The plugins repo history is append-only (normal commits,
@@ -244,6 +245,15 @@ jobs:
             jq --arg v "$VERSION" '.version = $v' \
               plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
             mv plugin.json.tmp plugins/parsec/.claude-plugin/plugin.json
+          else
+            # Patch releases keep the tree at the last stable EXCEPT the
+            # install scripts: they are text-only, they download binaries
+            # from the stable tree regardless (no skew possible), and an
+            # installer fix should not have to wait for a minor to reach
+            # the public URL.
+            install -m 755 "$GITHUB_WORKSPACE/scripts/install.sh" install.sh
+            install -m 755 "$GITHUB_WORKSPACE/scripts/install-opencode.sh" install-opencode.sh
+            install -m 644 "$GITHUB_WORKSPACE/scripts/install.ps1" install.ps1
           fi
           # latest.json is the pollable two-channel pointer (docs/
           # release-channels.md): `stable` is pushed to everyone, `patch` is
