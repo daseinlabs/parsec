@@ -200,9 +200,10 @@ fn coerce_argv_command(args: &Value) -> Value {
     Value::Object(out)
 }
 
-/// Which entries of [`to_internal`]'s output are HUMAN-AUTHORED and must
-/// reach the model byte-for-byte (`protect::restore_protected`). Aligned to
-/// that output index-for-index, system entry included.
+/// Which entries of [`to_internal`]'s output are PROTECTED — human-authored
+/// text or the agent's own prose — and must reach the model byte-for-byte
+/// (`protect::restore_protected`). Aligned to that output index-for-index,
+/// system entry included.
 ///
 /// This wire draws the line the Anthropic one cannot: tool output is its own
 /// `function_call_output` item, so a `role: "user"` message here is ALWAYS a
@@ -211,9 +212,15 @@ fn coerce_argv_command(args: &Value) -> Value {
 /// one, which the shared "user == observation" typing would otherwise chunk
 /// and digest down to a head line, an omission marker, and a tail line.
 ///
+/// Assistant `message` items are protected as well (product decision
+/// 2026-08-29: the agent's responses are served verbatim on every wire).
+/// This wire already spares them at parse time (`cut_assistant: false` on
+/// the Codex path), so the mask entry is belt-and-braces — the guarantee no
+/// longer hinges on freeze config.
+///
 /// `developer`/`system` items project to `role: "system"` and are never
-/// chunked; assistant text and reasoning stay curatable (model output, not
-/// instructions); unrecognized item types project as inert `opaque` entries.
+/// chunked; reasoning stays curatable; unrecognized item types project as
+/// inert `opaque` entries.
 pub fn protected_mask(body: &Value) -> Vec<bool> {
     let mut mask: Vec<bool> = Vec::new();
     if body
@@ -229,12 +236,12 @@ pub fn protected_mask(body: &Value) -> Vec<bool> {
         .into_iter()
         .flatten()
     {
-        let human = is_message(item)
+        let protected = is_message(item)
             && !matches!(
                 item.get("role").and_then(Value::as_str),
-                Some("assistant") | Some("system") | Some("developer")
+                Some("system") | Some("developer")
             );
-        mask.push(human);
+        mask.push(protected);
     }
     mask
 }

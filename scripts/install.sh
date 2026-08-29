@@ -364,3 +364,11 @@ case "$tools" in
 esac
 [ -n "$path_hint" ] && echo "$path_hint"
 echo "undo: parsec disable codex|opencode|desktop · claude plugin uninstall parsec"
+
+# ── final pointer: the one step left is adding an API key ────────────────────
+# Green only when stdout is a terminal — `curl | bash` into a log stays clean.
+if [ -t 1 ]; then grn="$(printf '\033[1;32m')" rst="$(printf '\033[0m')"; else grn="" rst=""; fi
+key_cmd="parsec key set <key>"
+case "$tools" in *claude*) [ -z "$plat" ] && key_cmd="/parsec:key in a Claude Code session" ;; esac
+echo
+echo "${grn}➜ Go to https://app.getparsec.ai — grab your API key, then add it: $key_cmd${rst}"

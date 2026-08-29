@@ -669,3 +669,8 @@ if ($Tools -contains "desktop") {
     }
 }
 Write-Host "undo: parsec disable codex|opencode|desktop - parsec tray uninstall - claude plugin uninstall parsec"
+
+# -- final pointer: the one step left is adding an API key ---------------------
+$keyCmd = if ($needsBinary) { "parsec key set <key>" } else { "/parsec:key in a Claude Code session" }
+Write-Host ""
+Write-Host ("-> Go to https://app.getparsec.ai - grab your API key, then add it: " + $keyCmd) -ForegroundColor Green

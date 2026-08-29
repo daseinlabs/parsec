@@ -65,9 +65,10 @@ const PRJ_GREP: &[&str] = &[
 const SHELL_TOOLS: &[&str] = &["bash", "shell", "run", "execute"];
 const QUERY_KEYS: &[&str] = &["query", "pattern", "q", "search"];
 
-/// Which entries of [`to_internal`]'s output are HUMAN-AUTHORED and must
-/// reach the model byte-for-byte (`protect::restore_protected`). Aligned to
-/// that output index-for-index, system entry included.
+/// Which entries of [`to_internal`]'s output are PROTECTED — human-authored
+/// text or the agent's own prose — and must reach the model byte-for-byte
+/// (`protect::restore_protected`). Aligned to that output index-for-index,
+/// system entry included.
 ///
 /// On this wire a `role: "user"` message is one of two very different things:
 /// a `tool_result` carrier (the observation the curator exists to digest) or
@@ -78,9 +79,14 @@ const QUERY_KEYS: &[&str] = &["query", "pattern", "q", "search"];
 /// curatable: it is an observation with a note stapled on, and protecting the
 /// whole thing would forfeit the main win on this wire.
 ///
-/// Assistant text and reasoning stay curatable — they are the model's own
-/// prior output, not instructions. Everything unrecognized is unprotected
-/// because it is also unchunked: `parse` only ever cuts user/tool/assistant.
+/// Assistant prose is protected too (product decision 2026-08-29): the
+/// agent's responses are served verbatim, leaving observations as the
+/// cuttable mass. The restore only touches `content`, and the guard runs at
+/// fold-back, so chunking/scoring/checksums are untouched — brain parity
+/// holds and the freezer still scores assistant chunks; their cuts simply
+/// count as refused. Reasoning stays curatable. Everything unrecognized is
+/// unprotected because it is also unchunked: `parse` only ever cuts
+/// user/tool/assistant.
 pub fn protected_mask(body: &Value) -> Vec<bool> {
     let mut mask: Vec<bool> = Vec::new();
     if !system_to_text(body.get("system")).is_empty() {
@@ -98,6 +104,7 @@ pub fn protected_mask(body: &Value) -> Vec<bool> {
             None => true,
             Some(r) => r.as_str() == Some("user"),
         };
+        let is_assistant = m.get("role").and_then(Value::as_str) == Some("assistant");
         let carries_tool_result =
             m.get("content")
                 .and_then(Value::as_array)
@@ -106,7 +113,7 @@ pub fn protected_mask(body: &Value) -> Vec<bool> {
                         .iter()
                         .any(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
                 });
-        mask.push(is_user && !carries_tool_result);
+        mask.push(is_assistant || (is_user && !carries_tool_result));
     }
     mask
 }
