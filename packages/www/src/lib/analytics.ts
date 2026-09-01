@@ -1,23 +1,19 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, FormEvent, SyntheticEvent } from "react";
+import { sendGTMEvent } from "@next/third-parties/google";
 
 declare global {
   interface Window {
-    dataLayer?: any[];
-    rdt?: ((...args: any[]) => void) & { callQueue?: any[]; sendEvent?: (...args: any[]) => void };
+    dataLayer?: Object[];
+    google_tag_manager?: Record<string, any>;
+    rdt?: ((...args: any[]) => void) & {
+      callQueue?: any[];
+      sendEvent?: (...args: any[]) => void;
+    };
   }
 }
-import { sendGTMEvent } from "@next/third-parties/google";
 
 /**
- * Fires when a visitor copies the install one-liner — the highest-intent
- * action on the site (the actual install happens in their terminal, outside
- * anything we can observe). Pushed to the GTM dataLayer; a GTM trigger on
- * event name `install_command_copy` forwards it to GA4, where it can be
- * imported as an ad-platform conversion.
- *
- * `method` distinguishes the copy button from a manual select-and-copy;
- * `tool` is set on the per-agent landing pages (/claude-code, /codex,
- * /opencode) where the command is pinned to one agent.
+ * Fires when a visitor copies the install one-liner.
  */
 export function trackInstallCopy(opts: {
   os: "unix" | "windows";
@@ -28,10 +24,7 @@ export function trackInstallCopy(opts: {
 }
 
 /**
- * Sets a temporary cookie to indicate that a user has initiated the sign-in/lead generation flow.
- * Since the app (app.getparsec.ai) and the marketing site (getparsec.ai) share the same root domain,
- * this cookie is set with the `.getparsec.ai` domain in production so that the app can read it
- * upon landing and fire the Lead event.
+ * Sets a temporary cookie for lead generation.
  */
 export function setPendingLeadCookie() {
   if (typeof document !== "undefined") {
@@ -42,109 +35,104 @@ export function setPendingLeadCookie() {
 }
 
 /**
- * Helper to fire direct Reddit Pixel track call if available on window
- */
-function fireDirectPixel() {
-  try {
-    if (typeof window !== "undefined" && typeof window.rdt === "function") {
-      window.rdt("track", "Lead");
-      console.log("[Analytics] Direct rdt('track', 'Lead') executed");
-    }
-  } catch (err) {
-    console.error("[Analytics] Error firing Reddit Pixel:", err);
-  }
-}
-
-/**
- * Fires the Reddit Pixel Lead event and GTM dataLayer events on click,
- * and waits for GTM tags to finish executing before navigating.
+ * Fires the Reddit Pixel Lead and GTM events on click with extensive debug logs.
+ * No navigation or other side actions are performed.
  */
 export function handleSignInClick(
-  e: MouseEvent<HTMLAnchorElement>,
+  e: SyntheticEvent<HTMLElement>,
   href: string
 ) {
-  const isModifier =
-    e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
-
-  // Set backup cookie
-  setPendingLeadCookie();
-
-  // If opening in new tab/window via modifier, fire tracking and let browser handle navigation
-  if (isModifier) {
-    fireDirectPixel();
-    if (typeof window !== "undefined") {
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({ event: "Lead" });
-      window.dataLayer.push({ event: "lead_click" });
-      window.dataLayer.push({ event: "sign_in_click" });
-      window.dataLayer.push({ event: "github_login_success" });
-    }
-    return;
-  }
-
-  // Prevent immediate navigation so the browser does not cancel any pending requests
+  // Prevent any browser navigation
   e.preventDefault();
 
-  let navigated = false;
-  const navigate = () => {
-    if (!navigated) {
-      navigated = true;
-      console.log("[Analytics] Navigating to destination:", href);
-      window.location.href = href;
-    }
-  };
+  console.log("%c=======================================================", "color: #2FA317; font-weight: bold;");
+  console.log("%c[ANALYTICS DEBUG] 🟢 Sign In Button Click Triggered", "color: #2FA317; font-size: 16px; font-weight: bold;");
+  console.log("%c=======================================================", "color: #2FA317; font-weight: bold;");
 
-  // Hard safety timeout: if GTM takes longer than 1500ms (or is blocked by an extension), navigate anyway
-  const safetyTimeout = setTimeout(() => {
-    console.warn("[Analytics] Safety timeout reached, proceeding with navigation");
-    navigate();
-  }, 1500);
+  console.log("[1] Target Destination:", href);
+  console.log("[2] Window Location:", typeof window !== "undefined" ? window.location.href : "N/A");
 
-  // 1. Direct Reddit Pixel track call
-  fireDirectPixel();
+  // Check GTM availability
+  const hasGTM = typeof window !== "undefined" && typeof window.google_tag_manager !== "undefined";
+  console.log("[3] Google Tag Manager Status:", {
+    loaded: hasGTM,
+    containers: hasGTM ? Object.keys(window.google_tag_manager || {}) : "None",
+    google_tag_manager_object: typeof window !== "undefined" ? window.google_tag_manager : undefined,
+  });
 
-  // 2. GTM dataLayer push with official GTM eventCallback & eventTimeout
+  // Check dataLayer availability
+  console.log("[4] DataLayer Status before push:", {
+    exists: typeof window !== "undefined" && Array.isArray(window.dataLayer),
+    length: typeof window !== "undefined" && Array.isArray(window.dataLayer) ? window.dataLayer.length : 0,
+    currentDataLayer: typeof window !== "undefined" && Array.isArray(window.dataLayer) ? [...window.dataLayer] : undefined,
+  });
+
+  // Check Reddit Pixel (rdt) availability
+  const hasRdt = typeof window !== "undefined" && typeof window.rdt === "function";
+  console.log("[5] Reddit Pixel (rdt) Status before firing:", {
+    rdtFunctionExists: hasRdt,
+    callQueue: typeof window !== "undefined" && window.rdt?.callQueue ? [...window.rdt.callQueue] : "No queue",
+    rdtObject: typeof window !== "undefined" ? window.rdt : undefined,
+  });
+
+  // 1. Direct Reddit Pixel Track
   try {
     if (typeof window !== "undefined") {
-      window.dataLayer = window.dataLayer || [];
+      if (!window.rdt) {
+        console.warn("[Analytics] window.rdt not found. Initializing stub callQueue...");
+        const p: any = (window.rdt = function (...args: any[]) {
+          p.sendEvent ? p.sendEvent.apply(p, args) : p.callQueue.push(args);
+        });
+        p.callQueue = [];
+      }
+      console.log("[6] 🎯 Executing window.rdt('track', 'Lead')...");
+      window.rdt("track", "Lead");
+      console.log("[6] ✅ window.rdt('track', 'Lead') executed successfully. Queue state:", window.rdt.callQueue);
+    }
+  } catch (rdtErr) {
+    console.error("[6] ❌ Error executing window.rdt:", rdtErr);
+  }
 
-      // Push all common event names so any configured trigger in GTM matches
-      window.dataLayer.push({ event: "Lead" });
-      window.dataLayer.push({ event: "lead_click" });
-      window.dataLayer.push({ event: "sign_in_click" });
+  // 2. DataLayer Pushes
+  if (typeof window !== "undefined") {
+    window.dataLayer = window.dataLayer || [];
 
-      // In case GTM trigger is configured as a Form Submission trigger (gtm.formSubmit)
-      window.dataLayer.push({
+    const eventsToPush: Record<string, any>[] = [
+      // Trigger matching Reddit Lead Trigger (gtm.formSubmit with trigger ID 259767097_15)
+      {
         event: "gtm.formSubmit",
         "gtm.triggers": "259767097_15",
         "gtm.elementUrl": href,
-      });
-
-      const conversionId =
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : String(Date.now());
-
-      console.log("[Analytics] Pushing github_login_success to dataLayer with conversion_id:", conversionId);
-
-      window.dataLayer.push({
+        "gtm.elementText": "Sign in",
+      },
+      // Standard lead events
+      {
+        event: "Lead",
+      },
+      {
+        event: "lead_click",
+      },
+      {
+        event: "sign_in_click",
+      },
+      {
         event: "github_login_success",
-        conversion_id: conversionId,
-        // GTM executes eventCallback after all tags triggered by this event have fired
-        eventCallback: function (containerId?: string) {
-          console.log("[Analytics] GTM eventCallback received from container:", containerId);
-          clearTimeout(safetyTimeout);
-          // Small 100ms buffer to ensure beacon HTTP transport completes before navigation
-          setTimeout(navigate, 100);
-        },
-        // GTM internal timeout fallback (in case a tag hangs)
-        eventTimeout: 1400,
-      });
-    } else {
-      navigate();
-    }
-  } catch (err) {
-    console.error("[Analytics] Error in dataLayer push:", err);
-    navigate();
+      },
+    ];
+
+    console.log("[7] 📦 Pushing events to dataLayer...");
+    eventsToPush.forEach((item, index) => {
+      console.log(`    👉 Push [${index + 1}/${eventsToPush.length}]:`, item.event, item);
+      window.dataLayer?.push(item);
+    });
+
+    console.log("[8] 📊 DataLayer Status after push:", {
+      length: window.dataLayer.length,
+      dataLayerContent: [...window.dataLayer],
+    });
   }
+
+  console.log("%c=======================================================", "color: #2FA317; font-weight: bold;");
+  console.log("%c[ANALYTICS DEBUG] 🛑 Finished firing events (No redirect performed)", "color: #FFA500; font-weight: bold;");
+  console.log("%c=======================================================", "color: #2FA317; font-weight: bold;");
 }

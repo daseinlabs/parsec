@@ -6,8 +6,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SITE } from "@/lib/site";
 import { handleSignInClick } from "@/lib/analytics";
 
-import { setPendingLeadCookie } from "@/lib/analytics";
-
 function NavLink({
   href,
   children,
@@ -55,14 +53,20 @@ export function Nav() {
               GitHub
             </NavLink>
           </span>
-          <a
-            href={SITE.links.app}
-            onClick={(e) => handleSignInClick(e, SITE.links.app)}
-            rel="noopener"
-            className="rounded-md border border-line-strong px-3 py-1.5 whitespace-nowrap text-phosphor transition-colors duration-150 ease-parsec hover:bg-phosphor hover:text-on-phosphor"
+          <form
+            action={SITE.links.app}
+            method="GET"
+            onSubmit={(e) => handleSignInClick(e, SITE.links.app)}
+            className="inline-flex m-0 p-0"
           >
-            Sign in
-          </a>
+            <button
+              type="submit"
+              id="nav-signin-btn"
+              className="rounded-md border border-line-strong px-3 py-1.5 whitespace-nowrap text-phosphor transition-colors duration-150 ease-parsec hover:bg-phosphor hover:text-on-phosphor cursor-pointer"
+            >
+              Sign in
+            </button>
+          </form>
           <ThemeToggle />
         </nav>
       </div>
