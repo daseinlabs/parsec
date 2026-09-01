@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
   // with no rewrite rules (GCS, S3, nginx-with-defaults).
   trailingSlash: true,
   pageExtensions: ["ts", "tsx", "md", "mdx"],
+  allowedDevOrigins: ["tagassistant.google.com"],
 };
 
 // Turbopack builds this package, and it cannot pass JS functions to Rust —

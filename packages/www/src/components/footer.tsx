@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Mark } from "@/components/brand";
 import { SITE } from "@/lib/site";
-import { setPendingLeadCookie } from "@/lib/analytics";
+import { handleSignInClick } from "@/lib/analytics";
 
 const linkClass =
   "text-muted transition-colors duration-150 ease-parsec hover:text-phosphor";
@@ -31,7 +31,7 @@ export function Footer() {
           </a>
           <a
             href={SITE.links.app}
-            onClick={setPendingLeadCookie}
+            onClick={(e) => handleSignInClick(e, SITE.links.app)}
             rel="noopener"
             className={linkClass}
           >

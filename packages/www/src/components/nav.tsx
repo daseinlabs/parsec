@@ -4,8 +4,7 @@ import Link from "next/link";
 import { Lockup } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SITE } from "@/lib/site";
-
-import { setPendingLeadCookie } from "@/lib/analytics";
+import { handleSignInClick } from "@/lib/analytics";
 
 function NavLink({
   href,
@@ -54,7 +53,7 @@ export function Nav() {
           </NavLink>
           <a
             href={SITE.links.app}
-            onClick={setPendingLeadCookie}
+            onClick={(e) => handleSignInClick(e, SITE.links.app)}
             rel="noopener"
             className="rounded-md border border-line-strong px-3 py-1.5 text-phosphor transition-colors duration-150 ease-parsec hover:bg-phosphor hover:text-on-phosphor"
           >
