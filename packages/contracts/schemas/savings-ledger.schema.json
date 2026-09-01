@@ -82,7 +82,12 @@
     "tool": {
       "type": "string",
       "pattern": "^[a-z0-9-]{1,32}$",
-      "description": "Calling-tool attribution (e.g. 'opencode'), from the x-parsec-tool header a non-Claude-Code shim sets on its requests to the local proxy. The pattern is the contract-level guarantee that this path cannot carry raw text. Absent = Claude Code (the pre-multi-tool default)."
+      "description": "Calling-tool attribution (e.g. 'opencode'), from the x-parsec-tool header a non-Claude-Code shim sets on its requests to the local proxy. The pattern is the contract-level guarantee that this path cannot carry raw text. The proxy now stamps 'claude-code' explicitly on untagged Anthropic-wire requests; absent = an older row, or a wire with no tag and no route inference (readers coalesce absent to claude-code)."
+    },
+    "install_id": {
+      "type": "string",
+      "pattern": "^ins_[0-9a-f]{32}$",
+      "description": "The machine's anonymous install id (contracts/install-report/v0, minted into ~/.parsec/install.json) — joins ledger rows to the installs fleet view. Absent until the install has minted an id (first setup/key/proxy-start on this machine)."
     },
     "checkpoint_id": {
       "type": "string",

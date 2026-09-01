@@ -209,6 +209,11 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     st.updated_unix = now_unix();
     save_state(&st)?;
 
+    // Fleet registration (docs/install-tracking.md): the ready transition is
+    // the "install completed" moment. Best-effort — a failed ping never makes
+    // setup look broken.
+    crate::install::report_blocking();
+
     match (&st.base_url_conflict, st.env_written) {
         (Some(url), _) => println!(
             "routing NOT written: ANTHROPIC_BASE_URL is already {url} — parsec will not \
@@ -1139,6 +1144,10 @@ pub fn key_set(key: String, platform_url: Option<String>) -> anyhow::Result<()> 
         creds.platform_url = (!url.is_empty()).then_some(url);
     }
     crate::credentials::store(&creds)?;
+    // The key changes the install's fingerprint (anonymous → account-linked),
+    // so re-report immediately — this is the ping that attributes the machine
+    // to the account in the installs table.
+    crate::install::report_blocking();
     println!(
         "saved API key {} to {} — savings now report to your dashboard on the next \
          request (no restart needed).",

@@ -13,6 +13,7 @@
   "model": "claude-sonnet-5",
   "session_id": "8068d98c-4176-4b0e-8e2b-a543aa24f204",
   "tool": "opencode",
+  "install_id": "ins_0123456789abcdef0123456789abcdef",
   "checkpoint_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "brain_ms": 41.3,
   "freeze_cut_tokens": 1873,

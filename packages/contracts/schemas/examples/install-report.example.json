@@ -1,0 +1,9 @@
+{
+  "contract_version": "install-report/v0",
+  "install_id": "ins_0123456789abcdef0123456789abcdef",
+  "ts": "2026-08-31T10:15:00Z",
+  "version": "0.2.6",
+  "os": "macos",
+  "arch": "aarch64",
+  "harnesses": ["claude-code", "claude-desktop"]
+}

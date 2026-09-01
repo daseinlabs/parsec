@@ -67,6 +67,21 @@ pub fn resolve() -> Option<LedgerSink> {
     )
 }
 
+/// Platform base URL alone, same precedence as [`resolve`] (env → baked →
+/// credentials file, empty = off) but with NO key requirement — install
+/// registration ships anonymously where ledger rows cannot (`install.rs`).
+pub fn platform_base_url() -> Option<String> {
+    let env_url = std::env::var("PARSEC_PLATFORM_URL").ok();
+    let creds = crate::credentials::load();
+    let url = env_url
+        .as_deref()
+        .or(BAKED_PLATFORM_URL)
+        .or(creds.platform_url.as_deref())?
+        .trim()
+        .trim_end_matches('/');
+    (!url.is_empty()).then(|| url.to_string())
+}
+
 /// Pure resolver, split out for tests. Empty values are off switches, mirroring
 /// the brain-URL/key semantics in `brain.rs`. `key` is the already-resolved
 /// account key (`apikey::account_key`).

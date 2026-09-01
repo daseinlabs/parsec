@@ -100,3 +100,18 @@ def require_key_account(
     if account_id is None:
         raise HTTPException(status_code=401, detail="unknown api key")
     return account_id
+
+
+def optional_key_account(
+    request: Request,
+    x_parsec_key: str | None = Header(default=None),
+    x_dasein_key: str | None = Header(default=None),
+) -> str | None:
+    """Like require_key_account, but anonymous-tolerant: install registration
+    must accept keyless pings (an install exists before onboarding), so a
+    missing or unknown key resolves to None instead of 401. Same header/prefix
+    contract as require_key_account — do not rename the params."""
+    key = x_parsec_key or x_dasein_key
+    if not key or not (key.startswith("psc_") or key.startswith("dsn_")):
+        return None
+    return request.app.state.store.account_for_key(hash_key(key))

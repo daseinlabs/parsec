@@ -439,6 +439,10 @@ pub fn run() -> anyhow::Result<()> {
         });
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
         tracing::info!("parsec proxy worker listening on 127.0.0.1:{port}");
+        // Fleet registration (docs/install-tracking.md): mint/refresh the
+        // install id and ping the platform — fire-and-forget, daily-deduped,
+        // never on the serving path.
+        crate::install::spawn_reporter(&state.client);
         let on_exit = state.clone();
         axum::serve(listener, router(state))
             .with_graceful_shutdown(shutdown_signal())
@@ -1927,6 +1931,12 @@ pub(crate) fn write_ledger(
         if let Some(t) = &ctx.tool {
             o.insert("tool".into(), json!(t));
         }
+        // Fleet join key (docs/install-tracking.md). READ-only here: minting
+        // happens off the serving path (setup/key CLI, worker startup), so a
+        // row simply lacks the field until this machine has an id.
+        if let Some(iid) = crate::install::current_id() {
+            o.insert("install_id".into(), json!(iid));
+        }
         if let Some(ck) = &stats.checkpoint_id {
             o.insert("checkpoint_id".into(), json!(ck));
         }
@@ -2422,7 +2432,10 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
             .or_else(|| conv_id.clone())
             .unwrap_or_default(),
         session_id: body.as_ref().and_then(session_id_from_metadata),
-        tool: tool_from_headers(&headers),
+        // Untagged Anthropic-wire traffic IS Claude Code (Desktop/codex/
+        // opencode shims all tag or route elsewhere) — stamp it explicitly so
+        // the harness spread is complete instead of encoding CC as absence.
+        tool: tool_from_headers(&headers).or_else(|| Some("claude-code".to_string())),
         model: body
             .as_ref()
             .and_then(|b| b.get("model"))

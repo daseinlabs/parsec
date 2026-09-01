@@ -22,6 +22,7 @@ from parsec_platform.store import (
     _model_row,
     extra_fields,
     fold_daily,
+    fold_installs,
     fold_public,
 )
 
@@ -138,6 +139,37 @@ class PostgresStore(Store):
                 "ON CONFLICT (request_id) DO NOTHING",
                 values,
             )
+
+    def record_install(self, report: dict[str, Any], account_id: str | None) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                "INSERT INTO installs (install_id, account_id, version, os, arch, "
+                "harnesses, first_seen, last_seen) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (install_id) DO UPDATE SET "
+                "account_id = COALESCE(EXCLUDED.account_id, installs.account_id), "
+                "version = EXCLUDED.version, os = EXCLUDED.os, arch = EXCLUDED.arch, "
+                "harnesses = EXCLUDED.harnesses, last_seen = EXCLUDED.last_seen",
+                (
+                    report["install_id"],
+                    account_id,
+                    report["version"],
+                    report["os"],
+                    report["arch"],
+                    Jsonb(report["harnesses"]),
+                    report["ts"],
+                    report["ts"],
+                ),
+            )
+
+    def installs_summary(self) -> dict[str, Any]:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "SELECT account_id, version, os, arch, harnesses, last_seen "
+                "FROM installs"
+            ).fetchall()
+        cols = ("account_id", "version", "os", "arch", "harnesses", "last_seen")
+        return fold_installs([dict(zip(cols, r)) for r in rows])
 
     def ledger_summary(self, account_id: str) -> dict[str, Any]:
         with self._pool.connection() as conn:

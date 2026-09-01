@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from parsec_platform import create_app
 from parsec_platform.auth import hash_key
-from parsec_platform.models import LedgerRow
+from parsec_platform.models import InstallReport, LedgerRow
 from parsec_platform.store import SQLiteStore
 from parsec_platform.stripe_webhook import sign_payload
 
@@ -996,3 +996,100 @@ def test_postgres_store_roundtrip() -> None:
             )
             conn.execute("DELETE FROM entitlements WHERE account_id = %s", (account,))
         store.close()
+
+
+# ── install registration (contracts/schemas/install-report.schema.json) ──────
+
+INSTALL_EXAMPLE = CONTRACTS_EXAMPLE.parent / "install-report.example.json"
+INSTALL_SCHEMA = CONTRACTS_SCHEMA.parent / "install-report.schema.json"
+
+
+def _install_report(**overrides) -> dict:
+    """The committed example with a fresh ts (activity windows are measured
+    against real time, so a static example date would rot)."""
+    report = json.loads(INSTALL_EXAMPLE.read_text())
+    report["ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    report.update(overrides)
+    return report
+
+
+def test_install_report_mirror_accepts_contracts_example() -> None:
+    """Same drift guard as the ledger: the pydantic mirror must accept the
+    schema's committed example."""
+    example = json.loads(INSTALL_EXAMPLE.read_text())
+    report = InstallReport.model_validate(example)
+    assert report.install_id == example["install_id"]
+
+
+def test_install_schema_and_mirror_have_identical_field_sets() -> None:
+    """Structural drift guard, ledger-style: a schema field the mirror lacks
+    422s every ping; a mirror field the schema lacks never validates."""
+    schema = json.loads(INSTALL_SCHEMA.read_text())
+    assert set(schema["properties"]) == set(InstallReport.model_fields)
+
+
+def test_install_register_upsert_link_and_summary(client: TestClient) -> None:
+    # Keyless ping accepted: an install exists before onboarding.
+    assert client.post("/installs", json=_install_report()).status_code == 201
+    # Unknown key degrades to anonymous, never 401 — registration is fail-open.
+    assert (
+        client.post(
+            "/installs",
+            json=_install_report(),
+            headers={"X-Parsec-Key": "psc_unknown"},
+        ).status_code
+        == 201
+    )
+    # A keyed re-ping of the SAME install links the account and refreshes
+    # metadata (upsert on install_id, not a second row).
+    key = client.post("/keys", headers=auth(mint_jwt())).json()["key"]
+    assert (
+        client.post(
+            "/installs",
+            json=_install_report(version="0.3.0"),
+            headers={"X-Parsec-Key": key},
+        ).status_code
+        == 201
+    )
+    # A different machine, long inactive, different harness set.
+    assert (
+        client.post(
+            "/installs",
+            json=_install_report(
+                install_id="ins_" + "f" * 32,
+                harnesses=["codex"],
+                ts="2020-01-01T00:00:00Z",
+            ),
+        ).status_code
+        == 201
+    )
+
+    assert client.get("/installs/summary").status_code == 401  # JWT-gated
+    summary = client.get("/installs/summary", headers=auth(mint_jwt())).json()
+    assert summary["installs_total"] == 2
+    assert summary["linked_accounts"] == 1
+    assert summary["by_version"] == {"0.3.0": 1, "0.2.6": 1}
+    assert summary["by_os"] == {"macos": 2}
+    assert summary["by_harness"] == {"claude-code": 1, "claude-desktop": 1, "codex": 1}
+    assert summary["active_7d"] == 1  # the 2020 install is not active
+    assert summary["active_30d"] == 1
+    # Aggregate-only: no ids leave the fold.
+    assert "install_id" not in json.dumps(summary)
+    assert ACCOUNT not in json.dumps(summary)
+
+    # A later keyless ping must NOT unlink the account (COALESCE upsert).
+    assert client.post("/installs", json=_install_report()).status_code == 201
+    summary = client.get("/installs/summary", headers=auth(mint_jwt())).json()
+    assert summary["linked_accounts"] == 1
+
+
+def test_install_report_is_pattern_gated(client: TestClient) -> None:
+    """Free text is unrepresentable on the (unauthenticated) install path —
+    the same contract-level guarantee as the ledger's tool/session_id."""
+    for bad in (
+        _install_report(os="Mac OS X!"),
+        _install_report(install_id="ins_not-hex"),
+        _install_report(harnesses=["Claude Desktop (roaming)!"]),
+        _install_report(sneaky="raw text"),
+    ):
+        assert client.post("/installs", json=bad).status_code == 422

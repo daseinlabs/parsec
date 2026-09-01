@@ -8,6 +8,11 @@ Single source of truth for every cross-package, cross-language schema:
 - `schemas/savings-ledger.schema.json` — one row per request: count_tokens
   counterfactual + actually-billed usage. The billing basis (Team), the
   upsell proof (Free→Pro), the trust artifact (Enterprise).
+- `schemas/install-report.schema.json` — one registration ping per install:
+  anonymous client-minted machine id + coarse environment facts (version, os,
+  arch, configured harnesses). Fleet accounting; every field pattern-gated so
+  the unauthenticated path cannot carry raw text. See
+  docs/install-tracking.md.
 - `schemas/brain-api.schema.json` — scoring request/response **v1, SERVED**:
   client-computed chunk vectors + structural features + opaque ids in,
   quantized keep/cut scores out. Raw text is unrepresentable in this schema

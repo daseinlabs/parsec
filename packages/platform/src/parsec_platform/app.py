@@ -19,8 +19,13 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from parsec_platform.auth import hash_key, require_account, require_key_account
-from parsec_platform.models import LedgerRow
+from parsec_platform.auth import (
+    hash_key,
+    optional_key_account,
+    require_account,
+    require_key_account,
+)
+from parsec_platform.models import InstallReport, LedgerRow
 from parsec_platform.store import SQLiteStore, Store
 from parsec_platform.stripe_webhook import verify_stripe_signature
 
@@ -154,6 +159,28 @@ def create_app(store: Store | None = None) -> FastAPI:
         (the proxy reports with its psc_ key). Idempotent on request_id."""
         app.state.store.add_ledger_row(account_id, row.model_dump())
         return {"accepted": True}
+
+    @app.post("/installs", status_code=201)
+    def register_install(
+        report: InstallReport, account_id: str | None = Depends(optional_key_account)
+    ) -> dict[str, bool]:
+        """Install-registration ping (docs/install-tracking.md): one row per
+        machine, upserted on the client-minted install_id. Keyless pings are
+        accepted — an install exists before onboarding — and a later keyed
+        ping links the account. Every field is pattern-gated by the
+        InstallReport mirror, so this unauthenticated path cannot carry raw
+        text."""
+        app.state.store.record_install(report.model_dump(), account_id)
+        return {"accepted": True}
+
+    @app.get("/installs/summary")
+    def installs_summary(account_id: str = Depends(require_account)) -> dict:
+        """Fleet-wide install counts: total, active_7d/30d (last_seen-based),
+        linked accounts, and by-version/os/harness spreads. Aggregate-only —
+        no install ids or account ids leave the fold. JWT-gated; note this is
+        a PRODUCT-WIDE metric (any signed-in account sees the same numbers),
+        an internal dashboard view rather than per-account data."""
+        return app.state.store.installs_summary()
 
     @app.get("/ledger/summary")
     def ledger_summary(account_id: str = Depends(require_account)) -> dict:
