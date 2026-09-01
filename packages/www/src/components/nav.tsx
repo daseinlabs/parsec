@@ -44,19 +44,21 @@ export function Nav() {
           className="flex items-center gap-5 text-sm"
         >
           {/* Anchors resolve on / ; from other routes they land on the
-              homepage section thanks to the /# prefix. */}
+              homepage section thanks to the /# prefix. Below `sm` only the
+              lockup, Sign in, and the theme toggle fit on one line at 390px;
+              the rest of the links live in the footer. */}
           <span className="hidden items-center gap-5 sm:flex">
             <NavLink href="/#pricing">Pricing</NavLink>
             <NavLink href="/blog/">Blog</NavLink>
+            <NavLink href={SITE.links.github} external>
+              GitHub
+            </NavLink>
           </span>
-          <NavLink href={SITE.links.github} external>
-            GitHub
-          </NavLink>
           <a
             href={SITE.links.app}
             onClick={setPendingLeadCookie}
             rel="noopener"
-            className="rounded-md border border-line-strong px-3 py-1.5 text-phosphor transition-colors duration-150 ease-parsec hover:bg-phosphor hover:text-on-phosphor"
+            className="rounded-md border border-line-strong px-3 py-1.5 whitespace-nowrap text-phosphor transition-colors duration-150 ease-parsec hover:bg-phosphor hover:text-on-phosphor"
           >
             Sign in
           </a>
