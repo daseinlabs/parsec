@@ -96,6 +96,14 @@ pub fn load_state() -> Option<SetupState> {
     (st.contract_version == STATE_CONTRACT).then_some(st)
 }
 
+/// True in the terminal-off phases (`disabled` — the user ran
+/// `parsec disable` — or `unsupported`). Startup messaging must stand down
+/// with auto-setup: a disabled install that still greets every session with
+/// the branded panel reads as "disable didn't work".
+pub fn switched_off() -> bool {
+    load_state().is_some_and(|st| matches!(st.phase.as_str(), "disabled" | "unsupported"))
+}
+
 /// Atomic (tmp + rename) so hook/statusline never read a torn write.
 pub fn save_state(st: &SetupState) -> std::io::Result<()> {
     let path = state_path();
