@@ -24,6 +24,7 @@ Read in `packages/proxy/src/server.rs`, `main.rs`, `hook.rs`.
 | `PARSEC_PROXY_IDLE_EXIT_S` | `0` (never) | Idle seconds before the proxy exits; the hook sets a default when it autostarts and the var is unset. |
 | `PARSEC_SESSION_TTL_S` | `3600` | Per-conversation state TTL. |
 | `PARSEC_SESSION_MAX` | `512` | Conversation-state cap (LRU beyond this). |
+| `PARSEC_CACHE_GUARD_TOKENS` | `50000` | Cache-loss guardrail (incident 2026-08-30): a warm lane about to rewrite more previously-covered tokens than this fails open to verbatim passthrough and latches until a fresh run. `0`/`off` disables. |
 | `PARSEC_VERBOSE` | unset | `1` switches to the verbose tracing filter. |
 | `PARSEC_RECORD_DIR` | unset | When set, every inbound request body is dumped verbatim to this dir (§8.1 capture seam; fail-open). |
 | `PARSEC_FREEZE` | on | `off` is the master escape hatch: no brain config, passthrough curation. |

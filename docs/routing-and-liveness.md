@@ -7,7 +7,8 @@ cannot route around a dead proxy — liveness is the routing story's other
 half.
 
 Status: §1–§3 are researched from the Claude Code docs and the code in this
-repo. §4 is a proposal, not implemented. §2.3 records an unresolved factual
+repo. §4 was a proposal; option (2) is now implemented for the Claude Desktop
+path (see §4.3), the rest is not. §2.3 records an unresolved factual
 conflict — settle it before building on §2.
 
 ## 1. The interception landscape
@@ -175,6 +176,17 @@ safe but *correct* — we keep the memory savings and lose the failure mode.
 Cost: an install-time system registration plus a matching uninstall
 obligation. This is the only option that is a true guarantee, and the only
 one that meaningfully grows the installer.
+
+✅ Implemented (2026-08) in the non-socket-activated form, scoped to the one
+client with no revival shim of its own: `parsec setup desktop --autostart`
+installs a boot service for the proxy (`rocks.dasein.parsec.proxy`)
+alongside the interceptor's, because an interceptor that survives a reboot
+while the proxy does not aimed every Desktop request at a dead port. Plain
+`RunAtLoad`+`KeepAlive` rather than the `Sockets` key — the supervisor no
+longer idle-exits, so socket activation buys nothing here. The Desktop addon
+additionally fails open: it probes the target before redirecting, passes
+traffic through untouched while the target is dead, and spawns a throttled
+`parsec up` to revive it (`setup_desktop.rs`, `desktop_addon.py`).
 
 **(3) Harden §4.2.** Pin `panic = "unwind"` explicitly; add a test that a
 panicking scorer still serves a response.

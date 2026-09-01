@@ -96,6 +96,14 @@ pub fn load_state() -> Option<SetupState> {
     (st.contract_version == STATE_CONTRACT).then_some(st)
 }
 
+/// True in the terminal-off phases (`disabled` — the user ran
+/// `parsec disable` — or `unsupported`). Startup messaging must stand down
+/// with auto-setup: a disabled install that still greets every session with
+/// the branded panel reads as "disable didn't work".
+pub fn switched_off() -> bool {
+    load_state().is_some_and(|st| matches!(st.phase.as_str(), "disabled" | "unsupported"))
+}
+
 /// Atomic (tmp + rename) so hook/statusline never read a torn write.
 pub fn save_state(st: &SetupState) -> std::io::Result<()> {
     let path = state_path();
@@ -200,6 +208,11 @@ pub fn run(auto: bool) -> anyhow::Result<()> {
     st.error = None;
     st.updated_unix = now_unix();
     save_state(&st)?;
+
+    // Fleet registration (docs/install-tracking.md): the ready transition is
+    // the "install completed" moment. Best-effort — a failed ping never makes
+    // setup look broken.
+    crate::install::report_blocking();
 
     match (&st.base_url_conflict, st.env_written) {
         (Some(url), _) => println!(
@@ -1131,6 +1144,10 @@ pub fn key_set(key: String, platform_url: Option<String>) -> anyhow::Result<()> 
         creds.platform_url = (!url.is_empty()).then_some(url);
     }
     crate::credentials::store(&creds)?;
+    // The key changes the install's fingerprint (anonymous → account-linked),
+    // so re-report immediately — this is the ping that attributes the machine
+    // to the account in the installs table.
+    crate::install::report_blocking();
     println!(
         "saved API key {} to {} — savings now report to your dashboard on the next \
          request (no restart needed).",

@@ -8,7 +8,7 @@ model accepts the schema's committed example so drift is caught in CI.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 
@@ -53,8 +53,13 @@ class LedgerRow(BaseModel):
     # conv_ids one session mints via compaction/subagents.
     session_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{1,64}$")
     # Calling-tool attribution (x-parsec-tool header from non-Claude-Code
-    # shims, e.g. opencode). Absent = Claude Code.
+    # shims, e.g. opencode). The proxy now stamps "claude-code" explicitly on
+    # untagged Anthropic-wire requests; absent = an older row or an untagged
+    # wire — readers coalesce absent to claude-code.
     tool: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,32}$")
+    # The machine's anonymous install id (install-report/v0) — joins ledger
+    # rows to the installs fleet view. Absent until the install minted one.
+    install_id: str | None = Field(default=None, pattern=r"^ins_[0-9a-f]{32}$")
     checkpoint_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     brain_ms: float | None = Field(default=None, ge=0)
     scorer_fail_opens: int | None = Field(default=None, ge=0)
@@ -80,6 +85,7 @@ class LedgerRow(BaseModel):
     tools_total: int | None = Field(default=None, ge=0)
     tools_kept: int | None = Field(default=None, ge=0)
     tools_pre_prune_sha8: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")
+    tools_served_sha8: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")
     tools_unfrozen: int | None = Field(default=None, ge=0)
     tools_stubbed: int | None = Field(default=None, ge=0)
     curator_insists: int | None = Field(default=None, ge=0)
@@ -94,3 +100,29 @@ class LedgerRow(BaseModel):
     gov_rule_fires: int | None = Field(default=None, ge=0)
     gov_directive_injected: bool | None = None
     nbr_cost_median: float | None = None
+
+
+class InstallReport(BaseModel):
+    """One registration ping per parsec install —
+    contracts/schemas/install-report.schema.json.
+
+    Fleet accounting only: an anonymous client-minted machine id plus coarse
+    environment facts. Every field is pattern-gated so this path cannot carry
+    raw text (same guarantee as the ledger's tool/session_id fields).
+    extra="forbid" mirrors the schema's additionalProperties: false.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["install-report/v0"]
+    install_id: str = Field(pattern=r"^ins_[0-9a-f]{32}$")
+    ts: str  # RFC 3339, like the ledger's ts.
+    version: str = Field(pattern=r"^[0-9A-Za-z._+-]{1,32}$")
+    os: str = Field(pattern=r"^[a-z0-9_]{1,16}$")
+    arch: str = Field(pattern=r"^[a-z0-9_]{1,16}$")
+    # Harnesses parsec is CONFIGURED to intercept at report time — the
+    # install-level complement of the per-request `tool` field. May be empty
+    # (setup not finished).
+    harnesses: list[Annotated[str, Field(pattern=r"^[a-z0-9-]{1,32}$")]] = Field(
+        max_length=8
+    )

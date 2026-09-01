@@ -348,21 +348,72 @@ fn clear_cache_control(content: &Value) -> Value {
     }
 }
 
+/// The longest cache TTL the CLIENT asked for, read off the inbound body's
+/// own `cache_control` markers before we clear them. Claude subscription
+/// clients anchor with `{"type":"ephemeral","ttl":"1h"}`; recreating our
+/// markers as bare `ephemeral` silently downgraded that to the five-minute
+/// default and multiplied cache-creation billing after ordinary pauses
+/// (docs/Parsec_Desktop_Cache_Incident_2026-08-30 §4.5). "1h" wins over any
+/// other value; otherwise the first explicit ttl seen is preserved verbatim.
+pub fn client_cache_ttl(body: &Value) -> Option<String> {
+    fn scan(content: &Value, found: &mut Option<String>) {
+        if let Value::Array(blocks) = content {
+            for b in blocks {
+                if let Some(t) = b
+                    .pointer("/cache_control/ttl")
+                    .and_then(Value::as_str)
+                    .filter(|t| !t.is_empty())
+                {
+                    if t == "1h" {
+                        *found = Some("1h".into());
+                    } else if found.is_none() {
+                        *found = Some(t.to_string());
+                    }
+                }
+            }
+        }
+    }
+    let mut found: Option<String> = None;
+    if let Some(sys) = body.get("system") {
+        scan(sys, &mut found);
+    }
+    for m in body
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        if found.as_deref() == Some("1h") {
+            break;
+        }
+        if let Some(c) = m.get("content") {
+            scan(c, &mut found);
+        }
+    }
+    found
+}
+
+/// The ephemeral marker we emit — carrying the client's ttl forward when it
+/// asked for one (never silently downgrading 1h to the 5m default).
+fn ephemeral_marker(ttl: Option<&str>) -> Value {
+    match ttl {
+        Some(t) => serde_json::json!({"type": "ephemeral", "ttl": t}),
+        None => serde_json::json!({"type": "ephemeral"}),
+    }
+}
+
 /// _set_cache_control_last: mark the LAST dict block ephemeral; promote a
 /// bare non-empty string to a single text block first.
-fn set_cache_control_last(content: &Value) -> Value {
+fn set_cache_control_last(content: &Value, ttl: Option<&str>) -> Value {
     match content {
         Value::String(s) if !s.is_empty() => serde_json::json!(
-            [{"type": "text", "text": s, "cache_control": {"type": "ephemeral"}}]
+            [{"type": "text", "text": s, "cache_control": ephemeral_marker(ttl)}]
         ),
         Value::Array(blocks) if !blocks.is_empty() => {
             let mut out = blocks.clone();
             for b in out.iter_mut().rev() {
                 if let Some(o) = b.as_object_mut() {
-                    o.insert(
-                        "cache_control".into(),
-                        serde_json::json!({"type": "ephemeral"}),
-                    );
+                    o.insert("cache_control".into(), ephemeral_marker(ttl));
                     break;
                 }
             }
@@ -390,8 +441,11 @@ fn frozen_prefix_len(cur: &[String], prior: Option<&[String]>) -> usize {
         .count()
 }
 
-/// place_cache_breakpoint, sessioned path. Two deliberate fixes vs the
-/// reference: (1) this call's fingerprints are RETURNED, not auto-persisted
+/// place_cache_breakpoint, sessioned path. Three deliberate fixes vs the
+/// reference: (0) the client's cache TTL is preserved on every marker we
+/// recreate — the reference emitted bare `ephemeral`, downgrading a
+/// subscription client's one-hour cache to five minutes (incident
+/// 2026-08-30 §4.5); (1) this call's fingerprints are RETURNED, not auto-persisted
 /// — the caller commits them only after the upstream call succeeds
 /// (anthropic_shapes.py:484 wrote them before send: a failed call anchored
 /// the retry on bytes Anthropic never cached); (2) owned values — the
@@ -404,6 +458,9 @@ pub fn place_cache_breakpoint(
     directive_appended: bool,
     prior_fps: Option<&[String]>,
 ) -> (Value, Vec<String>) {
+    // (0) capture the client's ttl BEFORE the markers are cleared.
+    let ttl = client_cache_ttl(body);
+    let ttl = ttl.as_deref();
     let mut out = body.as_object().cloned().unwrap_or_default();
     let mut msgs: Vec<Value> = out
         .get("messages")
@@ -435,7 +492,7 @@ pub fn place_cache_breakpoint(
     // (5) one anchor on the run-stable system block.
     if let Some(sys) = out.get("system") {
         if py_truthy(sys) {
-            let anchored = set_cache_control_last(sys);
+            let anchored = set_cache_control_last(sys, ttl);
             out.insert("system".into(), anchored);
         }
     }
@@ -459,8 +516,10 @@ pub fn place_cache_breakpoint(
     } else {
         last_eligible
     };
-    let anchored =
-        set_cache_control_last(msgs[prefix_anchor].get("content").unwrap_or(&Value::Null));
+    let anchored = set_cache_control_last(
+        msgs[prefix_anchor].get("content").unwrap_or(&Value::Null),
+        ttl,
+    );
     if let Some(o) = msgs[prefix_anchor].as_object_mut() {
         o.insert("content".into(), anchored);
     }
@@ -468,12 +527,94 @@ pub fn place_cache_breakpoint(
     // (4) tail anchor so this turn's new bytes persist a segment for the
     // NEXT call to read back to.
     if last_eligible > prefix_anchor {
-        let anchored =
-            set_cache_control_last(msgs[last_eligible].get("content").unwrap_or(&Value::Null));
+        let anchored = set_cache_control_last(
+            msgs[last_eligible].get("content").unwrap_or(&Value::Null),
+            ttl,
+        );
         if let Some(o) = msgs[last_eligible].as_object_mut() {
             o.insert("content".into(), anchored);
         }
     }
     out.insert("messages".into(), Value::Array(msgs));
     (Value::Object(out), cur_fps)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn every_marker(v: &Value, out: &mut Vec<Value>) {
+        match v {
+            Value::Array(a) => a.iter().for_each(|b| every_marker(b, out)),
+            Value::Object(o) => {
+                if let Some(cc) = o.get("cache_control") {
+                    out.push(cc.clone());
+                }
+                o.values().for_each(|b| every_marker(b, out));
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn breakpoints_preserve_client_one_hour_ttl() {
+        // Incident 2026-08-30 §4.5: the client anchored with ttl "1h"; the
+        // recreated markers silently downgraded to the 5-minute default.
+        // Every marker we emit must carry the client's ttl forward.
+        let body = json!({
+            "system": [{"type": "text", "text": "be terse",
+                        "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+                {"role": "assistant", "content": [{"type": "text", "text": "yo",
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"}}]},
+                {"role": "user", "content": [{"type": "text", "text": "go"}]}
+            ]
+        });
+        let (out, _fps) = place_cache_breakpoint(&body, false, None);
+        let mut markers = Vec::new();
+        every_marker(&out, &mut markers);
+        assert!(!markers.is_empty(), "no anchors emitted: {out}");
+        for m in &markers {
+            assert_eq!(
+                m,
+                &json!({"type": "ephemeral", "ttl": "1h"}),
+                "marker downgraded the client ttl: {m}"
+            );
+        }
+    }
+
+    #[test]
+    fn breakpoints_without_client_ttl_stay_bare_ephemeral() {
+        // Reference behavior when the client never asked for a ttl.
+        let body = json!({
+            "system": "be terse",
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "hi",
+                    "cache_control": {"type": "ephemeral"}}]}
+            ]
+        });
+        let (out, _fps) = place_cache_breakpoint(&body, false, None);
+        let mut markers = Vec::new();
+        every_marker(&out, &mut markers);
+        assert!(!markers.is_empty());
+        for m in &markers {
+            assert_eq!(m, &json!({"type": "ephemeral"}), "{m}");
+        }
+    }
+
+    #[test]
+    fn client_ttl_prefers_one_hour_over_shorter() {
+        let body = json!({
+            "system": [{"type": "text", "text": "s",
+                        "cache_control": {"type": "ephemeral", "ttl": "5m"}}],
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "u",
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"}}]}
+            ]
+        });
+        assert_eq!(client_cache_ttl(&body).as_deref(), Some("1h"));
+        assert_eq!(client_cache_ttl(&json!({"messages": []})), None);
+    }
 }

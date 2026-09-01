@@ -2,6 +2,7 @@
 
 import { useRef, useState, useSyncExternalStore } from "react";
 import { INSTALL_ONE_LINERS } from "@/lib/site";
+import { trackInstallCopy } from "@/lib/analytics";
 
 // The universal one-liner with a macOS/Linux ⇄ Windows toggle. Client island
 // because the default tab follows the visitor's OS: the static export always
@@ -19,7 +20,14 @@ const noopSubscribe = () => () => {};
 const detectOs = (): Os =>
   /windows/i.test(navigator.userAgent) ? "windows" : "unix";
 
-export function InstallCommand() {
+// `tool` pins the installer to one agent (install.sh's `-s -- <tool>` arg) on
+// the per-agent landing pages. Unix only: install.ps1 takes no selector, so
+// the Windows line stays the auto-detecting one-liner.
+export function InstallCommand({
+  tool,
+}: {
+  tool?: "claude" | "codex" | "opencode";
+}) {
   const detected = useSyncExternalStore(
     noopSubscribe,
     detectOs,
@@ -27,15 +35,20 @@ export function InstallCommand() {
   );
   const [override, setOs] = useState<Os | null>(null);
   const os = override ?? detected;
+  const command =
+    tool && os === "unix"
+      ? `${INSTALL_ONE_LINERS.unix} -s -- ${tool}`
+      : INSTALL_ONE_LINERS[os];
 
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(INSTALL_ONE_LINERS[os]);
+      await navigator.clipboard.writeText(command);
     } catch {
       return; // clipboard unavailable (permissions, http) — select-all still works
     }
+    trackInstallCopy({ os, method: "button", tool });
     setCopied(true);
     clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 2000);
@@ -65,8 +78,14 @@ export function InstallCommand() {
           <span aria-hidden className="select-none text-phosphor">
             {os === "windows" ? ">" : "❯"}
           </span>
-          <code className="select-all text-sm whitespace-nowrap text-ink">
-            {INSTALL_ONE_LINERS[os]}
+          <code
+            className="select-all text-sm whitespace-nowrap text-ink"
+            // Fires on a manual select-and-copy (⌘C); the copy button uses
+            // clipboard.writeText, which does not dispatch a copy event, so
+            // the two paths never double-count.
+            onCopy={() => trackInstallCopy({ os, method: "keyboard", tool })}
+          >
+            {command}
           </code>
         </div>
         <button

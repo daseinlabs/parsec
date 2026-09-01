@@ -12,11 +12,17 @@ import { WorksWith } from "@/components/tool-icons";
 export function Hero() {
   return (
     <section aria-label="parsec">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 py-24 sm:py-32 lg:flex-row lg:items-center lg:justify-between">
+      {/* Top padding is deliberately lighter than bottom: the mark is the
+          page's hero image and must sit high above the fold. */}
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 pt-12 pb-24 sm:pt-16 sm:pb-32 lg:flex-row lg:items-center lg:justify-between">
         <div>
+          {/* The install command leads — it is the CTA, and ad traffic should
+              hit it without scrolling. Logo and copy follow. */}
+          <InstallCommand />
+
           {/* text-logo, not text-phosphor: the mark keeps the bright brand
               green on light while interactive greens darken to emerald. */}
-          <Mark className="h-16 w-auto text-logo glow-mark sm:h-20" />
+          <Mark className="mt-12 h-20 w-auto text-logo glow-mark sm:h-24" />
 
           <WorksWith className="mt-6" />
 
@@ -37,10 +43,6 @@ export function Hero() {
               See the benchmark
             </a>
           </p>
-
-          <div className="mt-10">
-            <InstallCommand />
-          </div>
 
           <a
             href="https://www.antler.co/"

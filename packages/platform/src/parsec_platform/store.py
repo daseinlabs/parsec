@@ -15,6 +15,8 @@ import json
 import os
 import sqlite3
 import threading
+import time
+from datetime import datetime
 from typing import Any
 
 # Core ledger columns (typed, aggregated/billed on) — everything else in a row
@@ -169,6 +171,57 @@ def fold_public(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _seen_epoch(v: Any) -> float:
+    """last_seen as a Unix timestamp — SQLite hands back the RFC 3339 text the
+    client sent, Postgres a datetime. Unparseable → 0.0 (counts as inactive,
+    never crashes the summary)."""
+    if isinstance(v, datetime):
+        return v.timestamp()
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def fold_installs(rows: list[dict[str, Any]], now: float | None = None) -> dict[str, Any]:
+    """Fleet summary over raw installs rows: totals, activity windows keyed on
+    last_seen (refreshed by setup/key/proxy-start pings, at most daily per
+    install), and by-version/os/harness spreads. Aggregate-only by design —
+    no install_id or account_id leaves this fold. Python-side rather than SQL
+    so SQLite and Postgres share one definition; the installs table is small
+    (one row per machine)."""
+    now = time.time() if now is None else now
+    by_version: dict[str, int] = {}
+    by_os: dict[str, int] = {}
+    by_harness: dict[str, int] = {}
+    active_7d = active_30d = 0
+    linked: set[str] = set()
+    for r in rows:
+        by_version[r["version"]] = by_version.get(r["version"], 0) + 1
+        by_os[r["os"]] = by_os.get(r["os"], 0) + 1
+        harnesses = r["harnesses"]
+        if isinstance(harnesses, str):  # SQLite stores the JSON array as text
+            harnesses = json.loads(harnesses or "[]")
+        for h in harnesses:
+            by_harness[h] = by_harness.get(h, 0) + 1
+        age = now - _seen_epoch(r["last_seen"])
+        if age <= 7 * 86400:
+            active_7d += 1
+        if age <= 30 * 86400:
+            active_30d += 1
+        if r["account_id"]:
+            linked.add(r["account_id"])
+    return {
+        "installs_total": len(rows),
+        "active_7d": active_7d,
+        "active_30d": active_30d,
+        "linked_accounts": len(linked),
+        "by_version": by_version,
+        "by_os": by_os,
+        "by_harness": by_harness,
+    }
+
+
 def fold_daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Roll per-(day, model) grouped rows (same column shape as the by-model
     query, plus a `day`) up to one bucket per day: summed tokens + cost, oldest
@@ -316,6 +369,22 @@ CREATE TABLE IF NOT EXISTS ledger (
     extra                       TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS ledger_model ON ledger (json_extract(extra, '$.model'));
+
+-- One row per parsec install (anonymous client-minted machine id —
+-- contracts/schemas/install-report.schema.json). account_id is NULL until a
+-- keyed report links it; updates COALESCE so a later keyless ping never
+-- unlinks. KEEP IN SYNC with migrations/0008_installs.sql.
+CREATE TABLE IF NOT EXISTS installs (
+    install_id TEXT PRIMARY KEY,
+    account_id TEXT,
+    version    TEXT NOT NULL,
+    os         TEXT NOT NULL,
+    arch       TEXT NOT NULL,
+    -- JSON array of configured harnesses (Postgres uses JSONB).
+    harnesses  TEXT NOT NULL DEFAULT '[]',
+    first_seen TEXT NOT NULL,
+    last_seen  TEXT NOT NULL
+);
 
 -- Incremental (account, model) rollup: running totals maintained by the
 -- ledger triggers below so savings reads never scan the ledger (the public
@@ -475,6 +544,16 @@ class Store(abc.ABC):
         public counter. Same §8.4 aggregation as ledger_summary minus the
         account filter; must expose nothing per-account."""
 
+    @abc.abstractmethod
+    def record_install(self, report: dict[str, Any], account_id: str | None) -> None:
+        """Upsert one install-report ping (idempotent on install_id): metadata
+        and last_seen refresh, first_seen keeps the original, account link is
+        COALESCEd so a keyless ping never unlinks an account."""
+
+    @abc.abstractmethod
+    def installs_summary(self) -> dict[str, Any]:
+        """Fleet-wide install counts (`fold_installs`) — aggregate-only."""
+
 
 class SQLiteStore(Store):
     """Default zero-infrastructure store. One connection, one lock — the
@@ -591,6 +670,36 @@ class SQLiteStore(Store):
                 ),
             )
             self._conn.commit()
+
+    def record_install(self, report: dict[str, Any], account_id: str | None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO installs (install_id, account_id, version, os, arch, "
+                "harnesses, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(install_id) DO UPDATE SET "
+                "account_id = COALESCE(excluded.account_id, installs.account_id), "
+                "version = excluded.version, os = excluded.os, arch = excluded.arch, "
+                "harnesses = excluded.harnesses, last_seen = excluded.last_seen",
+                (
+                    report["install_id"],
+                    account_id,
+                    report["version"],
+                    report["os"],
+                    report["arch"],
+                    json.dumps(report["harnesses"]),
+                    report["ts"],
+                    report["ts"],
+                ),
+            )
+            self._conn.commit()
+
+    def installs_summary(self) -> dict[str, Any]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT account_id, version, os, arch, harnesses, last_seen "
+                "FROM installs"
+            ).fetchall()
+        return fold_installs([dict(r) for r in rows])
 
     def ledger_summary(self, account_id: str) -> dict[str, Any]:
         with self._lock:

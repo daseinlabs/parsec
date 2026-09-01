@@ -174,16 +174,15 @@ if [ -z "$plat" ]; then
 fi
 if [ -n "$plat" ]; then
   mkdir -p "$(dirname "$dest")"
-  # ── resolve the newest published version (patch channel included) ──────────
-  # The plugins TREE only advances on stable (v0.X.0) tags, but someone
-  # explicitly running the installer is asking for the newest build — so
-  # resolve latest.json (the pointer release.yml maintains) and pull the
+  # ── resolve the newest published version ───────────────────────────────────
+  # Resolve latest.json (the pointer release.yml maintains) and pull the
   # binary from that tag's GitHub release assets, verified against the
-  # sha256 map in the same file. Patch binaries exist ONLY as release
-  # assets; the tree would silently serve the previous stable. Resolution
-  # failure falls back to the stable tree so a GitHub hiccup cannot brick
-  # the installer, and a custom PARSEC_INSTALL_BASE (test installs point at
-  # a tree, not at github releases) skips resolution entirely.
+  # sha256 map in the same file. Since 2026-09-02 the tree is refreshed on
+  # every release too, so the fallback below can lag only between a tag's
+  # release-asset upload and its tree commit (or if latest.json is stale in
+  # a CDN cache). Resolution failure falls back to the tree so a GitHub
+  # hiccup cannot brick the installer, and a custom PARSEC_INSTALL_BASE
+  # (test installs point at a tree, not github releases) skips resolution.
   release_tag="" release_ver="" release_sha=""
   if [ -z "${PARSEC_INSTALL_BASE:-}" ]; then
     latest_json="$(curl -fsSL "$BASE/latest.json" 2>/dev/null || true)"
@@ -214,7 +213,7 @@ if [ -n "$plat" ]; then
       fi
     fi
   else
-    echo "downloading parsec ($plat, stable tree)…"
+    echo "downloading parsec ($plat, tree fallback)…"
     curl -fsSL "$BASE/plugins/parsec/bin/$plat/parsec" -o "$tmp"
   fi
   chmod 755 "$tmp"
@@ -364,3 +363,11 @@ case "$tools" in
 esac
 [ -n "$path_hint" ] && echo "$path_hint"
 echo "undo: parsec disable codex|opencode|desktop · claude plugin uninstall parsec"
+
+# ── final pointer: the one step left is adding an API key ────────────────────
+# Green only when stdout is a terminal — `curl | bash` into a log stays clean.
+if [ -t 1 ]; then grn="$(printf '\033[1;32m')" rst="$(printf '\033[0m')"; else grn="" rst=""; fi
+key_cmd="parsec key set <key>"
+case "$tools" in *claude*) [ -z "$plat" ] && key_cmd="/parsec:key in a Claude Code session" ;; esac
+echo
+echo "${grn}➜ Go to https://app.getparsec.ai — grab your API key, then add it: $key_cmd${rst}"

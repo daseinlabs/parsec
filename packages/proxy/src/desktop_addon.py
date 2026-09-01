@@ -43,6 +43,11 @@
 
 import logging
 import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
 from urllib.parse import urlparse
 
 from mitmproxy import http
@@ -72,6 +77,91 @@ _REDIRECT_PREFIXES = ("/v1/messages", "/v1/models")
 # [a-z0-9-]{1,32}; this value is deliberately inside that.
 _TOOL_TAG = "claude-desktop"
 
+# ── liveness: fail open when the proxy is down ───────────────────────────────
+#
+# The redirect is only safe while something answers at the target. Every other
+# client parsec routes has a revival shim (Claude Code's SessionStart hook,
+# the Codex hook, the opencode shim) — Claude Desktop has no hook surface at
+# all, and after a reboot the boot service brings THIS interceptor back before
+# anything starts the parsec proxy. Redirecting into that dead port turned the
+# window into hung Desktop sessions. So: probe the target before rewriting,
+# pass traffic through to api.anthropic.com UNTOUCHED while it is dead (fail
+# open, the project rule), and nudge `parsec up` — throttled — so curation
+# comes back on its own.
+
+_PROBE_TTL_S = 3.0  # how long one probe verdict is trusted
+_PROBE_TIMEOUT_S = 0.25
+_REVIVE_EVERY_S = 30.0  # at most one `parsec up` attempt per window
+
+_probe = {"at": 0.0, "alive": False, "ever": False}
+_revive = {"at": 0.0, "proc": None}
+
+
+def _target_alive() -> bool:
+    """Cached TCP probe of the redirect target — only ever the target."""
+    now = time.monotonic()
+    if _probe["ever"] and now - _probe["at"] < _PROBE_TTL_S:
+        return _probe["alive"]
+    try:
+        with socket.create_connection((_host, _port), timeout=_PROBE_TIMEOUT_S):
+            alive = True
+    except OSError:
+        alive = False
+    # Log transitions only: this runs per request and must not be a firehose.
+    if alive != _probe["alive"] or not _probe["ever"]:
+        logging.info(
+            "parsec: proxy %s:%d is %s",
+            _host,
+            _port,
+            "up — redirecting" if alive else "DOWN — passing Desktop traffic "
+            "straight through untouched (fail open) until it answers",
+        )
+    _probe.update(at=now, alive=alive, ever=True)
+    return alive
+
+
+def _parsec_binary():
+    """The stable alias the install scripts maintain, else PATH, else None."""
+    name = "parsec.exe" if sys.platform == "win32" else "parsec"
+    alias = os.path.join(os.path.expanduser("~"), ".parsec", "bin", name)
+    if os.path.exists(alias):
+        return alias
+    return shutil.which(name)
+
+
+def _maybe_revive() -> None:
+    """Spawn `parsec up` detached, throttled. `up` is idempotent: it spawns
+    the supervisor only when the routed port is dead, so racing a hook's own
+    revival is harmless."""
+    prev = _revive["proc"]
+    if prev is not None and prev.poll() is not None:
+        _revive["proc"] = None  # reap — bounds zombies to at most one
+    now = time.monotonic()
+    if now - _revive["at"] < _REVIVE_EVERY_S:
+        return
+    _revive["at"] = now
+    binary = _parsec_binary()
+    if binary is None:
+        return
+    kwargs = {}
+    if sys.platform == "win32":
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: outlive this process
+        # and its console, same discipline as setup::spawn_detached.
+        kwargs["creationflags"] = 0x0000_0008 | 0x0000_0200
+    else:
+        kwargs["start_new_session"] = True
+    try:
+        _revive["proc"] = subprocess.Popen(
+            [binary, "up"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **kwargs,
+        )
+        logging.info("parsec: proxy down — ran `%s up` to revive it", binary)
+    except OSError as e:
+        logging.info("parsec: could not run `parsec up` (%s)", e)
+
 
 def responseheaders(flow: http.HTTPFlow) -> None:
     """Forward bodies incrementally instead of buffering them whole.
@@ -94,7 +184,7 @@ def responseheaders(flow: http.HTTPFlow) -> None:
 # Flow counters. Without these, "captured nothing" and "captured plenty,
 # redirected none" are indistinguishable from outside the process — which is
 # what made a hung Desktop take an evening to diagnose instead of one line.
-_SEEN = {"flows": 0, "redirected": 0}
+_SEEN = {"flows": 0, "redirected": 0, "failed_open": 0}
 
 
 def request(flow: http.HTTPFlow) -> None:
@@ -118,6 +208,14 @@ def request(flow: http.HTTPFlow) -> None:
     if host != "api.anthropic.com":
         return
     if not flow.request.path.startswith(_REDIRECT_PREFIXES):
+        return
+
+    if not _target_alive():
+        # Fail open: the request proceeds to api.anthropic.com with the
+        # user's own credentials, exactly as if parsec were not installed —
+        # a session that loses curation, never a session that hangs.
+        _SEEN["failed_open"] += 1
+        _maybe_revive()
         return
 
     flow.request.scheme = _parsed.scheme

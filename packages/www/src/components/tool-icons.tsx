@@ -5,6 +5,8 @@
 // posture as --color-antler. Sources: Claude mark from simple-icons; OpenAI
 // and opencode marks from lobe-icons.
 
+import Link from "next/link";
+
 type IconProps = { className?: string };
 
 // Icons are always decorative — every use pairs them with a visible text
@@ -52,11 +54,28 @@ export function OpencodeIcon({ className }: IconProps) {
 }
 
 // The three agents the proxy routes today — keep in lockstep with
-// scripts/install.sh detection and packages/marketplace/README.md.
+// scripts/install.sh detection and packages/marketplace/README.md. Each
+// links to its landing page (content/tools.ts) — internal, so ad and search
+// traffic stays on-site.
 const TOOLS = [
-  { name: "Claude Code", Icon: ClaudeIcon, color: "text-brand-claude" },
-  { name: "Codex", Icon: OpenAiIcon, color: "text-brand-openai" },
-  { name: "opencode", Icon: OpencodeIcon, color: "text-brand-opencode" },
+  {
+    name: "Claude Code",
+    Icon: ClaudeIcon,
+    color: "text-brand-claude",
+    href: "/claude-code/",
+  },
+  {
+    name: "Codex",
+    Icon: OpenAiIcon,
+    color: "text-brand-openai",
+    href: "/codex/",
+  },
+  {
+    name: "opencode",
+    Icon: OpencodeIcon,
+    color: "text-brand-opencode",
+    href: "/opencode/",
+  },
 ] as const;
 
 export function WorksWith({ className = "" }: { className?: string }) {
@@ -68,13 +87,15 @@ export function WorksWith({ className = "" }: { className?: string }) {
         works with
       </span>
       <ul className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        {TOOLS.map(({ name, Icon, color }) => (
-          <li
-            key={name}
-            className="flex items-center gap-2 text-sm text-muted"
-          >
-            <Icon className={`h-4 w-4 shrink-0 ${color}`} />
-            {name}
+        {TOOLS.map(({ name, Icon, color, href }) => (
+          <li key={name}>
+            <Link
+              href={href}
+              className="flex items-center gap-2 text-sm text-muted transition-colors duration-150 ease-parsec hover:text-phosphor"
+            >
+              <Icon className={`h-4 w-4 shrink-0 ${color}`} />
+              {name}
+            </Link>
           </li>
         ))}
       </ul>

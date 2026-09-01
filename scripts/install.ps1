@@ -359,7 +359,7 @@ if (-not $isX64 -and ("desktop" -in $Tools)) {
     }
 }
 
-# -- resolve the newest published version (patch channel included) ------------
+# -- resolve the newest published version --------------------------------------
 # The plugins TREE only advances on stable (v0.X.0) tags, but someone
 # explicitly running the installer is asking for the newest build -- so
 # resolve latest.json (the pointer release.yml maintains) and pull binaries
@@ -669,3 +669,8 @@ if ($Tools -contains "desktop") {
     }
 }
 Write-Host "undo: parsec disable codex|opencode|desktop - parsec tray uninstall - claude plugin uninstall parsec"
+
+# -- final pointer: the one step left is adding an API key ---------------------
+$keyCmd = if ($needsBinary) { "parsec key set <key>" } else { "/parsec:key in a Claude Code session" }
+Write-Host ""
+Write-Host ("-> Go to https://app.getparsec.ai - grab your API key, then add it: " + $keyCmd) -ForegroundColor Green

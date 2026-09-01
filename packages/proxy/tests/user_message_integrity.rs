@@ -149,6 +149,70 @@ fn anthropic_user_prompt_survives_a_cut_everything_curator() {
     assert!(refused > 0);
 }
 
+/// Product decision (2026-08-29): the agent's own prose responses are served
+/// verbatim on both wires — only observations (and reasoning blobs) are
+/// cuttable mass. Same fold-back mechanism as the user-turn guard, so brain
+/// checksum parity is untouched.
+#[test]
+fn assistant_prose_survives_a_cut_everything_curator() {
+    let prose = format!(
+        "A00_HEAD_SENTINEL\n{}A99_TAIL_SENTINEL\n",
+        (0..120)
+            .map(|k| format!("finding {k}: a load-bearing line of the agent's answer\n"))
+            .collect::<String>()
+    );
+    let body = json!({
+        "model": "claude-opus-5",
+        "messages": [
+            {"role": "user", "content": "investigate the bug"},
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/repo/a.py"}}]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": [
+                    {"type": "text", "text": (0..300).map(|i| format!("{i}: file line\n")).collect::<String>()}]}]},
+            {"role": "assistant", "content": prose.clone()},
+            {"role": "user", "content": "now fix it"},
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/repo/b.py"}}]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t2", "content": [
+                    {"type": "text", "text": (0..300).map(|i| format!("{i}: more file line\n")).collect::<String>()}]}]},
+        ],
+    });
+    let (out, refused) = serve_anthropic(&body);
+    assert_eq!(
+        out["messages"][3]["content"].as_str().unwrap(),
+        prose,
+        "assistant prose must be byte-identical"
+    );
+    let obs = serde_json::to_string(&out["messages"][2]["content"]).unwrap();
+    assert!(
+        obs.contains("omitted"),
+        "tool output no longer curated: {obs}"
+    );
+    assert!(refused > 0, "the curator did try to cut the prose");
+
+    // Responses wire: parse spares prose (cut_assistant=false on that path),
+    // but the mask must protect it independently of freeze config — this
+    // suite's serve_responses runs the default config, which DOES chunk it.
+    let mut input = codex_body("go on")["input"].as_array().unwrap().clone();
+    input.push(json!({"type": "message", "role": "assistant",
+                      "content": [{"type": "output_text", "text": prose.clone()}]}));
+    input.push(
+        json!({"type": "function_call", "name": "shell", "call_id": "c2",
+                      "arguments": "{\"command\":[\"bash\",\"-lc\",\"ls\"]}"}),
+    );
+    input.push(json!({"type": "function_call_output", "call_id": "c2",
+                      "output": (0..200).map(|i| format!("{i}: output line\n")).collect::<String>()}));
+    let body = json!({"model": "gpt-5.6-codex", "instructions": "You are Codex.", "input": input});
+    let (out, _) = serve_responses(&body);
+    assert_eq!(
+        out["input"][5]["content"][0]["text"].as_str().unwrap(),
+        prose,
+        "responses-wire assistant prose must be byte-identical"
+    );
+}
+
 // ── the guard must not gut the product ──────────────────────────────────────
 
 #[test]
@@ -203,7 +267,10 @@ fn anthropic_mixed_tool_result_plus_reminder_stays_curatable() {
         ],
     });
     let mask = internal::protected_mask(&body);
-    assert!(!mask[1], "mixed tool_result message must stay curatable");
+    // No `system` key, so the mask aligns 1:1 with `messages`: the mixed
+    // tool_result carrier is entry 2 (entry 1 is the assistant tool_use turn,
+    // protected since the assistant-prose guard).
+    assert!(!mask[2], "mixed tool_result message must stay curatable");
 }
 
 // ── criterion 2: byte integrity across content shapes ───────────────────────

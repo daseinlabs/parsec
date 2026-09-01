@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://daseinlabs.dev/contracts/install-report/v0",
+  "title": "install-report — one registration ping per parsec install (draft v0)",
+  "description": "Fleet accounting only: an anonymous machine-scoped id minted client-side (~/.parsec/install.json) plus coarse environment facts. Every field is pattern-gated so this path cannot carry raw text, matching the savings-ledger tool/session_id guarantee. Keyless pings are valid — an install exists before onboarding — and a later keyed ping links the account server-side. Purging parsec data deletes the id; a reinstall mints a fresh one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "install_id",
+    "ts",
+    "version",
+    "os",
+    "arch",
+    "harnesses"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "install-report/v0"
+    },
+    "install_id": {
+      "type": "string",
+      "pattern": "^ins_[0-9a-f]{32}$",
+      "description": "Random machine-scoped id minted at first report and persisted in ~/.parsec/install.json. Not derived from hardware identifiers; `parsec uninstall`/purge deletes it."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z._+-]{1,32}$",
+      "description": "The reporting binary's CARGO_PKG_VERSION."
+    },
+    "os": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,16}$",
+      "description": "std::env::consts::OS (e.g. macos, linux, windows)."
+    },
+    "arch": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,16}$",
+      "description": "std::env::consts::ARCH (e.g. aarch64, x86_64)."
+    },
+    "harnesses": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,32}$"
+      },
+      "description": "Harnesses parsec is CONFIGURED to intercept on this machine at report time (claude-code, claude-desktop, codex, opencode, …) — the install-level complement of the per-request ledger `tool` field. May be empty (setup not finished)."
+    }
+  }
+}

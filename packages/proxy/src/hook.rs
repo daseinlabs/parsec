@@ -129,11 +129,16 @@ pub fn run(event: &str) -> anyhow::Result<()> {
                     );
                 }
             }
+            // `parsec disable` (or an unsupported build) silences the startup
+            // surfaces below, not just auto-setup: the get-a-key banner and
+            // the lifetime note both advertise a product the user switched
+            // off, and either one still renders the full branded panel.
+            let off = crate::setup::switched_off();
             // Top of the session (and the install flow — first run is a
             // startup): if there is no API key, parsec saves nothing — show the
             // prominent get-a-key banner. Fresh startups only (resume/clear/
             // compact must not re-nag). Single source: apikey::gate_banner.
-            if is_startup {
+            if is_startup && !off {
                 if let Some(m) = crate::apikey::gate_banner() {
                     msgs.push(m);
                 }
@@ -151,8 +156,9 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             }
             // One-time awareness line (docs/plugin-user-messaging.md Part 1
             // §3): fresh startups only — resume/clear/compact re-fire
-            // SessionStart and must not re-nag.
-            if is_startup {
+            // SessionStart and must not re-nag. It says "parsec active", so
+            // it must not fire on a disabled install.
+            if is_startup && !off {
                 if let Some(m) = crate::statusline::lifetime_note() {
                     msgs.push(m);
                 }

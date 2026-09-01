@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE } from "@/lib/site";
 import { allPosts } from "@/lib/posts";
+import { TOOL_SLUGS } from "@/content/tools";
 
 // Required by `output: "export"` — see robots.ts.
 export const dynamic = "force-static";
@@ -11,6 +12,7 @@ export const dynamic = "force-static";
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: `${SITE.url}/` },
+    ...TOOL_SLUGS.map((slug) => ({ url: `${SITE.url}/${slug}/` })),
     { url: `${SITE.url}/privacy/` },
     { url: `${SITE.url}/blog/` },
     ...allPosts().map((post) => ({
