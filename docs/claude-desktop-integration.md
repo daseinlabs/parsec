@@ -222,6 +222,27 @@ nothing.
    with `/RL HIGHEST` instead of the Run key; until then autostart on Windows
    means "started once, elevated, at setup time", not "survives a reboot".
 
+8. Under `--autostart`, also install a boot service for **the proxy itself**
+   (`rocks.dasein.parsec.proxy` / `parsec-proxy` / `ParsecProxy`, launching
+   the stable alias `~/.parsec/bin/parsec proxy`). An interceptor that
+   survives a reboot while the proxy does not redirected every Desktop
+   request into a dead port — the "all sessions hang after a restart" bug:
+   every other routed client has a revival shim (Claude Code's SessionStart
+   hook, the Codex hook, the opencode shim), but Desktop has no hook surface
+   at all. `KeepAlive`/`Restart=on-failure` restarts crashes only; the
+   supervisor's two deliberate exit-0s (port already owned by another parsec,
+   `/shutdown` from restart/upgrade flows) stay down, so the service never
+   fights a proxy replacement. Removal (`desktop stop`, `disable desktop`,
+   `uninstall`) deletes the registration but never kills a running proxy —
+   Claude Code sessions may be routed through it.
+
+   The addon is the belt to that suspender: it TCP-probes the target (cached
+   3 s) before rewriting, and while the target is dead it passes Desktop
+   traffic through to api.anthropic.com untouched — fail open — while
+   spawning `parsec up` (throttled to one attempt per 30 s) to revive
+   curation. A dead proxy now costs curation for a few seconds, never a hung
+   session.
+
 `stop()` verifies the PID is actually `mitmdump` (via `ps -o comm=` /
 `tasklist`) before signalling it — PIDs get reused, and killing an unrelated
 process on the word of a stale pidfile is the bug that check exists to avoid.

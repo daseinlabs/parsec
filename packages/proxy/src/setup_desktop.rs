@@ -50,6 +50,15 @@ const SYSTEMD_UNIT: &str = "parsec-interceptor";
 const WIN_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WIN_RUN_NAME: &str = "ParsecInterceptor";
 
+// The proxy's own boot service — installed and removed in lockstep with the
+// interceptor's. The interceptor service without it IS the reboot hang: the
+// service manager revives mitmdump, which faithfully redirects every Desktop
+// request into a port nothing answers, and Desktop has no hook surface to
+// revive the proxy the way Claude Code's SessionStart does.
+const PROXY_LAUNCHD_LABEL: &str = "rocks.dasein.parsec.proxy";
+const PROXY_SYSTEMD_UNIT: &str = "parsec-proxy";
+const WIN_PROXY_RUN_NAME: &str = "ParsecProxy";
+
 // ── paths ───────────────────────────────────────────────────────────────────
 
 pub fn interceptor_dir() -> PathBuf {
@@ -88,6 +97,21 @@ fn systemd_unit_path() -> PathBuf {
         .join("systemd")
         .join("user")
         .join(format!("{SYSTEMD_UNIT}.service"))
+}
+
+fn proxy_launchd_plist() -> PathBuf {
+    crate::setup::home_dir()
+        .join("Library")
+        .join("LaunchAgents")
+        .join(format!("{PROXY_LAUNCHD_LABEL}.plist"))
+}
+
+fn proxy_systemd_unit_path() -> PathBuf {
+    crate::setup::home_dir()
+        .join(".config")
+        .join("systemd")
+        .join("user")
+        .join(format!("{PROXY_SYSTEMD_UNIT}.service"))
 }
 
 fn state_file() -> PathBuf {
@@ -1311,6 +1335,241 @@ fn uninstall_service() -> bool {
     true
 }
 
+// ── proxy boot service (installed alongside the interceptor's) ──────────────
+//
+// docs/routing-and-liveness.md §4.3 option (2), scoped to the one client that
+// needs it: every other routed client revives a dead proxy itself (Claude
+// Code's SessionStart hook, the Codex hook, the opencode shim), but Desktop
+// has no hook surface — so when its interception survives a reboot, the proxy
+// must too.
+
+pub fn proxy_service_installed() -> bool {
+    if cfg!(target_os = "macos") {
+        proxy_launchd_plist().exists()
+    } else if cfg!(target_os = "windows") {
+        Command::new("reg")
+            .args(["query", WIN_RUN_KEY, "/v", WIN_PROXY_RUN_NAME])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    } else {
+        proxy_systemd_unit_path().exists()
+    }
+}
+
+/// The binary the service launches. The ALIAS, never `current_exe()`: the
+/// plugin-cache path this process runs from changes on every update, and a
+/// boot service must survive that (`tray.rs` learned this the hard way). The
+/// alias is refreshed first so a fresh install has one; the running image is
+/// only a fallback for layouts where no alias can exist.
+fn proxy_service_binary() -> PathBuf {
+    let _ = crate::setup_opencode::refresh_bin_alias();
+    let alias = crate::setup_opencode::bin_alias_path();
+    if alias.exists() {
+        return alias;
+    }
+    std::env::current_exe().unwrap_or(alias)
+}
+
+/// `RunAtLoad` + `KeepAlive/SuccessfulExit=false`, the same policy as the
+/// interceptor's plist, and it fits the supervisor exactly: a clean exit(0)
+/// stays down (the idempotent "another parsec already owns the port" no-op,
+/// and `/shutdown` from `parsec up --restart` / upgrades — launchd must not
+/// resurrect what those flows are replacing), while a crash restarts.
+fn proxy_plist_xml(binary: &Path, port: u16) -> String {
+    let log = crate::setup::parsec_home().join("proxy.log");
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{PROXY_LAUNCHD_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin}</string>
+        <string>proxy</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{log}</string>
+    <key>StandardErrorPath</key>
+    <string>{log}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PARSEC_PROXY_PORT</key>
+        <string>{port}</string>
+    </dict>
+</dict>
+</plist>
+"#,
+        bin = xml_escape(&binary.display().to_string()),
+        log = xml_escape(&log.display().to_string()),
+    )
+}
+
+fn proxy_systemd_unit_text(binary: &Path, port: u16) -> String {
+    format!(
+        "[Unit]\n\
+         Description=parsec proxy — the supervisor that owns the routed loopback port\n\
+         After=network-online.target\n\
+         Wants=network-online.target\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         ExecStart={exec} proxy\n\
+         Restart=on-failure\n\
+         RestartSec=5\n\
+         Environment=PARSEC_PROXY_PORT={port}\n\
+         \n\
+         [Install]\n\
+         WantedBy=default.target\n",
+        exec = quote_if_spaced(&binary.display().to_string()),
+    )
+}
+
+fn win_proxy_launcher_path() -> PathBuf {
+    interceptor_dir().join("start-proxy.cmd")
+}
+
+fn win_proxy_launcher_script(binary: &Path, port: u16) -> String {
+    format!(
+        "@echo off\r\nset PARSEC_PROXY_PORT={port}\r\nstart \"\" /b \"{}\" proxy\r\n",
+        binary.display()
+    )
+}
+
+fn install_proxy_service(port: u16) -> anyhow::Result<()> {
+    let binary = proxy_service_binary();
+    if cfg!(target_os = "macos") {
+        let plist = proxy_launchd_plist();
+        std::fs::create_dir_all(plist.parent().unwrap())?;
+        let _ = proxy_launchctl_unload();
+        std::fs::write(&plist, proxy_plist_xml(&binary, port))?;
+        let uid = unsafe_uid();
+        // RunAtLoad fires on bootstrap; if a proxy already owns the port the
+        // new instance exits 0 and SuccessfulExit=false leaves it down.
+        let ok = Command::new("launchctl")
+            .args(["bootstrap", &format!("gui/{uid}")])
+            .arg(&plist)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+            || Command::new("launchctl")
+                .arg("load")
+                .arg(&plist)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+        if !ok {
+            anyhow::bail!(
+                "wrote {} but launchctl would not load it — load by hand: launchctl load {}",
+                plist.display(),
+                plist.display()
+            );
+        }
+        Ok(())
+    } else if cfg!(target_os = "windows") {
+        let launcher = win_proxy_launcher_path();
+        std::fs::create_dir_all(interceptor_dir())?;
+        std::fs::write(&launcher, win_proxy_launcher_script(&binary, port))?;
+        // The Run key fires at the NEXT login; the caller's ensure_proxy
+        // already has one listening for this session.
+        let ok = Command::new("reg")
+            .args([
+                "add",
+                WIN_RUN_KEY,
+                "/v",
+                WIN_PROXY_RUN_NAME,
+                "/t",
+                "REG_SZ",
+                "/d",
+            ])
+            .arg(format!("\"{}\"", launcher.display()))
+            .arg("/f")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            Ok(())
+        } else {
+            anyhow::bail!("could not write the {WIN_PROXY_RUN_NAME} Run-key entry")
+        }
+    } else {
+        let unit = proxy_systemd_unit_path();
+        std::fs::create_dir_all(unit.parent().unwrap())?;
+        std::fs::write(&unit, proxy_systemd_unit_text(&binary, port))?;
+        let _ = Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .status();
+        // `--now` is safe for the same reason bootstrap is on macOS: a
+        // second supervisor on an owned port is a clean exit-0 no-op.
+        let ok = Command::new("systemctl")
+            .args(["--user", "enable", "--now", PROXY_SYSTEMD_UNIT])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "wrote {} but systemctl would not enable it — run: systemctl --user enable --now {PROXY_SYSTEMD_UNIT}",
+                unit.display()
+            )
+        }
+    }
+}
+
+fn proxy_launchctl_unload() -> bool {
+    let uid = unsafe_uid();
+    Command::new("launchctl")
+        .args(["bootout", &format!("gui/{uid}/{PROXY_LAUNCHD_LABEL}")])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+        || Command::new("launchctl")
+            .arg("unload")
+            .arg(proxy_launchd_plist())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+}
+
+/// Remove the registration WITHOUT killing a running proxy: a Claude Code
+/// session may be riding it right now, and stopping interception is not a
+/// reason to break the CLI. macOS/Linux keep the job loaded until logout
+/// (crash-restart until then is harmless-to-helpful); the deleted plist/unit
+/// is what stops it returning. `/shutdown`-based stops exit 0, which both
+/// service managers already leave down.
+fn uninstall_proxy_service() -> bool {
+    if !proxy_service_installed() {
+        return false;
+    }
+    if cfg!(target_os = "macos") {
+        let _ = std::fs::remove_file(proxy_launchd_plist());
+    } else if cfg!(target_os = "windows") {
+        let _ = Command::new("reg")
+            .args(["delete", WIN_RUN_KEY, "/v", WIN_PROXY_RUN_NAME, "/f"])
+            .status();
+        let _ = std::fs::remove_file(win_proxy_launcher_path());
+    } else {
+        let _ = Command::new("systemctl")
+            .args(["--user", "disable", PROXY_SYSTEMD_UNIT])
+            .status();
+        let _ = std::fs::remove_file(proxy_systemd_unit_path());
+        let _ = Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .status();
+    }
+    true
+}
+
 // ── commands ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -1340,8 +1599,14 @@ pub struct Options {
 /// — the port this addon was rendered against. Restarting the wrong port
 /// would leave Desktop aimed at a dead one. Same safety rule though: only a
 /// process that identifies itself as a parsec proxy is ever shut down.
+/// The port a rendered target URL aims at — shared by `ensure_proxy` and the
+/// proxy boot service so they cannot disagree about which port to keep alive.
+fn proxy_target_port(target: &str) -> Option<u16> {
+    target.rsplit(':').next().and_then(|p| p.parse().ok())
+}
+
 fn ensure_proxy(target: &str, restart: bool) {
-    let Some(port) = target.rsplit(':').next().and_then(|p| p.parse().ok()) else {
+    let Some(port) = proxy_target_port(target) else {
         return;
     };
     if crate::hook::port_listening(port) {
@@ -1473,6 +1738,24 @@ fn run_start(autostart: bool, restart_proxy: bool) -> anyhow::Result<()> {
     if autostart {
         install_service(&mitmdump, &target)?;
         st.autostart = true;
+        // The proxy gets its own login service whenever the interceptor
+        // does — an interceptor that survives a reboot while the proxy does
+        // not would redirect every Desktop request into a dead port (the
+        // "sessions hang after restart" bug). Failure is a warning, not an
+        // abort: the addon fails open on a dead target, so a missing service
+        // costs curation-until-revived, never availability.
+        if let Some(port) = proxy_target_port(&target) {
+            match install_proxy_service(port) {
+                Ok(()) => println!(
+                    "proxy installed as a boot service too (it must outlive reboots for the \
+                     interceptor to have somewhere to send traffic)"
+                ),
+                Err(e) => println!(
+                    "could not install the proxy's boot service ({e}) — after a reboot, Desktop \
+                     traffic passes through UNCURATED until something runs `parsec up`"
+                ),
+            }
+        }
         // Starting the boot service is NOT the same as intercepting now.
         // macOS `launchctl load` and Linux `systemctl --now` start the
         // interceptor as part of install_service, but the Windows Run key
@@ -1537,6 +1820,12 @@ pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
     if !keep_autostart {
         if uninstall_service() {
             println!("boot service removed");
+        }
+        // The proxy's login registration goes with it — but the RUNNING
+        // proxy is left alone: Claude Code sessions may be routed through
+        // it, and stopping Desktop interception is no reason to break them.
+        if uninstall_proxy_service() {
+            println!("proxy boot service removed (a running proxy is left running)");
         }
         st.autostart = false;
     } else if st.autostart {
@@ -1750,6 +2039,18 @@ pub fn status() -> anyhow::Result<()> {
         }
     );
     println!(
+        "  proxy auto-start:  {}",
+        if proxy_service_installed() {
+            "enabled (the proxy starts on login too, so a rebooted machine has \
+             somewhere to send intercepted traffic)"
+        } else if service_installed() {
+            "MISSING — after a reboot the interceptor runs with no proxy behind it \
+             (traffic passes through uncurated); re-run: parsec desktop start --autostart"
+        } else {
+            "disabled (revived on demand by the Claude Code hook / the addon)"
+        }
+    );
+    println!(
         "  Claude Desktop:    {}",
         if claude_desktop_installed() {
             "installed"
@@ -1827,6 +2128,7 @@ pub fn status() -> anyhow::Result<()> {
 pub fn disable() -> anyhow::Result<()> {
     let outcome = stop();
     let had_service = uninstall_service();
+    let had_proxy_service = uninstall_proxy_service();
     let addon_removed = remove_addon_if_managed();
     let mcp_removed = unregister_mcp();
     let _ = std::fs::remove_file(state_file());
@@ -1841,6 +2143,14 @@ pub fn disable() -> anyhow::Result<()> {
     println!(
         "boot service: {}",
         if had_service { "removed" } else { "none" }
+    );
+    println!(
+        "proxy boot service: {}",
+        if had_proxy_service {
+            "removed (a running proxy is left running — Claude Code may be routed through it)"
+        } else {
+            "none"
+        }
     );
     println!(
         "addon: {}",
@@ -1885,6 +2195,7 @@ pub fn remove_if_managed() {
     }
     let stopped = matches!(outcome, StopOutcome::Stopped);
     let service = uninstall_service();
+    let _ = uninstall_proxy_service();
     let addon = remove_addon_if_managed();
     let mcp = unregister_mcp();
     let _ = std::fs::remove_file(state_file());
@@ -2225,5 +2536,80 @@ mod tests {
         assert!(xml.contains("<string>/opt/homebrew/bin/mitmdump</string>"));
         assert!(xml.contains(LAUNCHD_LABEL));
         assert!(!xml.contains("&&"));
+    }
+
+    #[test]
+    fn addon_fails_open_when_the_proxy_is_dead() {
+        // The reboot bug this pins: the interceptor's boot service outlives
+        // the proxy, and an unconditional redirect aimed every Desktop
+        // request at a dead port. The liveness gate must sit BEFORE the
+        // rewrite so a dead target means untouched passthrough, never a hang.
+        let code = addon_code();
+        let gate = code
+            .find("if not _target_alive():")
+            .expect("addon must gate the redirect on target liveness");
+        let rewrite = code
+            .find("flow.request.scheme =")
+            .expect("addon must still rewrite when the target answers");
+        assert!(gate < rewrite, "liveness gate must precede the rewrite");
+        // Fail open is observable, not silent — same reason _SEEN exists.
+        assert!(code.contains(r#""failed_open""#));
+        // The probe touches only the redirect target, never another host.
+        assert!(code.contains("socket.create_connection((_host, _port)"));
+    }
+
+    #[test]
+    fn addon_revive_is_throttled_detached_and_optional() {
+        let code = addon_code();
+        // `parsec up` is idempotent, but an attempt per request would still
+        // be a fork storm on a busy session — the throttle is load-bearing.
+        assert!(code.contains("_REVIVE_EVERY_S"));
+        // Detached with silenced stdio: mitmdump's event loop must never
+        // block on, or log-interleave with, the spawned reviver.
+        assert!(code.contains("start_new_session"));
+        assert!(code.contains("subprocess.DEVNULL"));
+        // The stable alias is probed first — the same path the Codex hook
+        // and tray use — with PATH as fallback, and a missing binary is a
+        // quiet no-op, not a crash inside the addon.
+        assert!(code.contains(r#"".parsec", "bin", name"#));
+        assert!(code.contains("shutil.which"));
+    }
+
+    #[test]
+    fn proxy_boot_service_restarts_on_crash_but_respects_clean_exits() {
+        let xml = proxy_plist_xml(Path::new("/Users/u/.parsec/bin/parsec"), 8082);
+        assert!(xml.contains(PROXY_LAUNCHD_LABEL));
+        assert!(xml.contains("<string>/Users/u/.parsec/bin/parsec</string>"));
+        assert!(xml.contains("<string>proxy</string>"));
+        assert!(xml.contains("<key>RunAtLoad</key>"));
+        // SuccessfulExit=false: a crash restarts, but the two DELIBERATE
+        // exit(0)s — "another parsec already owns the port" and `/shutdown`
+        // from restart/upgrade flows — must stay down, or launchd would
+        // fight every proxy replacement forever.
+        assert!(xml.contains("<key>SuccessfulExit</key>"));
+        assert!(xml.contains("<key>PARSEC_PROXY_PORT</key>"));
+        assert!(xml.contains("<string>8082</string>"));
+        // Distinct label: it must never collide with the interceptor's job.
+        assert_ne!(PROXY_LAUNCHD_LABEL, LAUNCHD_LABEL);
+        assert_ne!(PROXY_SYSTEMD_UNIT, SYSTEMD_UNIT);
+        assert_ne!(WIN_PROXY_RUN_NAME, WIN_RUN_NAME);
+    }
+
+    #[test]
+    fn proxy_service_command_lines_survive_spaces_in_paths() {
+        let unit = proxy_systemd_unit_text(Path::new("/home/a b/.parsec/bin/parsec"), 9137);
+        assert!(unit.contains("ExecStart=\"/home/a b/.parsec/bin/parsec\" proxy"));
+        assert!(unit.contains("Environment=PARSEC_PROXY_PORT=9137"));
+        assert!(unit.contains("Restart=on-failure"));
+        let script =
+            win_proxy_launcher_script(Path::new(r"C:\Users\a b\.parsec\bin\parsec.exe"), 9137);
+        assert!(script.contains(r#""C:\Users\a b\.parsec\bin\parsec.exe" proxy"#));
+        assert!(script.contains("set PARSEC_PROXY_PORT=9137"));
+    }
+
+    #[test]
+    fn target_port_parse_is_shared_and_sane() {
+        assert_eq!(proxy_target_port("http://127.0.0.1:8082"), Some(8082));
+        assert_eq!(proxy_target_port("not a url"), None);
     }
 }

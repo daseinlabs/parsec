@@ -69,6 +69,13 @@ pub struct ConvState {
     /// caches, so evicting a live conversation only costs replay round trips
     /// and one provider-cache re-seed — never bytes.
     pub touched: std::time::Instant,
+    /// Cache-loss guardrail latch (incident 2026-08-30 P1): once a warm lane
+    /// would have rewritten more previously-covered tokens than
+    /// `cache_guard_tokens`, every later request on the lane fails open to
+    /// verbatim passthrough — the client's own bytes and cache anchors go
+    /// upstream untouched, exactly as if parsec were not installed. Cleared
+    /// with the rest of the memo by the fresh-run reset.
+    pub bypass: bool,
 }
 
 impl Default for ConvState {
@@ -80,6 +87,7 @@ impl Default for ConvState {
             tool_keep: None,
             gov: governor::GovMemo::default(),
             touched: std::time::Instant::now(),
+            bypass: false,
         }
     }
 }
@@ -120,6 +128,23 @@ pub struct AppState {
     pub chatgpt_upstream: String,
     pub client: reqwest::Client,
     pub convs: Mutex<HashMap<String, ConvState>>,
+    /// Per-lane serialization (incident 2026-08-30 P0): one async mutex per
+    /// conversation lane, held from curation through the post-2xx fingerprint
+    /// commit. Concurrent requests on DIFFERENT lanes run fully parallel;
+    /// two on the SAME lane run in turn instead of taking/rebuilding/
+    /// overwriting each other's Freezer, fold map, and fingerprints — the
+    /// clone-out/write-back pattern under `convs` made a same-lane race a
+    /// silent full cache reseed.
+    pub lane_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Cache-loss guardrail threshold in chars/4 tokens (incident 2026-08-30
+    /// P1): a warm lane about to rewrite more previously-covered tokens than
+    /// this fails open to passthrough instead. `PARSEC_CACHE_GUARD_TOKENS`;
+    /// 0 disables.
+    pub cache_guard_tokens: i64,
+    /// Guardrail fires — counted separately from generic fail-opens so the
+    /// incident signature (repeated large warm-lane rewrites) is alertable
+    /// on its own.
+    pub cache_guard_count: AtomicU64,
     /// §8.3: fail-open is a first-class metric, not a silent branch.
     pub fail_open_count: AtomicU64,
     pub ledger_path: PathBuf,
@@ -153,6 +178,26 @@ fn epoch_s() -> u64 {
         .as_secs()
 }
 
+/// `PARSEC_CACHE_GUARD_TOKENS` — cache-loss guardrail threshold; unset/junk
+/// → 50_000 (the incident's warm-lane rewrite floor), 0/off → disabled.
+fn cache_guard_tokens_from_env() -> i64 {
+    match std::env::var("PARSEC_CACHE_GUARD_TOKENS") {
+        Ok(v) if v.trim().eq_ignore_ascii_case("off") => 0,
+        Ok(v) => v.trim().parse().unwrap_or(50_000),
+        Err(_) => 50_000,
+    }
+}
+
+/// Get-or-create the async mutex serializing one conversation lane. The map
+/// lock is only held for the lookup; the caller awaits the lane lock outside
+/// it, so different lanes never contend.
+fn lane_lock(st: &AppState, conv_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    lock(&st.lane_locks)
+        .entry(conv_id.to_string())
+        .or_default()
+        .clone()
+}
+
 impl AppState {
     pub fn new(upstream_base: String, ledger_path: PathBuf) -> Self {
         Self::with_brain(upstream_base, ledger_path, None)
@@ -184,6 +229,9 @@ impl AppState {
             chatgpt_upstream: crate::openai::chatgpt_upstream_from_env(),
             client: reqwest::Client::new(),
             convs: Mutex::new(HashMap::new()),
+            lane_locks: Mutex::new(HashMap::new()),
+            cache_guard_tokens: cache_guard_tokens_from_env(),
+            cache_guard_count: AtomicU64::new(0),
             fail_open_count: AtomicU64::new(0),
             ledger_path,
             brain,
@@ -378,6 +426,15 @@ pub fn run() -> anyhow::Result<()> {
                                     pure caches, replayable"
                     );
                 }
+                // Lane locks follow the memos: keep a lock while its lane
+                // memo lives OR a request holds it (strong_count > 1 —
+                // dropping a HELD lock would let a racing request mint a
+                // second mutex for the same lane and break serialization).
+                {
+                    let convs = lock(&maint.convs);
+                    lock(&maint.lane_locks)
+                        .retain(|k, l| convs.contains_key(k) || Arc::strong_count(l) > 1);
+                }
             }
         });
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
@@ -481,32 +538,68 @@ pub(crate) fn forward_auth_headers(inbound: &HeaderMap) -> HeaderMap {
     out
 }
 
-/// service/sessions.py conversation_id: sha256 of the JSON of the first two
-/// messages' content (the TASK HEAD — constant across a run while the tail
-/// grows), hex[..24]; prefixed by the bench run-id header when present so
-/// concurrent tasks in one batch get separate memos. Like the reference
-/// (which hashed the `to_internal` view, system entry first), the head is
-/// taken from the INTERNAL view — hashing raw `body.messages[..2]` would
-/// make turn 1 (`[u1]`) and turn 2 (`[u1, a1]`) different conversations.
-fn conversation_id(headers: &HeaderMap, internal: &[Value], session: Option<&str>) -> String {
-    let head: Vec<Value> = internal
-        .iter()
-        .take(2)
-        .map(|m| m.get("content").cloned().unwrap_or(Value::Null))
-        .collect();
+/// Conversation lane identity. STABLE-FIRST since the 2026-08-30 Desktop
+/// cache incident: the v0.2.6 scheme hashed the first two internal message
+/// contents (system entry + first user) with the session id as a mere salt,
+/// so a client that mutates its system/task head between turns — Claude
+/// Desktop/Cowork does — got a fresh lane (and a fresh Freezer, fold map,
+/// fingerprint set, and tool keep-set) on nearly every request, and the
+/// breakpoint logic then re-seeded the entire history as cache WRITES
+/// (≥10.76M excess write tokens in the audited three-hour window).
+///
+/// With a session id present, the lane key is now derived only from stable,
+/// id-shaped material plus the FIRST USER message:
+///   (session_id, model, source tool tag, first-user-content hash)
+/// - session/model/source pin the lane to one client conversation on one
+///   model; the system entry is deliberately EXCLUDED — it is the mutable
+///   task head that broke continuity.
+/// - the first-user hash is what separates parallel agents (parent and
+///   fanned-out subagents) sharing one session and model: their opening task
+///   prompts differ while each agent's own stays constant for its lifetime.
+///   Two subagents launched with byte-identical prompts on one model still
+///   collide — exactly as they did under the old scheme (identical head) —
+///   and per-lane serialization now bounds that cost to latency.
+///
+/// Without a session id (non-Claude clients), the reference head-hash
+/// behavior is unchanged. The bench run-id header still prefixes both forms
+/// so concurrent tasks in one batch get separate memos.
+fn conversation_id(
+    headers: &HeaderMap,
+    internal: &[Value],
+    session: Option<&str>,
+    model: Option<&str>,
+) -> String {
     let mut h = Sha256::new();
-    h.update(py_json_dumps(&Value::Array(head)).as_bytes());
-    // The first two messages are NOT unique across sessions — a shared system
-    // prompt plus a canned opening turn is the norm for the short auxiliary
-    // calls the harness makes, and those all hashed to one id. Colliding
-    // conversations share a Freezer, so each request looks like a prefix
-    // rewrite to the other and trips the purity guard (freeze.rs `serve`):
-    // permanent reset thrash, every request paying a full cold replay. The
-    // session id is stable for the life of a conversation and is already
-    // charset-gated to ids, so it separates them without widening the head.
     if let Some(sid) = session {
+        let first_user = internal
+            .iter()
+            .find(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+            .and_then(|m| m.get("content").cloned())
+            .unwrap_or(Value::Null);
+        h.update(b"parsec-lane-v2");
         h.update(b"\x00session\x00");
         h.update(sid.as_bytes());
+        h.update(b"\x00model\x00");
+        h.update(model.unwrap_or("").as_bytes());
+        h.update(b"\x00source\x00");
+        h.update(
+            tool_from_headers(headers)
+                .as_deref()
+                .unwrap_or("-")
+                .as_bytes(),
+        );
+        h.update(b"\x00user-head\x00");
+        h.update(py_json_dumps(&first_user).as_bytes());
+    } else {
+        // Reference fallback: the first two messages are NOT unique across
+        // sessions (shared system prompt + canned opening turn), but with no
+        // session id there is nothing more stable to key on.
+        let head: Vec<Value> = internal
+            .iter()
+            .take(2)
+            .map(|m| m.get("content").cloned().unwrap_or(Value::Null))
+            .collect();
+        h.update(py_json_dumps(&Value::Array(head)).as_bytes());
     }
     let hash = format!("{:x}", h.finalize());
     let hash = &hash[..24];
@@ -514,6 +607,20 @@ fn conversation_id(headers: &HeaderMap, internal: &[Value], session: Option<&str
         Some(rid) if !rid.trim().is_empty() => format!("{}:{}", rid.trim(), hash),
         _ => hash.to_string(),
     }
+}
+
+/// Privacy-safe head-component hashes for the lane-identity diagnostic line
+/// (incident Appendix B: log system and first-user hashes SEPARATELY, so a
+/// head mutation is attributable to a component after the fact).
+fn head_component_sha8(internal: &[Value], role: &str) -> String {
+    let content = internal
+        .iter()
+        .find(|m| m.get("role").and_then(Value::as_str) == Some(role))
+        .and_then(|m| m.get("content").cloned())
+        .unwrap_or(Value::Null);
+    let mut h = Sha256::new();
+    h.update(py_json_dumps(&content).as_bytes());
+    format!("{:x}", h.finalize())[..8].to_string()
 }
 
 /// Client harness session identity from `metadata.user_id` — an id, never
@@ -589,6 +696,7 @@ fn record_inbound(headers: &HeaderMap, body: &Value, raw: &[u8]) {
         headers,
         &to_internal(body),
         session_id_from_metadata(body).as_deref(),
+        body.get("model").and_then(Value::as_str),
     );
     let res: io::Result<()> = (|| {
         let d = PathBuf::from(dir.trim()).join(&conv_id);
@@ -646,6 +754,9 @@ pub(crate) struct PlanStats {
     /// (PARSEC_TOOL_STUB) — Some only when > 0.
     pub(crate) tools_stubbed: Option<usize>,
     pub(crate) tools_pre_prune_sha8: Option<String>,
+    /// sha8 of the roster as SERVED (post keep-set/stubs) — with the
+    /// pre-prune hash, attributes a provider-cache bust to roster churn.
+    pub(crate) tools_served_sha8: Option<String>,
     // ── detailed-tracing seams (contract Track B item 6) ───────────────────
     /// Conversation turn = assistant messages in the internal view.
     pub(crate) turn: i64,
@@ -769,7 +880,14 @@ struct CutDelta {
     ranges: Vec<(String, i64, i64)>,
 }
 
-async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow::Result<Plan> {
+/// `conv_id` is computed by the caller (the handler holds the per-lane
+/// serialization lock keyed on it for the whole curate→forward→commit span).
+async fn curate(
+    st: &Arc<AppState>,
+    _headers: &HeaderMap,
+    body: &Value,
+    conv_id: String,
+) -> anyhow::Result<Plan> {
     let t_curate = std::time::Instant::now();
     if body.get("messages").and_then(Value::as_array).is_none() {
         anyhow::bail!("body has no messages array");
@@ -779,15 +897,15 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
     // (protect.rs). Built from the inbound body, so it stays a pure
     // function of the prefix like everything else on this path.
     let protected = crate::internal::protected_mask(body);
-    let conv_id = conversation_id(
-        headers,
-        &internal,
-        session_id_from_metadata(body).as_deref(),
-    );
+    // Lane-identity diagnostics (incident Appendix B): separate head-
+    // component hashes make "which head component mutated" answerable from
+    // the log alone — the incident could not reconstruct it after the fact.
     tracing::debug!(
         conv = %conv_id,
         internal_msgs = internal.len(),
         internal_tokens = internal_mass(&internal),
+        sys_head_sha8 = %head_component_sha8(&internal, "system"),
+        user_head_sha8 = %head_component_sha8(&internal, "user"),
         "curate: internal view built"
     );
     let mut stats = PlanStats {
@@ -809,6 +927,17 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         tracing::debug!(
             conv = %conv_id,
             "no assistant turn — fresh run, stale memo (folds/freezer/tool keep-set) reset"
+        );
+    }
+
+    // Cache-loss guardrail latch (see ConvState::bypass): a lane that once
+    // tripped the guardrail stays verbatim passthrough — cheaper AND safer
+    // than alternating curated reseeds with bypasses. The bail routes
+    // through the handler's fail-open arm, which forwards the ORIGINAL body.
+    if lock(&st.convs).get(&conv_id).is_some_and(|c| c.bypass) {
+        anyhow::bail!(
+            "cache-loss guardrail latched for this lane — verbatim passthrough \
+             until a fresh run resets it"
         );
     }
 
@@ -1062,7 +1191,37 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                                     .tool_keep = Some(kset.clone());
                                 Some(kset)
                             }
-                            None => None,
+                            // Roster-stability invariant (incident
+                            // 2026-08-30 §4.3): scoring failure used to
+                            // serve the full roster and RETRY next request —
+                            // a later successful prune then changed the
+                            // serialized tools region and invalidated the
+                            // provider cache for everything after it. The
+                            // fail-open is now frozen like a successful one:
+                            // the full roster becomes the lane's keep-set,
+                            // byte-identical for the rest of the run. Costs
+                            // the pruning savings for this lane; never a
+                            // mid-run prefix flip.
+                            None => {
+                                let all: HashSet<String> = tools
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter_map(|t| t.get("name").and_then(Value::as_str))
+                                    .map(str::to_owned)
+                                    .collect();
+                                tracing::warn!(
+                                    conv = %conv_id,
+                                    total = all.len(),
+                                    "tool-prune: scorer unavailable at roster freeze — FULL \
+                                     roster frozen for the lane (no mid-run prefix flip)"
+                                );
+                                lock(&st.convs)
+                                    .entry(conv_id.clone())
+                                    .or_default()
+                                    .tool_keep = Some(all.clone());
+                                Some(all)
+                            }
                         }
                     }
                 };
@@ -1099,15 +1258,47 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                     }
                     k
                 });
+                // Client-forced tool_choice: v0.2.6 served the FULL roster
+                // for that one call — a transient full↔pruned prefix flip
+                // that busted the provider cache twice per forced call
+                // (incident roster-stability invariant). The forced tool is
+                // now UNFROZEN into the keep-set instead — same monotonic
+                // growth as the reactive unfreeze: the roster changes once
+                // and stays changed. Full roster only when the forced name
+                // is unresolvable (never prune into an upstream 400).
                 let forced =
                     body.pointer("/tool_choice/type").and_then(Value::as_str) == Some("tool");
-                if forced {
-                    tracing::debug!(
-                        conv = %conv_id,
-                        "tool-prune: client-forced tool_choice — full roster served"
-                    );
-                }
-                if let (Some(keep), false) = (keep, forced) {
+                let forced_name = forced
+                    .then(|| body.pointer("/tool_choice/name").and_then(Value::as_str))
+                    .flatten();
+                let keep = match (keep, forced, forced_name) {
+                    (Some(mut k), true, Some(name)) => {
+                        if !k.contains(name) {
+                            tracing::info!(
+                                conv = %conv_id,
+                                tool = %name,
+                                "tool-prune: forced tool_choice unfroze the forced tool"
+                            );
+                            stats.tools_unfrozen = Some(stats.tools_unfrozen.unwrap_or(0) + 1);
+                            k.insert(name.to_owned());
+                            lock(&st.convs)
+                                .entry(conv_id.clone())
+                                .or_default()
+                                .tool_keep = Some(k.clone());
+                        }
+                        Some(k)
+                    }
+                    (_, true, None) => {
+                        tracing::debug!(
+                            conv = %conv_id,
+                            "tool-prune: forced tool_choice with no resolvable name — \
+                             full roster served"
+                        );
+                        None
+                    }
+                    (k, _, _) => k,
+                };
+                if let Some(keep) = keep {
                     let src: Vec<Value> = curated
                         .get("tools")
                         .or(Some(tools))
@@ -1147,8 +1338,19 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
                     if stubbed > 0 {
                         stats.tools_stubbed = Some(stubbed);
                     }
+                    // Served-roster hash beside the pre-prune hash: a
+                    // roster-driven cache bust is attributable from the
+                    // ledger alone (incident P1 diagnostics).
+                    let served = Value::Array(served);
+                    stats.tools_served_sha8 = Some(brain::roster_sha8(&served));
+                    tracing::debug!(
+                        conv = %conv_id,
+                        pre_prune_sha8 = stats.tools_pre_prune_sha8.as_deref().unwrap_or("-"),
+                        served_sha8 = stats.tools_served_sha8.as_deref().unwrap_or("-"),
+                        "tool-prune: roster served"
+                    );
                     if let Some(o) = curated.as_object_mut() {
-                        o.insert("tools".into(), Value::Array(served));
+                        o.insert("tools".into(), served);
                     }
                 }
             }
@@ -1195,8 +1397,52 @@ async fn curate(st: &Arc<AppState>, headers: &HeaderMap, body: &Value) -> anyhow
         frozen_prefix = frozen_len,
         anchors = ?stats.anchors,
         directive_appended,
+        ttl = splice::client_cache_ttl(body).as_deref().unwrap_or("-"),
         "cache breakpoint placed"
     );
+
+    // Cache-loss guardrail (incident 2026-08-30 P1): a WARM lane (prior
+    // fingerprints exist) about to rewrite a large previously-covered extent
+    // is the incident's exact signature — continuity that should have held
+    // did not (client history edit, an identity bug this fix missed, or a
+    // race). Reseeding that extent bills it all as cache creation; failing
+    // open serves the client's own bytes and anchors instead, which is
+    // strictly cheaper. Cold lanes (empty prior) are exempt: a first sight
+    // may legitimately seed in full, per the incident's own methodology.
+    if st.cache_guard_tokens > 0 && !prior_fps.is_empty() {
+        let covered = prior_fps.len().min(cur_fps.len());
+        if frozen_len < covered {
+            let rewritten_tokens: i64 = out
+                .get("messages")
+                .and_then(Value::as_array)
+                .map(|msgs| {
+                    msgs[frozen_len..covered]
+                        .iter()
+                        .map(|m| serde_json::to_string(m).map_or(0, |s| s.len() as i64 / 4))
+                        .sum()
+                })
+                .unwrap_or(0);
+            if rewritten_tokens > st.cache_guard_tokens {
+                lock(&st.convs).entry(conv_id.clone()).or_default().bypass = true;
+                let fires = st.cache_guard_count.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::warn!(
+                    conv = %conv_id,
+                    rewritten_tokens,
+                    covered,
+                    frozen_prefix = frozen_len,
+                    threshold = st.cache_guard_tokens,
+                    cache_guard_total = fires,
+                    "cache-loss guardrail TRIPPED — warm lane would rewrite \
+                     previously covered prefix; lane latched to verbatim passthrough"
+                );
+                anyhow::bail!(
+                    "cache-loss guardrail: warm lane would rewrite ~{rewritten_tokens} \
+                     previously covered tokens (> {}) — passing original body through",
+                    st.cache_guard_tokens
+                );
+            }
+        }
+    }
 
     let frozen = cur_fps
         .iter()
@@ -1540,7 +1786,7 @@ fn request_id() -> String {
 
 /// RFC 3339 UTC timestamp without a chrono dependency (Howard Hinnant's
 /// civil-from-days). The schema's `ts` is `format: date-time`.
-fn rfc3339_now() -> String {
+pub(crate) fn rfc3339_now() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -1735,6 +1981,9 @@ pub(crate) fn write_ledger(
         }
         if let Some(s8) = &stats.tools_pre_prune_sha8 {
             o.insert("tools_pre_prune_sha8".into(), json!(s8));
+        }
+        if let Some(s8) = &stats.tools_served_sha8 {
+            o.insert("tools_served_sha8".into(), json!(s8));
         }
         // Governor seams (contract Track B item 5) — only when mode != off,
         // so pre-governor rows stay schema-identical.
@@ -1989,14 +2238,33 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
     // is NOT a fail-open (no error).
     let entitled = st.entitled;
 
-    // (b-d) conversation id, curation (freeze when a brain is configured),
-    // breakpoint placement, tool keep-set — any error here means forwarding
-    // the ORIGINAL body verbatim (fail-open, counted).
+    // Lane identity + per-lane serialization (incident 2026-08-30 P0):
+    // conv_id is computed ONCE here, and the lane's async mutex is held from
+    // before curation until this handler returns — past the post-2xx
+    // fingerprint commit — so a concurrent same-lane request can never take/
+    // rebuild/overwrite the Freezer, folds, or fingerprints mid-flight.
+    // Different lanes (parallel subagents, other sessions) don't contend.
+    let conv_id: Option<String> = body.as_ref().map(|b| {
+        conversation_id(
+            &headers,
+            &to_internal(b),
+            session_id_from_metadata(b).as_deref(),
+            b.get("model").and_then(Value::as_str),
+        )
+    });
+    let _lane_guard = match (&conv_id, entitled) {
+        (Some(id), true) => Some(lane_lock(&st, id).lock_owned().await),
+        _ => None,
+    };
+
+    // (b-d) curation (freeze when a brain is configured), breakpoint
+    // placement, tool keep-set — any error here means forwarding the
+    // ORIGINAL body verbatim (fail-open, counted).
     let plan = if !entitled {
         None
     } else {
         match body.as_ref() {
-            Some(b) => match curate(&st, &headers, b).await {
+            Some(b) => match curate(&st, &headers, b, conv_id.clone().unwrap_or_default()).await {
                 Ok(p) => Some(p),
                 Err(e) => {
                     note_fail_open(&st, &format!("curation failed: {e}"));
@@ -2148,17 +2416,11 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         // accrue to the conversation's governor memo (the kill floor
         // undercounts on exactly the blow-out conversations otherwise) —
         // derive the id from the body when it parses; "" when it doesn't.
-        conv_id: plan.as_ref().map(|p| p.conv_id.clone()).unwrap_or_else(|| {
-            body.as_ref()
-                .map(|b| {
-                    conversation_id(
-                        &headers,
-                        &to_internal(b),
-                        session_id_from_metadata(b).as_deref(),
-                    )
-                })
-                .unwrap_or_default()
-        }),
+        conv_id: plan
+            .as_ref()
+            .map(|p| p.conv_id.clone())
+            .or_else(|| conv_id.clone())
+            .unwrap_or_default(),
         session_id: body.as_ref().and_then(session_id_from_metadata),
         tool: tool_from_headers(&headers),
         model: body
@@ -2331,8 +2593,11 @@ mod tests {
             serde_json::json!({"role": "user", "content": "summarize this"}),
         ];
         let h = HeaderMap::new();
-        let a = conversation_id(&h, &internal, Some("8068d98c-4176-4b0e-8e2b-a543aa24f204"));
-        let b = conversation_id(&h, &internal, Some("deadbeef-0000-4000-8000-000000000000"));
+        let model = Some("claude-sonnet-5");
+        let sid_a = Some("8068d98c-4176-4b0e-8e2b-a543aa24f204");
+        let sid_b = Some("deadbeef-0000-4000-8000-000000000000");
+        let a = conversation_id(&h, &internal, sid_a, model);
+        let b = conversation_id(&h, &internal, sid_b, model);
         assert_ne!(
             a, b,
             "same opening prefix, different session must not share"
@@ -2341,15 +2606,65 @@ mod tests {
         // so it must not drift as the conversation grows past the head.
         let mut grown = internal.clone();
         grown.push(serde_json::json!({"role": "assistant", "content": "sure"}));
-        assert_eq!(
-            a,
-            conversation_id(&h, &grown, Some("8068d98c-4176-4b0e-8e2b-a543aa24f204"))
-        );
+        assert_eq!(a, conversation_id(&h, &grown, sid_a, model));
         // No session id (non-Claude-Code clients) → previous behaviour, and
         // still distinct from any session-scoped id.
-        let anon = conversation_id(&h, &internal, None);
-        assert_eq!(anon, conversation_id(&h, &grown, None));
+        let anon = conversation_id(&h, &internal, None, model);
+        assert_eq!(anon, conversation_id(&h, &grown, None, model));
         assert_ne!(anon, a);
+    }
+
+    #[test]
+    fn conv_id_survives_a_mutating_system_head() {
+        // THE incident regression (2026-08-30): Desktop/Cowork mutates its
+        // system/task head between turns of one session. v0.2.6 hashed that
+        // head into the id, so every request minted a fresh lane and the
+        // whole history was re-seeded as cache writes. With a session id the
+        // system entry must not participate in the lane key.
+        let h = HeaderMap::new();
+        let sid = Some("8068d98c-4176-4b0e-8e2b-a543aa24f204");
+        let model = Some("claude-fable-5");
+        let turn1 = vec![
+            serde_json::json!({"role": "system", "content": "task head v1 [ctx 14:50]"}),
+            serde_json::json!({"role": "user", "content": "run the sales bench"}),
+        ];
+        let mut turn2 = vec![
+            serde_json::json!({"role": "system", "content": "task head v2 [ctx 14:52]"}),
+            serde_json::json!({"role": "user", "content": "run the sales bench"}),
+        ];
+        turn2.push(serde_json::json!({"role": "assistant", "content": "on it"}));
+        turn2.push(serde_json::json!({"role": "user", "content": "continue"}));
+        assert_eq!(
+            conversation_id(&h, &turn1, sid, model),
+            conversation_id(&h, &turn2, sid, model),
+            "a mutating system head must not break lane continuity"
+        );
+        // Without a session id the head hash is all we have — mutation still
+        // separates (unchanged reference behavior).
+        assert_ne!(
+            conversation_id(&h, &turn1, None, model),
+            conversation_id(&h, &turn2, None, model)
+        );
+    }
+
+    #[test]
+    fn conv_id_separates_agents_and_models_within_a_session() {
+        // Parallel subagents share the session id; their opening prompts (and
+        // often models) differ. The first-user hash and the model keep their
+        // lanes apart so they don't reset each other's Freezer.
+        let h = HeaderMap::new();
+        let sid = Some("8068d98c-4176-4b0e-8e2b-a543aa24f204");
+        let parent = vec![
+            serde_json::json!({"role": "system", "content": "s"}),
+            serde_json::json!({"role": "user", "content": "fix the failing test"}),
+        ];
+        let sub = vec![
+            serde_json::json!({"role": "system", "content": "s"}),
+            serde_json::json!({"role": "user", "content": "search for the parser entry point"}),
+        ];
+        let a = conversation_id(&h, &parent, sid, Some("claude-fable-5"));
+        assert_ne!(a, conversation_id(&h, &sub, sid, Some("claude-fable-5")));
+        assert_ne!(a, conversation_id(&h, &parent, sid, Some("claude-opus-5")));
     }
 
     #[test]
