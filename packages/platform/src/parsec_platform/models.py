@@ -85,6 +85,7 @@ class LedgerRow(BaseModel):
     tools_total: int | None = Field(default=None, ge=0)
     tools_kept: int | None = Field(default=None, ge=0)
     tools_pre_prune_sha8: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")
+    tools_served_sha8: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")
     tools_unfrozen: int | None = Field(default=None, ge=0)
     tools_stubbed: int | None = Field(default=None, ge=0)
     curator_insists: int | None = Field(default=None, ge=0)

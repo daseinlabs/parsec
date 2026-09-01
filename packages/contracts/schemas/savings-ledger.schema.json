@@ -124,6 +124,11 @@
       "pattern": "^[0-9a-f]{8}$",
       "description": "Hash of the pre-prune roster (sorted names) — joins served traffic back to the full-roster identity without storing schemas."
     },
+    "tools_served_sha8": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$",
+      "description": "Hash of the roster as SERVED (post keep-set/stubs, sorted names) — beside the pre-prune hash it shows whether the served set changed turn-over-turn (cache-continuity diagnostics, incident 2026-08-30)."
+    },
     "tools_unfrozen": {
       "type": "integer",
       "minimum": 0,
