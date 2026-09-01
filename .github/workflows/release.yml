@@ -7,14 +7,12 @@ name: release
 # Publishing is TAG-ONLY (docs/release-channels.md). Pushes to main still run
 # the cross-platform build matrix — ci.yml is Linux-only, so this is where a
 # macOS or Windows build break surfaces before a release — but nothing ships.
-# Tags classify into two channels:
-#   v0.X.0 (stable) — the plugins repo tree is refreshed (plugin + binaries +
-#                     install scripts) and BOTH channels of latest.json
-#                     advance. Marketplace and install-script users live here.
-#   v0.X.Y (patch)  — latest.json's `patch` channel advances and the install
-#                     scripts refresh (both text-only); the rest of the tree
-#                     stays at the last stable. Patch binaries exist solely
-#                     as release assets.
+# Every tag publishes the same way (single channel, 2026-09-02): the plugins
+# repo tree is refreshed in full (plugin + binaries + install scripts) and
+# both keys of latest.json advance together, so marketplace plugin users and
+# install-script users always get the newest release. latest.json keeps its
+# {stable, patch} two-key shape only because install scripts already in the
+# wild parse it; the entries are always identical now.
 # Every tag also becomes a GitHub Release ON daseinlabs/plugins carrying the
 # per-platform binaries and a sha256 manifest — that is the permanent
 # versioned history. The plugins repo history is append-only (normal commits,
@@ -169,21 +167,15 @@ jobs:
       #   claude plugin install parsec@parsec-marketplace
       - name: Publish to daseinlabs/plugins
         # Tags ONLY — main pushes and workflow_dispatch are dry runs of the
-        # build matrix. Stable (v0.X.0) refreshes the whole tree; patch
-        # (v0.X.Y) touches nothing but latest.json's `patch` channel. See the
-        # header and docs/release-channels.md.
+        # build matrix. Every tag refreshes the whole tree and both
+        # latest.json keys — see the header and docs/release-channels.md.
         if: startsWith(github.ref, 'refs/tags/')
         env:
           PUBLISH_TOKEN: ${{ secrets.PLUGIN_PUBLISH_TOKEN }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.0$ ]]; then
-            CHANNEL=stable
-          else
-            CHANNEL=patch
-          fi
-          echo "publishing v$VERSION (channel: $CHANNEL)"
+          echo "publishing v$VERSION"
 
           # The binary reports CARGO_PKG_VERSION — the workspace version in
           # the root Cargo.toml — so a tag that disagrees with it would ship
@@ -222,6 +214,21 @@ jobs:
             '{version: $v, tag: $tag, assets: $s[0]}' > entry.json
           cp entry.json assets/manifest.json
 
+          # Pre-release tags (any -suffix: v0.3.0-rc.1) publish assets only:
+          # no tree refresh, latest.json untouched — nothing reaches users
+          # who didn't type the tag name. The escape hatch the single
+          # channel otherwise lacks.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "pre-release: assets only — tree and latest.json untouched"
+            GH_TOKEN="$PUBLISH_TOKEN" gh release create "v$VERSION" \
+              --repo daseinlabs/plugins \
+              --title "parsec v$VERSION" \
+              --prerelease \
+              --notes "pre-release — not rolled out; see manifest.json for sha256s" \
+              assets/*
+            exit 0
+          fi
+
           # Append one commit to the plugins repo — never force-push. Clone
           # is what makes append possible: we build on the published history
           # instead of re-initializing it.
@@ -229,50 +236,36 @@ jobs:
           cd publish
           git config user.name "dasein-release"
           git config user.email "release@daseinlabs.ai"
-          if [[ "$CHANNEL" == stable ]]; then
-            # Refresh the whole tree: marketplace files, plugin + binaries,
-            # install scripts. The one-line installer (`curl …/install.sh |
-            # bash`) ships beside the binaries it downloads, from the same
-            # commit, so the URL layout it assumes can never drift from the
-            # tree it lives in. install-opencode.sh is a compat stub: that
-            # URL shipped in earlier releases and must keep working.
-            find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
-            cp -R "$GITHUB_WORKSPACE/packages/marketplace/." .
-            mkdir -p plugins
-            cp -R "$GITHUB_WORKSPACE/dist/parsec" plugins/parsec
-            install -m 755 "$GITHUB_WORKSPACE/scripts/install.sh" install.sh
-            install -m 755 "$GITHUB_WORKSPACE/scripts/install-opencode.sh" install-opencode.sh
-            install -m 644 "$GITHUB_WORKSPACE/scripts/install.ps1" install.ps1
-            # plugin.json `version` is the marketplace update channel — it
-            # advances only on stable, so plugin users never see patches.
-            jq --arg v "$VERSION" '.version = $v' \
-              plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
-            mv plugin.json.tmp plugins/parsec/.claude-plugin/plugin.json
-          else
-            # Patch releases keep the tree at the last stable EXCEPT the
-            # install scripts: they are text-only, they download binaries
-            # from the stable tree regardless (no skew possible), and an
-            # installer fix should not have to wait for a minor to reach
-            # the public URL.
-            install -m 755 "$GITHUB_WORKSPACE/scripts/install.sh" install.sh
-            install -m 755 "$GITHUB_WORKSPACE/scripts/install-opencode.sh" install-opencode.sh
-            install -m 644 "$GITHUB_WORKSPACE/scripts/install.ps1" install.ps1
-          fi
-          # latest.json is the pollable two-channel pointer (docs/
-          # release-channels.md): `stable` is pushed to everyone, `patch` is
-          # opt-in. A stable release supersedes any patch on the previous
-          # minor, so both channels advance together.
+          # Refresh the whole tree: marketplace files, plugin + binaries,
+          # install scripts. The one-line installer (`curl …/install.sh |
+          # bash`) ships beside the binaries it downloads, from the same
+          # commit, so the URL layout it assumes can never drift from the
+          # tree it lives in. install-opencode.sh is a compat stub: that
+          # URL shipped in earlier releases and must keep working. Binaries
+          # land in history on every release now (~80 MB each) — if clone
+          # size becomes a problem, squash ancient history once.
+          find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp -R "$GITHUB_WORKSPACE/packages/marketplace/." .
+          mkdir -p plugins
+          cp -R "$GITHUB_WORKSPACE/dist/parsec" plugins/parsec
+          install -m 755 "$GITHUB_WORKSPACE/scripts/install.sh" install.sh
+          install -m 755 "$GITHUB_WORKSPACE/scripts/install-opencode.sh" install-opencode.sh
+          install -m 644 "$GITHUB_WORKSPACE/scripts/install.ps1" install.ps1
+          # plugin.json `version` is the marketplace update channel — it
+          # advances on every release, so plugin users track latest too.
+          jq --arg v "$VERSION" '.version = $v' \
+            plugins/parsec/.claude-plugin/plugin.json > plugin.json.tmp
+          mv plugin.json.tmp plugins/parsec/.claude-plugin/plugin.json
+          # latest.json is the pollable pointer the install scripts and the
+          # future self-updater read. Both keys always advance together; the
+          # {stable, patch} shape survives only so install scripts already
+          # shipped keep parsing it.
           [ -f latest.json ] || echo '{}' > latest.json
-          if [[ "$CHANNEL" == stable ]]; then
-            jq --slurpfile e ../entry.json '.stable = $e[0] | .patch = $e[0]' \
-              latest.json > latest.json.tmp
-          else
-            jq --slurpfile e ../entry.json '.patch = $e[0]' \
-              latest.json > latest.json.tmp
-          fi
+          jq --slurpfile e ../entry.json '.stable = $e[0] | .patch = $e[0]' \
+            latest.json > latest.json.tmp
           mv latest.json.tmp latest.json
           git add -A
-          git commit -m "parsec v$VERSION ($CHANNEL)"
+          git commit -m "parsec v$VERSION"
           git tag "v$VERSION"
           git push origin main "v$VERSION"
 
@@ -282,5 +275,5 @@ jobs:
           GH_TOKEN="$PUBLISH_TOKEN" gh release create "v$VERSION" \
             --repo daseinlabs/plugins \
             --title "parsec v$VERSION" \
-            --notes "channel: $CHANNEL — see latest.json / manifest.json for sha256s" \
+            --notes "see latest.json / manifest.json for sha256s" \
             ../assets/*

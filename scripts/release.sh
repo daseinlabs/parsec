@@ -5,10 +5,10 @@
 # it is what `parsec --version`, /health, and hook.rs's plugin-updated check
 # all report, and release.yml refuses to publish a tag that disagrees with it.
 #
-#   make release VERSION=0.2.0    # vX.Y.0 — stable, rolled out to everyone
-#   make release VERSION=0.2.1    # anything else — patch, opt-in only
+#   make release VERSION=0.2.8
 #
-# Channel semantics: docs/release-channels.md. Pushing is deliberately left
+# Every release rolls out to everyone (docs/release-channels.md — single
+# channel as of 2026-09-02). Pushing is deliberately left
 # to you (that is the moment the release actually happens):
 #   git push origin <branch> vX.Y.Z
 set -euo pipefail
@@ -25,9 +25,7 @@ case "$VERSION" in
     exit 1
     ;;
 esac
-# Semver, optional pre-release suffix. A suffix never matches the stable
-# pattern below, so pre-releases are always patch-channel (opt-in) — which is
-# what a pre-release should be.
+# Semver, optional pre-release suffix.
 if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
   echo "not a semver version: $VERSION" >&2
   exit 1
@@ -39,12 +37,6 @@ fi
 if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
   echo "tag v$VERSION already exists" >&2
   exit 1
-fi
-# Same classification release.yml applies — say it now, not after the push.
-if printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.0$'; then
-  channel="stable — rolled out to everyone"
-else
-  channel="patch — opt-in only"
 fi
 branch="$(git symbolic-ref --short HEAD)"
 if [ "$branch" != main ]; then
@@ -67,5 +59,5 @@ cargo update --workspace --quiet
 git add Cargo.toml Cargo.lock
 git commit -m "release v$VERSION"
 git tag "v$VERSION"
-echo "committed + tagged v$VERSION ($channel)"
+echo "committed + tagged v$VERSION (rolls out to everyone on push)"
 echo "publish with: git push origin $branch v$VERSION"

@@ -359,7 +359,7 @@ if (-not $isX64 -and ("desktop" -in $Tools)) {
     }
 }
 
-# -- resolve the newest published version (patch channel included) ------------
+# -- resolve the newest published version --------------------------------------
 # The plugins TREE only advances on stable (v0.X.0) tags, but someone
 # explicitly running the installer is asking for the newest build -- so
 # resolve latest.json (the pointer release.yml maintains) and pull binaries
