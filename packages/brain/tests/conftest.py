@@ -17,8 +17,15 @@ import pytest  # noqa: E402
 CKPT = Path(os.environ.get("PARSEC_CKPT", "~/.parsec/brain/curator_v4_prod.pt")).expanduser()
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "no_ckpt: hermetic test that runs without the curator ckpt"
+    )
+
+
 def pytest_collection_modifyitems(config, items):
     if not CKPT.is_file():
         skip = pytest.mark.skip(reason=f"curator ckpt not found at {CKPT} (set PARSEC_CKPT)")
         for item in items:
-            item.add_marker(skip)
+            if item.get_closest_marker("no_ckpt") is None:
+                item.add_marker(skip)

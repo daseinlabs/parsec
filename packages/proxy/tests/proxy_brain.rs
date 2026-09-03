@@ -162,12 +162,13 @@ struct Ctx {
 }
 
 async fn setup() -> Ctx {
-    setup_opts(None).await
+    setup_opts(None, None).await
 }
 
 /// `guard_tokens`: override the cache-loss guardrail threshold (None keeps
-/// the AppState default from the environment).
-async fn setup_opts(guard_tokens: Option<i64>) -> Ctx {
+/// the AppState default from the environment). `memo_dir`: enable the
+/// persisted score memo into this directory (None = in-memory only).
+async fn setup_opts(guard_tokens: Option<i64>, memo_dir: Option<PathBuf>) -> Ctx {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let upstream = Upstream::default();
     let up_router = Router::new()
@@ -202,6 +203,7 @@ async fn setup_opts(guard_tokens: Option<i64>) -> Ctx {
         tool_prune: true,
         tool_stub: true,
         contract: BrainContract::Dev,
+        score_memo_dir: memo_dir,
     };
     let mut state = AppState::with_brain(format!("http://{up_addr}"), ledger.clone(), Some(cfg));
     if let Some(g) = guard_tokens {
@@ -572,7 +574,7 @@ async fn cache_guard_latches_warm_lane_to_passthrough() {
     // stops fingerprint-matching (history rewritten under one lane) must not
     // re-seed the extent as cache writes — it fails open to the client's own
     // bytes, and stays passthrough for the lane's lifetime.
-    let ctx = setup_opts(Some(5)).await; // tiny threshold: any real rewrite trips
+    let ctx = setup_opts(Some(5), None).await; // tiny threshold: any real rewrite trips
     post_messages(&ctx, &body(convo_turn1())).await;
 
     // Turn 2 arrives with the RESIDENT tool_result rewritten in place.
@@ -604,6 +606,88 @@ async fn cache_guard_latches_warm_lane_to_passthrough() {
     post_messages(&ctx, &b3).await;
     let raws = ctx.upstream.raws.lock().unwrap().clone();
     assert_eq!(serde_json::from_slice::<Value>(&raws[2]).unwrap(), b3);
+}
+
+#[tokio::test]
+async fn purity_reset_replay_is_http_free_and_attributed() {
+    // Perf research 2026-09-02 §1: a purity-guard reset (here: history
+    // SHRANK — client rewound) used to replay every birth step as fresh
+    // brain round trips — the replay-storm. With the widened score memo the
+    // replay must be served from cache: ZERO new trace calls, a ~0 brain_ms
+    // DELTA (the cumulative-copy bug is also fixed), and the row must carry
+    // the purity_resets attribution.
+    let ctx = setup().await;
+    post_messages(&ctx, &body(convo_turn1())).await;
+    let mut msgs = convo_turn1();
+    msgs.push(json!({"role": "assistant", "content": "ok."}));
+    msgs.push(json!({"role": "user", "content": "continue"}));
+    post_messages(&ctx, &body(msgs)).await;
+    let trace_before = ctx.brain.trace_reqs.lock().unwrap().len();
+
+    // Rewind: same prefix, shorter history → purity reset → full replay.
+    post_messages(&ctx, &body(convo_turn1())).await;
+
+    assert_eq!(
+        ctx.brain.trace_reqs.lock().unwrap().len(),
+        trace_before,
+        "post-reset replay hit the brain — score memo failed"
+    );
+    let rows = ledger_rows(&ctx);
+    let row = rows.last().unwrap();
+    assert_eq!(row["purity_resets"], 1, "reset not attributed: {row}");
+    assert!(
+        row.get("brain_ms").is_none(),
+        "HTTP-free replay must have a zero brain_ms delta (cumulative-copy \
+         regression): {row}"
+    );
+}
+
+#[tokio::test]
+async fn score_memo_persists_across_proxy_restart() {
+    // Perf research 2026-09-02 §1: a proxy restart or memo eviction destroyed
+    // the scorer and forced a cold HTTP replay of the whole conversation.
+    // With the persisted score memo, a brand-new proxy (fresh AppState, fresh
+    // mock brain) replaying the same conversation makes ZERO brain calls.
+    static SEQ2: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "parsec-score-memo-test-{}-{}",
+        std::process::id(),
+        SEQ2.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let ctx1 = setup_opts(None, Some(dir.clone())).await;
+    let mut msgs = convo_turn1();
+    msgs.push(json!({"role": "assistant", "content": "ok."}));
+    msgs.push(json!({"role": "user", "content": "continue"}));
+    post_messages(&ctx1, &body(msgs.clone())).await;
+    assert!(
+        !ctx1.brain.trace_reqs.lock().unwrap().is_empty(),
+        "first process must actually score"
+    );
+
+    // "Restart": everything fresh except the memo directory.
+    let ctx2 = setup_opts(None, Some(dir)).await;
+    let resp = post_messages(&ctx2, &body(msgs)).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        ctx2.brain.trace_reqs.lock().unwrap().len(),
+        0,
+        "restart replay hit the brain — persisted score memo failed"
+    );
+}
+
+#[tokio::test]
+async fn ledger_rows_carry_stage_timings() {
+    // Perf research §5: curate/queued/probe/upstream were log-only, making
+    // the latency split unqueryable. Every row now carries them.
+    let ctx = setup().await;
+    post_messages(&ctx, &body(convo_turn1())).await;
+    let rows = ledger_rows(&ctx);
+    let row = &rows[0];
+    for k in ["curate_ms", "queued_ms", "probe_ms", "upstream_ttfb_ms"] {
+        assert!(row.get(k).is_some(), "row missing {k}: {row}");
+    }
 }
 
 #[tokio::test]

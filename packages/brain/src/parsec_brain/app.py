@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from . import _flags  # noqa: F401  parity pins before bundle/scorer (vendored) imports
 
+import gzip
 import os
 import statistics
 import threading
@@ -33,6 +34,54 @@ from .bundle import load_bundle
 from .scorer import _EMBED_DIM, TraceScorer, chunk_checksum
 
 log = get_logger("app")
+
+
+class _GunzipRequests:
+    """ASGI middleware: transparently decompress `Content-Encoding: gzip`
+    request bodies BEFORE routing/parsing (perf research 2026-09-02 §3 — the
+    v2 trace payload is MB-scale, ~5-10x-compressible JSON). The client only
+    gzips after /v1/bundle advertises `accept_gzip`, so old clients ride the
+    identity wire untouched. Pure ASGI (not BaseHTTPMiddleware) so the
+    replaced receive stream is what routing actually reads."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            hdrs = {k.lower(): v for k, v in (scope.get("headers") or [])}
+            if hdrs.get(b"content-encoding", b"").lower() == b"gzip":
+                body = b""
+                while True:
+                    msg = await receive()
+                    body += msg.get("body", b"")
+                    if not msg.get("more_body", False):
+                        break
+                try:
+                    data = gzip.decompress(body)
+                except OSError:
+                    await send({"type": "http.response.start", "status": 400,
+                                "headers": [(b"content-type", b"application/json")]})
+                    await send({"type": "http.response.body",
+                                "body": b'{"detail":"invalid gzip request body"}'})
+                    return
+                scope = dict(scope)
+                scope["headers"] = [
+                    (k, v) for (k, v) in scope["headers"]
+                    if k.lower() not in (b"content-encoding", b"content-length")
+                ] + [(b"content-length", str(len(data)).encode())]
+                sent = False
+
+                async def replay():
+                    nonlocal sent
+                    if sent:
+                        return {"type": "http.disconnect"}
+                    sent = True
+                    return {"type": "http.request", "body": data, "more_body": False}
+
+                await self.app(scope, replay, send)
+                return
+        await self.app(scope, receive, send)
 
 CONTRACT = "brain-api-dev/v0"
 CONTRACT_V1 = "brain-api/v1"
@@ -302,6 +351,24 @@ NeighborsBody = Annotated[Union[NeighborsRequest, NeighborsV1Request, NeighborsV
 def create_app() -> FastAPI:
     bundle = load_bundle()           # self-validating: any mismatch raises, the app never starts
     scorer = TraceScorer(bundle)
+    # PARSEC_TORCH_THREADS: pin torch's intra-op pool to the Cloud Run CPU
+    # quota — under cgroups torch reads the HOST core count and oversubscribes
+    # (docs/perf-research-2026-09-02.md §2.4). Unset = torch defaults.
+    tn = os.environ.get("PARSEC_TORCH_THREADS", "").strip()
+    if tn.isdigit() and int(tn) > 0:
+        import torch
+        torch.set_num_threads(int(tn))
+        log.info("torch.set_num_threads(%s)", tn)
+    # Warm the lazy encoder at STARTUP: bge-large used to load inside the
+    # first scoring request of every new instance — several-to-tens of
+    # seconds under the request lock (perf research §2.5). Startup cost now
+    # lands in the Cloud Run startup-probe window. Fail-open: a warm failure
+    # only defers the load back to the first request, as before.
+    try:
+        scorer._embed(["parsec embedder warm-up"])
+    except Exception as e:  # noqa: BLE001 — warm-up must never block startup
+        log.warning("embedder warm-up failed (%s) — deferred to first request",
+                    type(e).__name__)
     lock = threading.Lock()          # one CPU forward at a time; scorer caches are shared state
     key = os.environ.get("PARSEC_BRAIN_KEY", "")
     # Per-user entitlement gate: when a platform URL is configured, the bearer
@@ -314,6 +381,7 @@ def create_app() -> FastAPI:
     rule_defaults = [{"eid": r["eid"], "text": r["text"]} for r in bundle.rules
                      if r.get("status") in _RULE_DEFAULT_STATUS]
     app = FastAPI(title="parsec-brain", version="0.1.0")
+    app.add_middleware(_GunzipRequests)
 
     def _bearer(request: Request) -> str | None:
         h = request.headers.get("authorization", "")
@@ -362,6 +430,9 @@ def create_app() -> FastAPI:
             "target_cov": bundle.target_cov,
             "grid": GRID,
             "heads": ["curator", "tool", "rule", "gate"],   # rule/gate: no proxy consumer yet
+            # request-compression capability (perf research §3): clients gzip
+            # trace bodies only after seeing this — version-skew-safe.
+            "accept_gzip": True,
             # neighbors: True when the hoods artifact is mounted (PARSEC_HOODS_PKL); False =
             # nf=None, +3 zero block-parity cols (valid: trained with 20% block dropout)
             "neighbors": bundle.hoods is not None,
@@ -458,16 +529,33 @@ def create_app() -> FastAPI:
         zed = [0.0] * _EMBED_DIM
         return [list(scorer.cache[t]) if t else zed for t in texts]
 
+    def _v2_embed_raw(texts: list[str]) -> list:
+        """_v2_embed without the per-element list() copies: rows are the
+        cached vectors VERBATIM (np or list). Only for consumers that go
+        straight to np.asarray / model_construct — never for values that
+        enter a validated pydantic field. Caller must hold `lock`."""
+        nonempty = [t for t in texts if t]
+        if nonempty:
+            scorer._embed(nonempty)
+        zed = [0.0] * _EMBED_DIM
+        return [scorer.cache[t] if t else zed for t in texts]
+
     def _v2_nodes_to_v1(nodes: list[V2Node]) -> tuple[list[V1Node], list[list[float]]]:
         """(v1 nodes, content embeddings aligned to node rows). ONE embedder batch over
         text+cmd+head, mirroring the v1 client's single batch. Caller must hold `lock`."""
         n = len(nodes)
-        v = _v2_embed([x.text for x in nodes] + [x.cmd for x in nodes] + [x.head for x in nodes])
+        v = _v2_embed_raw([x.text for x in nodes] + [x.cmd for x in nodes]
+                          + [x.head for x in nodes])
         vt, vc, vh = v[:n], v[n:2 * n], v[2 * n:]
-        out = [V1Node(emb_text=vt[i], emb_cmd=vc[i], emb_head=vh[i],
-                      struct=x.struct, step=x.step, kind=x.kind, tokens=x.tokens,
-                      file_id=x.file_id, lo=x.lo, hi=x.hi,
-                      cmd_id=x.cmd_id, head_id=x.head_id)
+        # model_construct: the fields were already validated at the wire as
+        # V2Node; re-validating 3x1024 floats per node through V1Node cost
+        # 0.4-1.0s/request at n~2000 (perf research 2026-09-02 §2.3). The
+        # wrapping ScoreTraceV1Request accepts the instances unrevalidated
+        # (pydantic v2 revalidate_instances='never').
+        out = [V1Node.model_construct(emb_text=vt[i], emb_cmd=vc[i], emb_head=vh[i],
+                                      struct=x.struct, step=x.step, kind=x.kind,
+                                      tokens=x.tokens, file_id=x.file_id, lo=x.lo,
+                                      hi=x.hi, cmd_id=x.cmd_id, head_id=x.head_id)
                for i, x in enumerate(nodes)]
         return out, vt
 
@@ -535,7 +623,7 @@ def create_app() -> FastAPI:
         return _score_tools_v1(ScoreToolsV1Request(
             contract="brain-api/v1", conv_id=req.conv_id, checkpoint_id=req.checkpoint_id,
             nodes=v1nodes, task_emb=task_emb, sys_emb=sys_emb,
-            tools=[V1Tool(name=t.name, emb=tool_embs[i], tokens=t.tokens)
+            tools=[V1Tool.model_construct(name=t.name, emb=tool_embs[i], tokens=t.tokens)
                    for i, t in enumerate(req.tools)]))
 
     def _score_rules_v2(req: ScoreRulesV2Request):
@@ -589,11 +677,14 @@ def create_app() -> FastAPI:
             if doom is not None:
                 out["doom_q"] = _q(doom)
             log.info("score/trace contract=dev conv=%s n_msgs=%d n_chunks=%d n_live=%d "
-                     "n_mask=%d heads=curator%s embed_ms=%s forward_ms=%s tau_q=%d %s%s "
+                     "n_mask=%d heads=curator%s embed_ms=%s forward_ms=%s "
+                     "embed_cache=%d/%d/%d sz=%d tau_q=%d %s%s "
                      "neighbors=%s status=200",
                      conv_sha8(req.conv_id), len(req.messages), len(parsed.chunks),
                      len(req.live_gi), len(req.mask), "+doom" if doom is not None else "",
-                     timings.get("embed"), timings.get("forward"), out["tau_q"],
+                     timings.get("embed"), timings.get("forward"),
+                     scorer.cache.hits, scorer.cache.misses, scorer.cache.evicted,
+                     len(scorer.cache), out["tau_q"],
                      _score_stats(out["scores_q"]),
                      f" doom_q={out['doom_q']}" if doom is not None else "",
                      nbr if nbr is not None else False)

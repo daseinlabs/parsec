@@ -299,7 +299,7 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
                 fz.scorer.attach_gf = false;
                 fz.scorer.stats.last_doom_q = None;
                 let fails_before = fz.scorer_fail_opens;
-                let calls_before = fz.scorer.stats.trace_calls;
+                let calls_before = (fz.scorer.stats.trace_calls, fz.scorer.stats.brain_ms);
                 let insists_before = fz.insists;
                 let served = fz.serve(&internal_in);
                 (fz, served, fails_before, calls_before, insists_before)
@@ -307,9 +307,11 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
             .await
             .map_err(|e| anyhow::anyhow!("freezer task panicked: {e}"))?;
         stats.scorer_fail_opens = fz.scorer_fail_opens - fails_before;
-        stats.brain_ms = fz.scorer.stats.brain_ms;
+        // Per-request DELTA (same cumulative-copy bug as the Anthropic lane —
+        // docs/perf-research-2026-09-02.md §0).
+        stats.brain_ms = fz.scorer.stats.brain_ms - calls_before.1;
         stats.checkpoint_id = fz.scorer.stats.checkpoint_id.clone();
-        stats.births_scored = fz.scorer.stats.trace_calls - calls_before;
+        stats.births_scored = fz.scorer.stats.trace_calls - calls_before.0;
         stats.curator_insists = fz.insists.saturating_sub(insists_before);
         lock(&st.convs).entry(conv_id.clone()).or_default().freezer = Some(fz);
         if stats.curator_insists > 0 {
@@ -663,6 +665,9 @@ pub async fn relay(State(st): State<Arc<AppState>>, req: Request) -> Response {
             .map(str::to_string),
         cache_prefix_sha8: crate::server::sha8_of_fps(std::iter::empty()),
         fail_open,
+        queued_ms: 0.0,
+        probe_ms: 0.0,
+        upstream_ttfb_ms: 0.0,
     };
 
     tracing::debug!(

@@ -72,7 +72,7 @@ class LocalEmbedClient:
                 max_length=_MAXTOK,
                 return_tensors="pt",
             ).to(self.device)
-            with torch.no_grad():
+            with torch.inference_mode():
                 cls = self.model(**enc).last_hidden_state[:, 0]  # [CLS] pooling (bge recipe)
                 cls = torch.nn.functional.normalize(cls, p=2, dim=1)  # L2 -> unit vectors
             out.extend(cls.cpu().to(torch.float32).numpy().tolist())

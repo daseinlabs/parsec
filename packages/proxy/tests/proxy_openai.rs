@@ -226,6 +226,7 @@ async fn setup_full(entitled: bool, with_brain: bool) -> Ctx {
         tool_prune: false,
         tool_stub: false,
         contract: BrainContract::Dev,
+        score_memo_dir: None,
     });
     // Anthropic upstream is irrelevant here; only the OpenAI one is hit.
     let mut st = AppState::with_brain("http://127.0.0.1:9".to_string(), ledger.clone(), bcfg);

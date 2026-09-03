@@ -175,6 +175,7 @@ async fn setup() -> Ctx {
         tool_prune: true,
         tool_stub: true,
         contract: parsec_proxy::brain::BrainContract::Dev,
+        score_memo_dir: None,
     };
     let state = Arc::new(AppState::with_brain(
         format!("http://{up_addr}"),

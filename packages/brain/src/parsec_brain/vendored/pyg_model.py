@@ -325,7 +325,7 @@ def attach_hetero(emb, struct, ei, et, chunks, n_own, ace, hde, cen_by_file, cp_
     return emb, struct, ei, et
 
 
-def edges(chunks, emb: np.ndarray, causal: bool = False):
+def edges(chunks, emb: np.ndarray, causal: bool = False, skip_supersession: bool = False):
     """Build the in-window relation edges (same-file 0, temporal 1, k-NN sim 2, supersession 4).
 
     causal=False (default, per-decision path / w326-era ckpts): the legacy SYMMETRIC graph those
@@ -341,6 +341,10 @@ def edges(chunks, emb: np.ndarray, causal: bool = False):
     n = len(chunks); src, dst, typ = [], [], []
     stp = [c.step for c in chunks]
 
+    _fast = os.environ.get("AC_EDGES_FAST", "on") != "off"   # vectorized rel-0/2 twins — BIT-IDENTICAL
+    #   selection (same candidate sets, same (lo, index)/argsort tie-breaks; pinned by
+    #   tests/test_edges_fast.py). The pure-Python scans were O(n^2) with a fat constant and
+    #   dominated serve CPU at n~2000 (perf research 2026-09-02 §2.2). "off" restores the loops.
     _strict = os.environ.get("AC_STRICTEDGE") == "on"    # drop SAME-step edges (parallel siblings issued
     #                                                      together: a sibling's result didn't exist at the
     #                                                      others' decision time -> no concurrent edge)
@@ -371,17 +375,39 @@ def edges(chunks, emb: np.ndarray, causal: bool = False):
             # (a behavior delta from the file-identity clique). Data: line-adjacency lift 2.2x cc / 3.4x
             # mini, log1p(lo) AUC 0.67 -- the signal this propagates. AC_FILECHAIN=off restores the clique.
             lo = [getattr(c, "lo", None) for c in chunks]
-            for j in range(n):
-                if not chunks[j].file or lo[j] is None:
-                    continue
-                cand = [i for i in range(n) if i != j and chunks[i].file == chunks[j].file
-                        and lo[i] is not None and _fwd(i, j)]
-                below = [i for i in cand if lo[i] <= lo[j]]
-                above = [i for i in cand if lo[i] > lo[j]]
-                if below:                                # nearest line at/above j, in the causal past
-                    i = max(below, key=lambda i: (lo[i], i)); src.append(i); dst.append(j); typ.append(0)
-                if above:                                # nearest line below j, in the causal past
-                    i = min(above, key=lambda i: (lo[i], i)); src.append(i); dst.append(j); typ.append(0)
+            if _fast:
+                stp_a = np.asarray(stp, dtype=np.int64)
+                idx_a = np.arange(n)
+                _fm: dict = {}
+                codes = np.asarray([_fm.setdefault(c.file, len(_fm)) for c in chunks])
+                has_lo = np.asarray([v is not None for v in lo])
+                lo_a = np.asarray([v if v is not None else 0 for v in lo], dtype=np.int64)
+                for j in range(n):
+                    if not chunks[j].file or lo[j] is None:
+                        continue
+                    fwd = (stp_a < stp_a[j]) if _strict else (
+                        (stp_a < stp_a[j]) | ((stp_a == stp_a[j]) & (idx_a <= j)))
+                    cand = np.nonzero((codes == codes[j]) & has_lo & fwd & (idx_a != j))[0]
+                    below = cand[lo_a[cand] <= lo_a[j]]
+                    above = cand[lo_a[cand] > lo_a[j]]
+                    if below.size:                       # max by (lo, i), as the loop's key
+                        m = lo_a[below].max(); i = int(below[lo_a[below] == m].max())
+                        src.append(i); dst.append(j); typ.append(0)
+                    if above.size:                       # min by (lo, i)
+                        m = lo_a[above].min(); i = int(above[lo_a[above] == m].min())
+                        src.append(i); dst.append(j); typ.append(0)
+            else:
+                for j in range(n):
+                    if not chunks[j].file or lo[j] is None:
+                        continue
+                    cand = [i for i in range(n) if i != j and chunks[i].file == chunks[j].file
+                            and lo[i] is not None and _fwd(i, j)]
+                    below = [i for i in cand if lo[i] <= lo[j]]
+                    above = [i for i in cand if lo[i] > lo[j]]
+                    if below:                            # nearest line at/above j, in the causal past
+                        i = max(below, key=lambda i: (lo[i], i)); src.append(i); dst.append(j); typ.append(0)
+                    if above:                            # nearest line below j, in the causal past
+                        i = min(above, key=lambda i: (lo[i], i)); src.append(i); dst.append(j); typ.append(0)
         else:
             for i in range(n):                           # same-file (legacy CLIQUE: bag/w326 ckpts)
                 for j in range(n):
@@ -412,17 +438,44 @@ def edges(chunks, emb: np.ndarray, causal: bool = False):
             #   same-file CLIQUE the chain just removed. Excluding same-file candidates leaves kNN carrying
             #   only cross-file similarity (test<->source), the role it should play. (None-file != set-file
             #   is True, so reasoning/cross-file links survive; only same-file self-similarity is dropped.)
-            for j in range(n):
-                cand = [i for i in range(n) if i != j and _fwd(i, j)
-                        and (not _xfile or chunks[i].file != chunks[j].file)]
-                if not cand:
-                    continue
-                cs = np.asarray([sim[j, i] for i in cand])
-                for k in np.argsort(-cs)[:8]:
-                    src.append(cand[int(k)]); dst.append(j); typ.append(2)
+            if _fast:
+                stp_a = np.asarray(stp, dtype=np.int64)
+                idx_a = np.arange(n)
+                _fm2: dict = {}
+                codes = np.asarray([_fm2.setdefault(c.file, len(_fm2)) for c in chunks])
+                for j in range(n):
+                    fwd = (stp_a < stp_a[j]) if _strict else (
+                        (stp_a < stp_a[j]) | ((stp_a == stp_a[j]) & (idx_a <= j)))
+                    m = fwd & (idx_a != j)
+                    if _xfile:
+                        m &= codes != codes[j]
+                    cand = np.nonzero(m)[0]
+                    if not cand.size:
+                        continue
+                    cs = sim[j, cand]                    # same float32 values, C-speed gather
+                    for k in np.argsort(-cs)[:8]:
+                        src.append(int(cand[int(k)])); dst.append(j); typ.append(2)
+            else:
+                for j in range(n):
+                    cand = [i for i in range(n) if i != j and _fwd(i, j)
+                            and (not _xfile or chunks[i].file != chunks[j].file)]
+                    if not cand:
+                        continue
+                    cs = np.asarray([sim[j, i] for i in cand])
+                    for k in np.argsort(-cs)[:8]:
+                        src.append(cand[int(k)]); dst.append(j); typ.append(2)
     # supersession: a near-duplicate pair (j newer than i). Legacy directs NEW->OLD (the newer copy
     # informs the old one it is covered); causal directs OLD->NEW (forward) so it carries the same
     # covered signal without flowing backward.
+    if skip_supersession:
+        # The v1/v2 serve path REPLACES rel-4 wholesale (v1graph drops every
+        # et==4 edge and splices the client's pairs), so the O(n^2)
+        # span-Jaccard double loop below fed the discard — ~4M Python
+        # iterations at n=2000 (perf research 2026-09-02 §2.2). Opt-in
+        # short-circuit; default emits the identical edges as before.
+        return (torch.tensor([src, dst], dtype=torch.long) if src
+                else torch.zeros((2, 0), dtype=torch.long),
+                torch.tensor(typ, dtype=torch.long))
     sets = [{x for x in spans(c.text) if len(x) >= 5} for c in chunks]
     for i in range(n):
         for j in range(n):

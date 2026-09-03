@@ -93,6 +93,15 @@ pub struct BrainConfig {
     pub tool_stub: bool,
     /// PARSEC_BRAIN_CONTRACT: dev (default) | v1 | v2.
     pub contract: BrainContract,
+    /// Directory for the persisted per-conversation score memo (perf
+    /// research 2026-09-02 §1): scores are pure functions of (step,
+    /// live-set fingerprint), so persisting them makes even a post-RESTART
+    /// or post-eviction birth replay HTTP-free. None = in-memory only
+    /// (tests inject None; `from_env` defaults to `~/.parsec/score_memo`
+    /// unless `PARSEC_SCORE_MEMO_PERSIST=off`). Data plane: the files hold
+    /// hashes and quantized model outputs only — never text — and never
+    /// leave the machine.
+    pub score_memo_dir: Option<std::path::PathBuf>,
 }
 
 /// Release-baked default brain URL: `PARSEC_DEFAULT_BRAIN_URL` at BUILD time
@@ -189,6 +198,9 @@ impl BrainConfig {
             tool_prune: std::env::var("PARSEC_TOOL_PRUNE").ok().as_deref() != Some("off"),
             tool_stub: std::env::var("PARSEC_TOOL_STUB").ok().as_deref() != Some("off"),
             contract,
+            score_memo_dir: (std::env::var("PARSEC_SCORE_MEMO_PERSIST").ok().as_deref()
+                != Some("off"))
+            .then(|| crate::setup::parsec_home().join("score_memo")),
         })
     }
 }
@@ -196,6 +208,11 @@ impl BrainConfig {
 #[derive(Deserialize)]
 struct BundleInfo {
     checkpoint_id: String,
+    /// Server accepts `Content-Encoding: gzip` request bodies. Absent on
+    /// older brains → the client stays on the identity wire (version skew
+    /// degrades to uncompressed, never to a 4xx).
+    #[serde(default)]
+    accept_gzip: bool,
     /// `{"gf": int, "served": bool}` — whether this bundle scores a doom
     /// head. Absent on pre-doom brains (their v1 models are extra=forbid, so
     /// sending `gf` to them would 422 every trace: version-skew guard).
@@ -242,6 +259,43 @@ fn fetch_bundle(
         "brain /v1/bundle handshake ok"
     );
     Ok(info)
+}
+
+/// Process-wide blocking client for the aux scoring helpers (tools/rules/
+/// neighbors body assembly): v0.2.6 built a FRESH client — a new TCP+TLS
+/// handshake — per call, every turn when the governor is on (perf research
+/// 2026-09-02 §3). First caller's timeout wins (there is one
+/// PARSEC_BRAIN_TIMEOUT_MS per process).
+fn shared_blocking_client(timeout: Duration) -> &'static reqwest::blocking::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("reqwest blocking client")
+    })
+}
+
+/// 60s-TTL process cache of the /v1/bundle checkpoint_id for the aux
+/// helpers — the id is per-BRAIN, not per-conversation, and re-fetching it
+/// cost a full extra RTT before every tools/rules score. Keyed by url so a
+/// reconfigured brain (and the test harness's per-test mocks) never reads a
+/// stale entry; a redeploy is picked up within the TTL, and until then the
+/// aux calls fail open exactly as any checkpoint drift does today.
+fn cached_checkpoint(cfg: &BrainConfig) -> Result<String, ScoreError> {
+    static CK: Mutex<Option<(String, String, Instant)>> = Mutex::new(None);
+    {
+        let g = CK.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((url, ck, at)) = g.as_ref() {
+            if *url == cfg.url && at.elapsed() < Duration::from_secs(60) {
+                return Ok(ck.clone());
+            }
+        }
+    }
+    let ck = fetch_bundle(shared_blocking_client(cfg.timeout), cfg)?.checkpoint_id;
+    *CK.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some((cfg.url.clone(), ck.clone(), Instant::now()));
+    Ok(ck)
 }
 
 /// Per-conversation id salt: deliberately NON-derivable server-side (the
@@ -292,8 +346,124 @@ pub struct BrainStats {
     pub last_doom_q: Option<i64>,
 }
 
-/// (cur_step, live-set fingerprint, scores_q, tau_q) of the last response.
-type ScoreCache = Mutex<Option<(i64, String, Vec<i64>, i64)>>;
+/// (cur_step, live-set fingerprint, scores_q, tau_q), most-recent last.
+/// WIDENED from a single entry (docs/perf-research-2026-09-02.md §1):
+/// scores are pure functions of (step, live set) — the mask is deliberately
+/// not keyed, exactly as in the single-entry design — so a full birth
+/// replay after a purity-guard reset (client edit, system-head churn)
+/// re-serves memoized scores with ZERO HTTP: a 100s replay storm becomes
+/// CPU-only. Bounded FIFO; on hit the entry is not reordered (replays walk
+/// steps in order, so FIFO ≈ LRU here).
+type ScoreMemo = std::collections::VecDeque<(i64, String, Vec<i64>, i64)>;
+type ScoreCache = Mutex<ScoreMemo>;
+
+/// `PARSEC_SCORE_MEMO_MAX`: score-memo entries per conversation; min 1
+/// (the original single-entry behavior), default 512 (a few MB worst case,
+/// evicted with the conversation memo).
+fn score_memo_max() -> usize {
+    std::env::var("PARSEC_SCORE_MEMO_MAX")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .map(|n| n.max(1))
+        .unwrap_or(512)
+}
+
+/// Load persisted score-memo lines (newest-last JSONL), keeping only the
+/// trailing run scored under one checkpoint (a file that straddles a brain
+/// redeploy keeps just the newest ckpt's entries). Any parse/IO problem
+/// yields an empty memo — the cost is a re-score, never a wrong score.
+fn load_persisted_scores(path: &std::path::Path, cap: usize) -> (ScoreMemo, Option<String>) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Default::default();
+    };
+    let mut out = std::collections::VecDeque::new();
+    let mut ck: Option<String> = None;
+    for line in text.lines().rev() {
+        if out.len() >= cap {
+            break;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let line_ck = v.get("ck").and_then(Value::as_str).unwrap_or("");
+        match &ck {
+            None => ck = Some(line_ck.to_string()),
+            Some(c) if c != line_ck => break, // older checkpoint below — stop
+            _ => {}
+        }
+        let (Some(s), Some(fp), Some(q), Some(t)) = (
+            v.get("s").and_then(Value::as_i64),
+            v.get("fp").and_then(Value::as_str),
+            v.get("q").and_then(Value::as_array),
+            v.get("t").and_then(Value::as_i64),
+        ) else {
+            continue;
+        };
+        let scores: Vec<i64> = q.iter().filter_map(Value::as_i64).collect();
+        if scores.len() != q.len() {
+            continue;
+        }
+        out.push_front((s, fp.to_string(), scores, t));
+    }
+    if !out.is_empty() {
+        tracing::debug!(entries = out.len(), path = %path.display(), "score memo loaded from disk");
+    }
+    (out, ck.filter(|c| !c.is_empty()))
+}
+
+/// Append one score line; best-effort (a write failure only costs a future
+/// re-score). Rewrites the file down to its tail when it grows past 4x the
+/// in-memory cap.
+fn persist_score(
+    path: Option<&std::path::Path>,
+    step: i64,
+    fp: &str,
+    scores: &[i64],
+    tau: i64,
+    ck8: &str,
+) {
+    let Some(path) = path else { return };
+    let line = json!({"s": step, "fp": fp, "q": scores, "t": tau, "ck": ck8}).to_string();
+    let res: std::io::Result<()> = (|| {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        writeln!(f, "{line}")?;
+        Ok(())
+    })();
+    if let Err(e) = res {
+        tracing::debug!("score memo persist failed (fail-open): {e}");
+        return;
+    }
+    // Bound the file: cheap line count via metadata heuristic is unreliable,
+    // so trim only occasionally — when the file exceeds ~4x cap lines.
+    if let Ok(text) = std::fs::read_to_string(path) {
+        let cap = score_memo_max();
+        let n = text.lines().count();
+        if n > cap * 4 {
+            let tail: Vec<&str> = text.lines().skip(n - cap).collect();
+            let _ = std::fs::write(path, tail.join("\n") + "\n");
+        }
+    }
+}
+
+/// Gzip a JSON body for the brain wire; None on any error (caller falls
+/// back to the identity encoding).
+fn gzip_json(body: &Value) -> Option<Vec<u8>> {
+    use std::io::Write;
+    let raw = serde_json::to_vec(body).ok()?;
+    let mut enc = flate2::write::GzEncoder::new(
+        Vec::with_capacity(raw.len() / 4),
+        flate2::Compression::fast(),
+    );
+    enc.write_all(&raw).ok()?;
+    enc.finish().ok()
+}
 
 /// The remote `ChunkScorer`. One instance per conversation (owned by that
 /// conversation's Freezer); the blocking client is cheap and self-contained —
@@ -307,6 +477,15 @@ pub struct BrainScorer {
     /// cached scores is byte-equivalent to the reference (which discards
     /// per-pool scores too).
     cache: ScoreCache,
+    memo_max: usize,
+    /// Persisted-memo file for this conversation (None = in-memory only).
+    memo_path: Option<std::path::PathBuf>,
+    /// checkpoint_id sha8 the persisted entries were scored under; a drift
+    /// (brain redeploy) purges them — stale-checkpoint scores must never
+    /// decide serving.
+    memo_ck: Option<String>,
+    /// /v1/bundle advertised gzip request support (v2 handshake).
+    srv_gzip: bool,
     pub stats: BrainStats,
     /// Attach the governor's 4-float `gf` (loop_feats) to score/trace bodies
     /// — set by the server when `PARSEC_GOVERNOR != off`; false = today's
@@ -332,11 +511,25 @@ impl BrainScorer {
             .build()
             .expect("reqwest blocking client");
         let conv_salt = fresh_salt(&conv_id);
+        let memo_max = score_memo_max();
+        let memo_path = cfg.score_memo_dir.as_ref().map(|d| {
+            let mut h = Sha256::new();
+            h.update(conv_id.as_bytes());
+            d.join(format!("{}.jsonl", &format!("{:x}", h.finalize())[..16]))
+        });
+        let (loaded, memo_ck) = memo_path
+            .as_deref()
+            .map(|p| load_persisted_scores(p, memo_max))
+            .unwrap_or_default();
         BrainScorer {
             cfg,
             conv_id,
             http,
-            cache: Mutex::new(None),
+            cache: Mutex::new(loaded),
+            memo_max,
+            memo_path,
+            memo_ck,
+            srv_gzip: false,
             stats: BrainStats::default(),
             attach_gf: false,
             v1_checkpoint: None,
@@ -360,6 +553,7 @@ impl BrainScorer {
         if self.v1_checkpoint.is_none() {
             let info = fetch_bundle(&self.http, &self.cfg)?;
             self.v1_doom = info.doom_served();
+            self.srv_gzip = info.accept_gzip;
             self.v1_checkpoint = Some(info.checkpoint_id);
         }
         let checkpoint_id = self.v1_checkpoint.clone().expect("handshake done");
@@ -382,8 +576,9 @@ impl ChunkScorer for BrainScorer {
             .cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .filter(|(step, cached_fp, _, _)| *step == q.cur_step && *cached_fp == fp)
+            .iter()
+            .rev()
+            .find(|(step, cached_fp, _, _)| *step == q.cur_step && *cached_fp == fp)
             .map(|(_, _, scores, tau)| ScoreResult {
                 scores_q: scores.clone(),
                 tau_q: *tau,
@@ -432,10 +627,18 @@ impl ChunkScorer for BrainScorer {
             }
         }
         let t0 = Instant::now();
-        let mut req = self
-            .http
-            .post(format!("{}/v1/score/trace", self.cfg.url))
-            .json(&body);
+        let mut req = self.http.post(format!("{}/v1/score/trace", self.cfg.url));
+        // Handshake-gated request compression (perf research 2026-09-02 §3):
+        // the v2 payload is MB-scale, highly compressible JSON, uploaded
+        // once per scored step. Only servers advertising accept_gzip get the
+        // compressed wire; any encode hiccup falls back to identity.
+        req = match self.srv_gzip.then(|| gzip_json(&body)).flatten() {
+            Some(gz) => req
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .header(reqwest::header::CONTENT_ENCODING, "gzip")
+                .body(gz),
+            None => req.json(&body),
+        };
         if let Some(k) = &self.cfg.key {
             req = req.bearer_auth(k);
         }
@@ -494,8 +697,41 @@ impl ChunkScorer for BrainScorer {
                 q.live.len()
             )));
         }
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some((q.cur_step, fp, r.scores_q.clone(), r.tau_q));
+        // Checkpoint drift purges persisted entries: scores from an older
+        // ckpt must never decide serving after a brain redeploy.
+        let ck8 = self
+            .stats
+            .checkpoint_id
+            .as_deref()
+            .map(|c| c.chars().take(8).collect::<String>());
+        if let (Some(now), Some(loaded)) = (&ck8, &self.memo_ck) {
+            if now != loaded {
+                tracing::info!(
+                    conv = %self.conv_id,
+                    "score memo: checkpoint drift — purging persisted entries"
+                );
+                self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                if let Some(p) = &self.memo_path {
+                    let _ = std::fs::remove_file(p);
+                }
+                self.memo_ck = None;
+            }
+        }
+        {
+            let mut memo = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            memo.push_back((q.cur_step, fp.clone(), r.scores_q.clone(), r.tau_q));
+            while memo.len() > self.memo_max {
+                memo.pop_front();
+            }
+        }
+        persist_score(
+            self.memo_path.as_deref(),
+            q.cur_step,
+            &fp,
+            &r.scores_q,
+            r.tau_q,
+            ck8.as_deref().unwrap_or(""),
+        );
         Ok(ScoreResult {
             scores_q: r.scores_q,
             tau_q: r.tau_q,
@@ -604,11 +840,7 @@ fn build_v2_tools_body(
     internal: &[Value],
     tools: &Value,
 ) -> Result<Option<Value>, ScoreError> {
-    let http = reqwest::blocking::Client::builder()
-        .timeout(cfg.timeout)
-        .build()
-        .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
-    let checkpoint_id = fetch_bundle(&http, cfg)?.checkpoint_id;
+    let checkpoint_id = cached_checkpoint(cfg)?;
     Ok(featurize::build_v2_tools_payload(
         internal,
         tools,
@@ -716,11 +948,7 @@ fn build_v2_rules_body(
     internal: &[Value],
     cur_step: i64,
 ) -> Result<Option<Value>, ScoreError> {
-    let http = reqwest::blocking::Client::builder()
-        .timeout(cfg.timeout)
-        .build()
-        .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
-    let checkpoint_id = fetch_bundle(&http, cfg)?.checkpoint_id;
+    let checkpoint_id = cached_checkpoint(cfg)?;
     Ok(featurize::build_v2_rules_payload(
         internal,
         &fresh_salt(conv_id),
@@ -767,12 +995,8 @@ pub async fn fetch_neighbors(
             // The server embeds the task head; only the handshake is blocking.
             let cfg2 = cfg.clone();
             let built = tokio::task::spawn_blocking(move || -> Result<Value, ScoreError> {
-                let http = reqwest::blocking::Client::builder()
-                    .timeout(cfg2.timeout)
-                    .build()
-                    .map_err(|e| ScoreError(format!("blocking client: {e}")))?;
                 Ok(json!({
-                    "checkpoint_id": fetch_bundle(&http, &cfg2)?.checkpoint_id,
+                    "checkpoint_id": cached_checkpoint(&cfg2)?,
                     "task_text": task_text,
                 }))
             })

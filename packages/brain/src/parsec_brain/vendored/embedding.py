@@ -37,12 +37,18 @@ def _hash_embed(text: str, dim: int) -> Vector:
 
 
 class EmbeddingClient:
-    def __init__(self, cfg: dict | None = None, backend: str = "hash", dim: int = 768):
+    def __init__(self, cfg: dict | None = None, backend: str = "hash", dim: int = 768,
+                 max_entries: int | None = None):
         self.cfg = cfg or {}
         self.backend = backend
         self.dim = (cfg or {}).get("models", {}).get("embedder", {}).get("dim", dim) \
             if cfg else dim
+        # Bounded since the 2026-09 latency work (None = the original
+        # cache-forever behavior). Kept self-contained — same batch-pinning
+        # policy as parsec_brain.embed_cache, inlined so the vendored copy
+        # imports nothing above it.
         self._cache: dict[str, Vector] = {}
+        self._max_entries = max_entries
         self._vertex = None
         self._parsec = None
         self._local = None
@@ -52,7 +58,16 @@ class EmbeddingClient:
         return f"{'q' if as_query else 'd'}:{hashlib.sha1(text.encode()).hexdigest()}"
 
     def embed(self, texts: Sequence[str], as_query: bool = True) -> list[Vector]:
-        missing = [t for t in texts if self._key(t, as_query) not in self._cache]
+        # Bump hits to most-recent (dict preserves insertion order; pop+set
+        # is the O(1) re-append) and DEDUPE the miss list — duplicates in one
+        # batch used to hit the encoder once per copy.
+        missing = []
+        for t in dict.fromkeys(texts):
+            k = self._key(t, as_query)
+            if k in self._cache:
+                self._cache[k] = self._cache.pop(k)
+            else:
+                missing.append(t)
         if missing:
             if self.backend == "local":
                 if self._local is None:
@@ -71,6 +86,16 @@ class EmbeddingClient:
                 vecs = [_hash_embed(t, self.dim) for t in missing]
             for t, v in zip(missing, vecs):
                 self._cache[self._key(t, as_query)] = v
+        # Evict oldest-first down to the cap, never touching this batch's
+        # keys (all at the recent end after the bump/insert above) — the
+        # return below reads every one of them.
+        if self._max_entries is not None:
+            batch = {self._key(t, as_query) for t in texts}
+            while len(self._cache) > self._max_entries:
+                oldest = next(iter(self._cache))
+                if oldest in batch:
+                    break
+                del self._cache[oldest]
         return [self._cache[self._key(t, as_query)] for t in texts]
 
     def embed_one(self, text: str, as_query: bool = True) -> Vector:

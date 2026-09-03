@@ -426,6 +426,7 @@ async fn setup_with(gov: GovernorConfig, serve_rules_route: bool, contract: Brai
         tool_prune: true,
         tool_stub: true,
         contract,
+        score_memo_dir: None,
     };
     let state = Arc::new(AppState::with_brain_governor(
         format!("http://{up_addr}"),

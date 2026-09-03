@@ -128,6 +128,7 @@ steps:
           --max-instances "$_MAX_INSTANCES"
           --timeout "$_TIMEOUT"
           --set-env-vars "PARSEC_EMBED_BACKEND=$_EMBED_BACKEND"
+          --set-env-vars "PARSEC_TORCH_THREADS=$_CPU"
           --allow-unauthenticated
         )
         # Local backend loads the baked weights from /embed-model either way.

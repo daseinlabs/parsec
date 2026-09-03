@@ -191,6 +191,7 @@ async fn setup() -> Ctx {
         tool_prune: true,
         tool_stub: true,
         contract: BrainContract::V2,
+        score_memo_dir: None,
         // deliberately "hash": v2 must never construct a client embedder, so
         // the backend value is inert. If it ever regressed to building one,
         // the payload assertions below would still pass — but the embedder

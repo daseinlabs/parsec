@@ -730,6 +730,10 @@ pub(crate) struct PlanStats {
     pub(crate) checkpoint_id: Option<String>,
     pub(crate) brain_ms: f64,
     pub(crate) scorer_fail_opens: u64,
+    /// Freezer purity-guard resets THIS request (a consumed message's bytes
+    /// changed → full birth replay) — the replay-storm signature
+    /// (docs/perf-research-2026-09-02.md §1).
+    pub(crate) purity_resets: u64,
     /// Internal-view chars/4 the freezer trimmed THIS call (uncut − rendered)
     /// — a diagnostic, never a savings claim (§8.4).
     pub(crate) freeze_cut_tokens: i64,
@@ -967,7 +971,7 @@ async fn curate(
         let attach_gf = st.governor.mode != GovMode::Off;
         // Freezer (and its blocking HTTP scorer) is built AND driven on a
         // blocking thread — reqwest::blocking panics on async runtime threads.
-        let (fz, served, fails_before, calls_before, cut_delta) =
+        let (fz, served, fails_before, resets_before, calls_before, cut_delta) =
             tokio::task::spawn_blocking(move || {
                 let mut fz = taken.unwrap_or_else(|| {
                     Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
@@ -977,10 +981,12 @@ async fn curate(
                 fz.scorer.attach_gf = attach_gf;
                 fz.scorer.stats.last_doom_q = None;
                 let fails_before = fz.scorer_fail_opens;
+                let resets_before = fz.resets;
                 let calls_before = (
                     fz.scorer.stats.trace_calls,
                     fz.scorer.stats.score_calls,
                     fz.scorer.stats.cache_hits,
+                    fz.scorer.stats.brain_ms,
                 );
                 // Cut-registry watermarks for the curator decision log. Deltas
                 // saturate: a memo reset (client edit) mid-conversation clears
@@ -994,6 +1000,25 @@ async fn curate(
                     .map(|(k, v)| (k.clone(), v.len()))
                     .collect();
                 let served = fz.serve(&internal_in);
+                // Replay-storm attribution (perf research 2026-09-02 §1):
+                // WHICH message's bytes churned decides the fix — index 0 is
+                // the system entry (Desktop-style head mutation), a small
+                // index is client compaction/trim, shrunk is a rewound run.
+                if fz.resets > resets_before {
+                    let (idx, shrunk) = fz.last_reset_divergence.unwrap_or((0, false));
+                    tracing::warn!(
+                        conv = %conv_for_vis,
+                        divergence_idx = idx,
+                        role = internal_in
+                            .get(idx)
+                            .and_then(|m| m.get("role"))
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("?"),
+                        shrunk,
+                        "freezer purity reset — consumed message bytes changed; \
+                         full birth replay this request (replay-storm signature)"
+                    );
+                }
                 let mut ranges: Vec<(String, i64, i64)> = Vec::new();
                 for (file, after) in fz.dropped_ranges() {
                     let skip = ranges_before
@@ -1028,12 +1053,23 @@ async fn curate(
                     }
                     crate::visibility::record(sid, &conv_for_vis, vis);
                 }
-                (fz, served, fails_before, calls_before, cut_delta)
+                (
+                    fz,
+                    served,
+                    fails_before,
+                    resets_before,
+                    calls_before,
+                    cut_delta,
+                )
             })
             .await
             .map_err(|e| anyhow::anyhow!("freezer task panicked: {e}"))?;
         stats.scorer_fail_opens = fz.scorer_fail_opens - fails_before;
-        stats.brain_ms = fz.scorer.stats.brain_ms;
+        stats.purity_resets = fz.resets - resets_before;
+        // Per-request DELTA — brain_ms accumulates for the life of the
+        // scorer; v0.2.6 copied it raw, so the logged/ledgered value was
+        // cumulative-since-lane-birth (docs/perf-research-2026-09-02.md §0).
+        stats.brain_ms = fz.scorer.stats.brain_ms - calls_before.3;
         stats.checkpoint_id = fz.scorer.stats.checkpoint_id.clone();
         stats.births_scored = fz.scorer.stats.trace_calls - calls_before.0;
         stats.score_calls = fz.scorer.stats.score_calls - calls_before.1;
@@ -1105,7 +1141,13 @@ async fn curate(
     let (mut folds, prior_fps) = {
         let mut convs = lock(&st.convs);
         let cs = convs.entry(conv_id.clone()).or_default();
-        (cs.folds.clone(), cs.last_fps.clone())
+        // TAKE the fold map instead of deep-cloning it under the global
+        // `convs` mutex (perf research 2026-09-02 §4): the clone of a big
+        // conversation's folds stalled every other lane's memo access. The
+        // per-lane lock guarantees exclusivity; an error path before the
+        // write-back leaves the lane's folds empty, which only costs a
+        // deterministic re-fold next request (pure function), never bytes.
+        (std::mem::take(&mut cs.folds), cs.last_fps.clone())
     };
     let folds_before = folds.len();
     let mut curated = splice::apply_curation(body, &curated_internal, Some(&mut folds));
@@ -1832,6 +1874,12 @@ pub(crate) struct RowCtx {
     pub(crate) model: Option<String>,
     pub(crate) cache_prefix_sha8: String,
     pub(crate) fail_open: bool,
+    /// Stage timings for the ledger row (0.0 = not measured on this path):
+    /// lane-lock queue wait, count_tokens probe wall time (overlapped with
+    /// the upstream call), upstream time-to-first-byte.
+    pub(crate) queued_ms: f64,
+    pub(crate) probe_ms: f64,
+    pub(crate) upstream_ttfb_ms: f64,
 }
 
 pub(crate) fn write_ledger(
@@ -1878,6 +1926,12 @@ pub(crate) fn write_ledger(
         "billed_cache_write_tokens": g("cache_creation_input_tokens"),
         "cachePrefixSha8": cache_prefix_sha8,
         "fail_open": fail_open,
+        // Stage timings (perf research 2026-09-02 §5): previously log-only,
+        // which made the latency split unqueryable after the fact.
+        "curate_ms": (stats.curate_ms * 10.0).round() / 10.0,
+        "queued_ms": (ctx.queued_ms * 10.0).round() / 10.0,
+        "probe_ms": (ctx.probe_ms * 10.0).round() / 10.0,
+        "upstream_ttfb_ms": (ctx.upstream_ttfb_ms * 10.0).round() / 10.0,
     });
 
     // The live savings line — what `tail -f ~/.parsec/proxy.log` (or the
@@ -1948,6 +2002,9 @@ pub(crate) fn write_ledger(
         }
         if stats.scorer_fail_opens > 0 {
             o.insert("scorer_fail_opens".into(), json!(stats.scorer_fail_opens));
+        }
+        if stats.purity_resets > 0 {
+            o.insert("purity_resets".into(), json!(stats.purity_resets));
         }
         if stats.freeze_cut_tokens > 0 {
             o.insert("freeze_cut_tokens".into(), json!(stats.freeze_cut_tokens));
@@ -2262,10 +2319,12 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
             b.get("model").and_then(Value::as_str),
         )
     });
+    let t_queued = std::time::Instant::now();
     let _lane_guard = match (&conv_id, entitled) {
         (Some(id), true) => Some(lane_lock(&st, id).lock_owned().await),
         _ => None,
     };
+    let queued_ms = t_queued.elapsed().as_secs_f64() * 1000.0;
 
     // (b-d) curation (freeze when a brain is configured), breakpoint
     // placement, tool keep-set — any error here means forwarding the
@@ -2295,19 +2354,26 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
     // narrowed to the count_tokens field set (CC's `metadata` 400s there).
     // Skipped when unentitled: no savings are claimed, so the extra
     // count_tokens call would be pure waste.
+    // Spawned CONCURRENT with the upstream forward and collected after the
+    // upstream's first byte (perf research 2026-09-02 §4): the probe is a
+    // full extra Anthropic RTT used only by the ledger, and it used to run
+    // serially on the time-to-first-byte path. Overlapped, it is usually
+    // fully hidden behind upstream TTFB.
     let t_probe = std::time::Instant::now();
-    let counterfactual = if entitled {
+    let probe_task = if entitled {
         let probe_bytes = body
             .as_ref()
             .and_then(probe_body)
             .map(Bytes::from)
             .unwrap_or_else(|| raw.clone());
-        count_tokens_probe(&st, &headers, probe_bytes).await
+        let st_p = st.clone();
+        let headers_p = headers.clone();
+        Some(tokio::spawn(async move {
+            count_tokens_probe(&st_p, &headers_p, probe_bytes).await
+        }))
     } else {
         None
     };
-    let probe_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
-    tracing::debug!(counterfactual = ?counterfactual, "count_tokens probe done");
 
     // (f) forward: curated body, or the original verbatim on fail-open.
     let send = plan
@@ -2333,9 +2399,17 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         Err(e) => return bad_gateway(&e),
     };
     let status = resp.status();
+    let upstream_ttfb_ms = t_upstream.elapsed().as_secs_f64() * 1000.0;
+    let counterfactual = match probe_task {
+        Some(h) => h.await.unwrap_or(None),
+        None => None,
+    };
+    // Wall time since spawn — the overlapped cost is max(0, probe - ttfb).
+    let probe_ms = t_probe.elapsed().as_secs_f64() * 1000.0;
     tracing::debug!(
         status = %status,
-        first_byte_ms = t_upstream.elapsed().as_millis() as u64,
+        counterfactual = ?counterfactual,
+        first_byte_ms = upstream_ttfb_ms as u64,
         "upstream responded"
     );
 
@@ -2347,10 +2421,12 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
             .map(|p| &p.conv_id[..p.conv_id.len().min(12)])
             .unwrap_or("?"),
         turn = stats.turn,
+        queued_ms = (queued_ms * 10.0).round() / 10.0,
         curate_ms = (stats.curate_ms * 10.0).round() / 10.0,
         brain_ms = (stats.brain_ms * 10.0).round() / 10.0,
         probe_ms = (probe_ms * 10.0).round() / 10.0,
-        upstream_ms = (t_upstream.elapsed().as_secs_f64() * 10_000.0).round() / 10.0,
+        upstream_ms = (upstream_ttfb_ms * 10.0).round() / 10.0,
+        purity_resets = stats.purity_resets,
         births_scored = stats.births_scored,
         score_calls = stats.score_calls,
         cache_hits = stats.cache_hits,
@@ -2446,6 +2522,9 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
             .map(|p| p.cache_prefix_sha8.clone())
             .unwrap_or_else(|| sha8_of_fps(std::iter::empty())),
         fail_open,
+        queued_ms,
+        probe_ms,
+        upstream_ttfb_ms,
     };
 
     let wants_stream = body
@@ -2494,6 +2573,12 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         });
         return respond(status, ct, Body::from_stream(tee.chain(finalize)));
     }
+
+    // The lane's cross-request state is fully committed above — release the
+    // lane before buffering the response body and writing the ledger, so a
+    // queued same-lane request stops paying for THIS response's generation
+    // (perf research 2026-09-02 §4, lane-lock span).
+    drop(_lane_guard);
 
     // Non-streaming (or upstream error): buffer, relay as-is, read .usage.
     let bytes = resp.bytes().await.unwrap_or_default();

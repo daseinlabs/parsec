@@ -37,6 +37,8 @@ import hashlib
 import os
 import time
 from collections import OrderedDict
+
+from .embed_cache import EmbedCache, embed_cache_max
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -157,8 +159,13 @@ class TraceScorer:
         self._changeprone = bundle.changeprone
         backend = os.environ.get("PARSEC_EMBED_BACKEND", "dasein")
         cfg = {"models": {"embedder": {"dim": _EMBED_DIM, "backend": backend}}}
-        self.embedder = EmbeddingClient(cfg=cfg, backend=backend)
-        self.cache: dict[str, list[float]] = {}    # exact-text layer over the client's sha1 layer
+        cap = embed_cache_max()
+        self.embedder = EmbeddingClient(cfg=cfg, backend=backend, max_entries=cap)
+        # exact-text layer over the client's sha1 layer — bounded LRU since
+        # the 2026-09 latency work (both layers alias the same vector
+        # objects, so both evict; see embed_cache.py for the batch-pinning
+        # invariant that keeps direct cache[t] reads safe).
+        self.cache = EmbedCache(max_entries=cap)
         # per-CONVERSATION node-struct caches (curator._nstruct_cache is per-run): rows for steps
         # < cur_step are constant once their drops commit, so reuse across requests of one conv is
         # byte-identical; keys must not cross conversations (same _nskey, different causal prefix).
@@ -176,13 +183,15 @@ class TraceScorer:
 
     # ---- embeddings (curator L281-286) ----
     def _embed(self, texts):
-        miss = [t for t in texts if t not in self.cache]
+        # touch_batch also DEDUPES the miss list: v2 batches carry the same
+        # cmd/head text once per chunk, and each copy used to reach the
+        # encoder as a separate forward.
+        miss = self.cache.touch_batch(texts)
         if miss:
             t0 = time.perf_counter()
             vecs = self.embedder.embed(miss, as_query=False)
             self._embed_ms += (time.perf_counter() - t0) * 1000.0
-            for t, v in zip(miss, vecs):
-                self.cache[t] = v
+            self.cache.insert_batch(zip(miss, vecs), set(texts))
         return [self.cache[t] for t in texts]
 
     # ---- parse (curate L893-966) ----
@@ -260,7 +269,7 @@ class TraceScorer:
         dstruct = self._het_readout(chunks, decided, recent, task_text, age, emb, cur_step,
                                     het_steps or [], T)
         t0 = time.perf_counter()
-        with torch.no_grad():
+        with torch.inference_mode():
             h = self.model._embed_nodes(torch.from_numpy(xe), torch.from_numpy(xs), ei, et)
             didx = torch.tensor(decided, dtype=torch.long)
             u_dec = self.model.score_decided(h, didx, torch.from_numpy(dstruct))
@@ -424,6 +433,10 @@ class TraceScorer:
         lc = [parsed.chunks[g] for g in live_gi]
         self._embed_ms = 0.0
         self._forward_ms = 0.0
+        # Same per-request lifecycle as _embed_ms (tool/rule/gate endpoint
+        # embeds between trace calls attribute to the next trace's counters —
+        # acceptable log noise, all under the app lock).
+        self.cache.reset_stats()
         self.last_doom = None
         sc, tau = self._trace_scores(lc, parsed.task_text, parsed.cur_step, is_admission=1.0,
                                      recent=parsed.recent_cmds, mask_js=list(mask),
@@ -461,7 +474,7 @@ class TraceScorer:
             if not len(ti):
                 return None, None, None
             xe, xs, ei, et, _ = collate_traces([d], "cpu")
-            with torch.no_grad():
+            with torch.inference_mode():
                 h = self.model._embed_nodes(xe, xs, ei, et)
                 sg = torch.sigmoid(self.model.score_tools(
                     h, torch.tensor(np.asarray(ti)))).cpu().numpy().astype(np.float32)
@@ -516,7 +529,7 @@ class TraceScorer:
             if not len(ri):
                 return {}
             xe, xs, ei, et, _ = collate_traces([d], "cpu")
-            with torch.no_grad():
+            with torch.inference_mode():
                 h = self.model._embed_nodes(xe, xs, ei, et)
                 sc = torch.sigmoid(self.model.score_rules(
                     h, torch.tensor(np.asarray(ri)),
@@ -569,7 +582,7 @@ class TraceScorer:
                       if gate_stats6 is not None
                       else np.asarray(d["gate_stats"], np.float32).reshape(1, 6))
             xe, xs, ei, et, _ = collate_traces([d], "cpu")
-            with torch.no_grad():
+            with torch.inference_mode():
                 h = self.model._embed_nodes(xe, xs, ei, et)
                 sg = torch.sigmoid(self.model.score_gate(
                     h, torch.tensor([gi], dtype=torch.long), torch.from_numpy(gstats)))

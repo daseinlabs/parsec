@@ -384,6 +384,14 @@ pub struct Freezer<S: ChunkScorer> {
     /// recomputable but the operational record of brain failures is not, and
     /// it must survive client-edit resets to stay alertable (§8.3).
     pub scorer_fail_opens: u64,
+    /// Purity-guard resets (a consumed message's bytes changed or the
+    /// history shrank). Operational telemetry like `scorer_fail_opens` —
+    /// reset() leaves both this and `last_reset_divergence` alone.
+    pub resets: u64,
+    /// (first divergent message index, history_shrunk) of the most recent
+    /// reset — lets the caller log WHICH message churned; the incident
+    /// analysis could not attribute resets after the fact.
+    pub last_reset_divergence: Option<(usize, bool)>,
 }
 
 /// serve() failure: the caller must pass the ORIGINAL messages through and
@@ -411,6 +419,8 @@ impl<S: ChunkScorer> Freezer<S> {
             seen_msg_hashes: Vec::new(),
             insists: 0,
             scorer_fail_opens: 0,
+            resets: 0,
+            last_reset_divergence: None,
         }
     }
 
@@ -917,9 +927,11 @@ impl<S: ChunkScorer> Freezer<S> {
         // different prefix — reset and replay so warm == cold.
         let hashes: Vec<String> = messages.iter().map(msg_hash).collect();
         let overlap = std::cmp::min(self.seen_msg_hashes.len(), hashes.len());
-        if self.seen_msg_hashes[..overlap] != hashes[..overlap]
-            || hashes.len() < self.seen_msg_hashes.len()
-        {
+        let shrunk = hashes.len() < self.seen_msg_hashes.len();
+        let diverged = (0..overlap).find(|&i| self.seen_msg_hashes[i] != hashes[i]);
+        if diverged.is_some() || shrunk {
+            self.resets += 1;
+            self.last_reset_divergence = Some((diverged.unwrap_or(overlap), shrunk));
             self.reset();
         }
         self.seen_msg_hashes = hashes;

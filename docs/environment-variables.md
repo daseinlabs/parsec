@@ -25,6 +25,8 @@ Read in `packages/proxy/src/server.rs`, `main.rs`, `hook.rs`.
 | `PARSEC_SESSION_TTL_S` | `3600` | Per-conversation state TTL. |
 | `PARSEC_SESSION_MAX` | `512` | Conversation-state cap (LRU beyond this). |
 | `PARSEC_CACHE_GUARD_TOKENS` | `50000` | Cache-loss guardrail (incident 2026-08-30): a warm lane about to rewrite more previously-covered tokens than this fails open to verbatim passthrough and latches until a fresh run. `0`/`off` disables. |
+| `PARSEC_SCORE_MEMO_MAX` | `512` | Per-conversation score-memo entries (step + live-set fingerprint → scores). Makes post-reset birth replays HTTP-free (docs/perf-research-2026-09-02.md §1). Min 1 = the old single-entry memo. |
+| `PARSEC_SCORE_MEMO_PERSIST` | on | Persists the score memo to `~/.parsec/score_memo/` (hashes + quantized scores only — never text, never leaves the machine), so even post-RESTART/eviction replays are HTTP-free. Purged on brain checkpoint drift. `off` = in-memory only. |
 | `PARSEC_VERBOSE` | unset | `1` switches to the verbose tracing filter. |
 | `PARSEC_RECORD_DIR` | unset | When set, every inbound request body is dumped verbatim to this dir (§8.1 capture seam; fail-open). |
 | `PARSEC_FREEZE` | on | `off` is the master escape hatch: no brain config, passthrough curation. |
@@ -130,6 +132,9 @@ Read in `packages/brain/src/parsec_brain/` (`bundle.py`, `scorer.py`,
 | `PARSEC_NEIGHBORS` | `16` | Neighbors k. |
 | `PARSEC_NEIGHBORS_X` | `2` | Trained expansion value — **do not change**. |
 | `PARSEC_EMBED_BACKEND` | `dasein` | Brain-side embedder: `dasein` (remote bge service — the value names the `dasein-embed` cluster service, unchanged by the rename) \| `hash` (hermetic tests). Note the different default from the proxy's client-side var of the same name. |
+| `PARSEC_EMBED_CACHE_MAX` | `100000` | Per-layer entry cap for the two server embed caches (scorer exact-text layer + embedder sha1 layer), evicted LRU with the in-flight batch pinned (`embed_cache.py`). `0`/`off` restores the unbounded cache-forever behavior. Pure cache: eviction can only cost a re-embed, never change a score. |
+| `PARSEC_TORCH_THREADS` | unset | Pins `torch.set_num_threads` at startup (Cloud Run sets it to `$_CPU` via cloudbuild) — under cgroups torch reads the HOST core count and oversubscribes. Unset = torch defaults. |
+| `AC_EDGES_FAST` | on | Vectorized rel-0/rel-2 edge construction, bit-identical to the reference loops (pinned by `tests/test_edges_fast.py`). `off` restores the pure-Python scans. |
 | `PARSEC_EMBED_URL` | in-cluster dasein-embed `/embed` | Embedding service endpoint. |
 | `PARSEC_EMBED_MODEL` | `bge-large-en-v1.5` | Model id sent to the embed service. |
 | `PARSEC_EMBED_BATCH` | `512` | Embed batch size (GPU amortization). |

@@ -93,9 +93,9 @@ def build_graph(nodes, task_emb, sys_emb, edges_supersession, blocks=None):
     # the vendored loop (i asc, then j asc = lexicographic (src, dst)), so sorting the payload
     # pairs the same way keeps the total edge ORDER byte-identical to the dev path (scatter
     # summation order == edge order; parity is bit-exact, not just set-equal).
-    ei, et = edges(chunks, emb, causal=True)
+    ei, et = edges(chunks, emb, causal=True, skip_supersession=True)
     if et.numel():
-        keep = et != 4
+        keep = et != 4        # defensive no-op now: rel-4 was never built
         ei, et = ei[:, keep], et[keep]
     pairs = sorted((int(a), int(b)) for (a, b) in edges_supersession)
     if pairs:
@@ -161,7 +161,7 @@ def score_trace(bundle, nodes, task_emb, sys_emb, mask, decided_struct, edges_su
     dstruct = np.asarray(decided_struct, dtype=np.float32).reshape(len(mask), -1)
     doom = None
     t0 = time.perf_counter()
-    with torch.no_grad():
+    with torch.inference_mode():
         h = bundle.model._embed_nodes(torch.from_numpy(xe), torch.from_numpy(xs), ei, et)
         didx = torch.tensor(list(mask), dtype=torch.long)
         u_dec = bundle.model.score_decided(h, didx, torch.from_numpy(dstruct))
@@ -196,7 +196,7 @@ def score_tools(bundle, nodes, task_emb, sys_emb, tool_embs):
     tembs = np.asarray(tool_embs, dtype=np.float32)
     xe, xs, ei, et, tool_idx = attach_tools(xe, xs, ei, et, tembs, EMBED_DIM, task_idx=n_own)
     t0 = time.perf_counter()
-    with torch.no_grad():
+    with torch.inference_mode():
         xet = torch.from_numpy(xe).half().float()       # assemble_trace fp16 parity
         h = bundle.model._embed_nodes(xet, torch.from_numpy(xs), ei, et)
         sg = torch.sigmoid(bundle.model.score_tools(
@@ -229,7 +229,7 @@ def score_rules(bundle, nodes, task_emb, sys_emb, edges_supersession, fire_step,
     rembs = np.asarray(rule_embs, dtype=np.float32)
     xe, xs, ei, et, rule_idx = attach_rules(xe, xs, ei, et, rembs, EMBED_DIM, step_rows)
     t0 = time.perf_counter()
-    with torch.no_grad():
+    with torch.inference_mode():
         xet = torch.from_numpy(xe).half().float()       # assemble_trace fp16 parity
         h = bundle.model._embed_nodes(xet, torch.from_numpy(xs), ei, et)
         sc = torch.sigmoid(bundle.model.score_rules(
