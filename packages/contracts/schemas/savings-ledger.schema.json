@@ -99,6 +99,31 @@
       "minimum": 0,
       "description": "Wall time spent in brain scoring calls this request."
     },
+    "curate_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Wall time of the curation stage (freezer + tool prune + breakpoint) this request."
+    },
+    "queued_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Wait for the per-conversation lane lock before curation began."
+    },
+    "probe_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "count_tokens counterfactual probe wall time (overlapped with the upstream call)."
+    },
+    "upstream_ttfb_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Provider time to first byte for the forwarded request."
+    },
+    "purity_resets": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Freezer purity-guard resets this request (a consumed message's bytes changed -> full birth replay; the replay-storm signature)."
+    },
     "scorer_fail_opens": {
       "type": "integer",
       "minimum": 0,

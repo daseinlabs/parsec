@@ -62,6 +62,13 @@ class LedgerRow(BaseModel):
     install_id: str | None = Field(default=None, pattern=r"^ins_[0-9a-f]{32}$")
     checkpoint_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     brain_ms: float | None = Field(default=None, ge=0)
+    # Stage timings + replay-storm attribution (proxy v0.2.9, perf research
+    # 2026-09-02 §5): wall-clock splits of the request the row describes.
+    curate_ms: float | None = Field(default=None, ge=0)
+    queued_ms: float | None = Field(default=None, ge=0)
+    probe_ms: float | None = Field(default=None, ge=0)
+    upstream_ttfb_ms: float | None = Field(default=None, ge=0)
+    purity_resets: int | None = Field(default=None, ge=0)
     scorer_fail_opens: int | None = Field(default=None, ge=0)
     freeze_cut_tokens: int | None = Field(default=None, ge=0)
     # Which instrument produced counterfactual_input_tokens when it was NOT

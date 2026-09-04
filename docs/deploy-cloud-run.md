@@ -137,6 +137,15 @@ noted here so they're not a surprise next time:
    was deployed; the exported+edited spec pattern is the fallback whenever a GPU
    deploy reports `requested: 100`.
 
+3. **Retired revisions hold GPU allocations.** Every Ready revision with a GPU
+   spec counts against the per-region allocation quota (3 here) even at 0%
+   traffic — three deploys in, the next rolling deploy fails with *"Quota
+   exceeded for total allowable count of GPUs"* because old + new transiently
+   need quota+1. After each successful GPU deploy, DELETE the just-superseded
+   revision (`gcloud run revisions delete …`; the image stays in the registry
+   for rollback). The latest revision can never be deleted directly — a failed
+   deploy's revision is only cleared by the next successful one.
+
 ## Throttling / API keys — do it at the edge
 
 Rate-limit and per-key quota state is per-user and mutable; putting it in a
