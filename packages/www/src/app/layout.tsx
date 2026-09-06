@@ -74,6 +74,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <script id="vtag-ai-js" async src="https://r2.leadsy.ai/tag.js" data-pid="RJsj6HaTqmPAQRQq" data-version="062024"></script>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
         <script dangerouslySetInnerHTML={{ __html: gtmInit }} />
         <Script
