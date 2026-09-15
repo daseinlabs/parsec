@@ -55,7 +55,7 @@ jobs:
             ext: .exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # PARSEC_DEFAULT_BRAIN_URL is baked into the binary at compile time
       # (brain.rs BAKED_BRAIN_URL): released plugins reach the production
@@ -149,7 +149,7 @@ jobs:
     # 15. Anything longer is a hang, not work — fail fast, free the runner.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: parsec-${{ matrix.platform == 'macos-arm64' && 'darwin-arm64' || 'win-x64' }}
@@ -429,7 +429,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # full history + tags: git describe stamps dev versions
       - uses: actions/download-artifact@v4
