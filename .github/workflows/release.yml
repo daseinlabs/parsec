@@ -107,7 +107,7 @@ jobs:
             Copy-Item (Join-Path $crt $dll) target/release/
           }
           Get-ChildItem target/release/*.dll
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: parsec-${{ matrix.platform }}
           path: |
@@ -409,7 +409,7 @@ jobs:
           $run = Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -ErrorAction SilentlyContinue
           foreach ($n in 'ParsecTray','ParsecProxy','ParsecInterceptor') { if ($run.$n) { throw "Run value $n left behind" } }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()   # the install/uninstall logs are the diagnosis when a smoke step fails
         with:
           name: parsec-installer-${{ matrix.platform }}
@@ -464,7 +464,7 @@ jobs:
           chmod 755 dist/parsec/bin/parsec   # upload-artifact drops exec bits
           (cd dist && zip -r parsec-plugin.zip parsec)
           echo 'Unzip, then: `claude --plugin-dir ./parsec`' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: parsec-plugin
           path: dist/parsec-plugin.zip
