@@ -124,8 +124,10 @@ export function handleSignInClick(
     }
   };
 
-  // Hard safety timeout: if GTM takes longer than 1200ms (or is blocked by an extension), navigate anyway
-  const safetyTimeout = setTimeout(navigate, 1200);
+  // Safety timeout: if GTM takes longer than 1200ms (or 150ms in dev/when GTM is absent), navigate anyway
+  const isGtmLoaded =
+    typeof window !== "undefined" && Boolean(window.google_tag_manager);
+  const safetyTimeout = setTimeout(navigate, isGtmLoaded ? 1200 : 150);
 
   // GTM dataLayer push with official GTM eventCallback & eventTimeout
   try {

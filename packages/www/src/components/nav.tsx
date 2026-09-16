@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Lockup } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SITE } from "@/lib/site";
@@ -32,6 +33,9 @@ function NavLink({
 }
 
 export function Nav() {
+  const pathname = usePathname();
+  const isDemo = pathname === "/demo" || pathname === "/demo/";
+
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-void/90 backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
@@ -46,13 +50,15 @@ export function Nav() {
               homepage section thanks to the /# prefix. Below `sm` only the
               lockup, Sign in, and the theme toggle fit on one line at 390px;
               the rest of the links live in the footer. */}
-          <span className="hidden items-center gap-5 sm:flex">
-            <NavLink href="/#pricing">Pricing</NavLink>
-            <NavLink href="/blog/">Blog</NavLink>
-            <NavLink href={SITE.links.github} external>
-              GitHub
-            </NavLink>
-          </span>
+          {!isDemo && (
+            <span className="hidden items-center gap-5 sm:flex">
+              <NavLink href="/#pricing">Pricing</NavLink>
+              <NavLink href="/blog/">Blog</NavLink>
+              <NavLink href={SITE.links.github} external>
+                GitHub
+              </NavLink>
+            </span>
+          )}
           <form
             action={SITE.links.app}
             method="GET"

@@ -19,6 +19,7 @@ export const SITE = {
     app: "https://app.getparsec.ai",
     github: "https://github.com/daseinlabs/plugins",
     daseinlabs: "https://daseinlabs.ai",
+    demoLeadsWebhook: process.env.NEXT_PUBLIC_DEMO_LEADS_SHEET_URL || "",
   },
   publisher: {
     name: "Dasein Labs",
