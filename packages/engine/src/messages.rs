@@ -201,3 +201,369 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // -----------------------------------------------------------------------
+    // helpers
+    // -----------------------------------------------------------------------
+
+    fn msg(role: &str, content: Value) -> Value {
+        json!({"role": role, "content": content})
+    }
+
+    fn asst_msg(content: Value) -> Value {
+        msg("assistant", content)
+    }
+
+    fn user_msg(content: Value) -> Value {
+        msg("user", content)
+    }
+
+    // -----------------------------------------------------------------------
+    // content_text (tested indirectly via steps_of / assistant_chunks_of)
+    // -----------------------------------------------------------------------
+
+    /// Plain string content block: steps_of extracts it as the observation text.
+    #[test]
+    fn test_content_text_plain_string() {
+        let messages = vec![
+            json!({"role": "assistant", "content": "do stuff", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(json!("hello from tool")),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].1, "hello from tool");
+    }
+
+    /// Array of content blocks with "text" fields: content_text joins them with " ".
+    #[test]
+    fn test_content_text_array_of_blocks() {
+        let content = json!([
+            {"type": "text", "text": "first"},
+            {"type": "text", "text": "second"}
+        ]);
+        let messages = vec![
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(content),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].1, "first second");
+    }
+
+    /// Content block objects without a "text" key contribute an empty string.
+    #[test]
+    fn test_content_text_array_missing_text_key_contributes_empty() {
+        let content = json!([
+            {"type": "text", "text": "has text"},
+            {"type": "image_url"}  // no "text" key
+        ]);
+        let messages = vec![
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(content),
+        ];
+        let steps = steps_of(&messages);
+        // "has text" + " " + "" = "has text "
+        assert_eq!(steps[0].1, "has text ");
+    }
+
+    /// A Null content value produces an empty observation string, not a panic.
+    #[test]
+    fn test_content_text_null_content_is_empty_string() {
+        let messages = vec![
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            json!({"role": "user", "content": null}),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps[0].1, "");
+    }
+
+    /// A number as content (wrong type) produces an empty string, not a panic.
+    #[test]
+    fn test_content_text_wrong_type_number_is_empty() {
+        let messages = vec![
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(json!(42)),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps[0].1, "");
+    }
+
+    // -----------------------------------------------------------------------
+    // tool_use blocks in assistant_chunks_of
+    // -----------------------------------------------------------------------
+
+    /// An assistant message whose content is an array containing a tool_use
+    /// block should be silently skipped by assistant_chunks_of (type != "text").
+    #[test]
+    fn test_assistant_chunks_of_skips_tool_use_content() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "1", "name": "bash", "input": {}}]
+            }),
+            user_msg(json!("obs")),
+        ];
+        let chunks = assistant_chunks_of(&messages);
+        // tool_use type → the entire message's content fails the 'ok' check → no chunks
+        assert!(
+            chunks.is_empty(),
+            "tool_use content must produce no assistant chunks, got {chunks:?}"
+        );
+    }
+
+    /// A mixed array with a tool_use block causes the whole message to be skipped.
+    #[test]
+    fn test_assistant_chunks_of_mixed_text_and_tool_use_skipped() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "hello"},
+                    {"type": "tool_use", "id": "1", "name": "bash", "input": {}}
+                ]
+            }),
+            user_msg(json!("obs")),
+        ];
+        let chunks = assistant_chunks_of(&messages);
+        assert!(
+            chunks.is_empty(),
+            "mixed text+tool_use must produce no assistant chunks"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // tool_result in user messages — steps_of and assistant_chunks_of
+    // -----------------------------------------------------------------------
+
+    /// steps_of correctly pairs an assistant command with a tool-role observation.
+    #[test]
+    fn test_steps_of_tool_role_observation() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "x",
+                "extra": {"actions": [{"command": "bash run.sh"}]}
+            }),
+            json!({"role": "tool", "content": "output from tool"}),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].0, "bash run.sh");
+        assert_eq!(steps[0].1, "output from tool");
+    }
+
+    /// A tool_result block whose content is an array of text blocks.
+    #[test]
+    fn test_steps_of_tool_result_content_array() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "x",
+                "extra": {"actions": [{"command": "ls"}]}
+            }),
+            user_msg(json!([
+                {"type": "tool_result", "tool_use_id": "1",
+                 "content": [{"type": "text", "text": "file1.rs"}]},
+                {"type": "text", "text": "extra note"}
+            ])),
+        ];
+        let steps = steps_of(&messages);
+        // content_text on an array extracts the "text" field from each object;
+        // {"type": "tool_result", ...} has no "text" key → ""
+        // {"type": "text", "text": "extra note"} → "extra note"
+        assert_eq!(steps[0].1, " extra note");
+    }
+
+    // -----------------------------------------------------------------------
+    // steps_of — edge cases
+    // -----------------------------------------------------------------------
+
+    /// Empty message list → empty steps.
+    #[test]
+    fn test_steps_of_empty_messages() {
+        assert!(steps_of(&[]).is_empty());
+    }
+
+    /// Only assistant messages, no following user/tool → no steps.
+    #[test]
+    fn test_steps_of_only_assistant_no_user() {
+        let messages = vec![json!({"role": "assistant", "content": "x"})];
+        assert!(steps_of(&messages).is_empty());
+    }
+
+    /// Only user messages → no steps (no preceding assistant).
+    #[test]
+    fn test_steps_of_only_user_messages() {
+        let messages = vec![user_msg(json!("hello"))];
+        assert!(steps_of(&messages).is_empty());
+    }
+
+    /// Multiple assistant-user pairs → correct step count.
+    #[test]
+    fn test_steps_of_multiple_turns() {
+        let messages = vec![
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "cmd1"}]}}),
+            user_msg(json!("obs1")),
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "cmd2"}]}}),
+            user_msg(json!("obs2")),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].0, "cmd1");
+        assert_eq!(steps[0].1, "obs1");
+        assert_eq!(steps[1].0, "cmd2");
+        assert_eq!(steps[1].1, "obs2");
+    }
+
+    /// Unknown role messages are ignored without panic.
+    #[test]
+    fn test_steps_of_unknown_role_ignored() {
+        let messages = vec![
+            json!({"role": "system", "content": "you are a helpful assistant"}),
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(json!("obs")),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1, "system role must be silently ignored");
+    }
+
+    /// Missing "role" field is treated as unknown → ignored.
+    #[test]
+    fn test_steps_of_missing_role_field_ignored() {
+        let messages = vec![
+            json!({"content": "no role here"}),
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(json!("obs")),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1);
+    }
+
+    /// "role" is a number (wrong type) → not a string, treated as unknown.
+    #[test]
+    fn test_steps_of_numeric_role_ignored() {
+        let messages = vec![
+            json!({"role": 42, "content": "weird"}),
+            json!({"role": "assistant", "content": "x", "extra": {"actions": [{"command": "ls"}]}}),
+            user_msg(json!("obs")),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // assistant_chunks_of — edge cases
+    // -----------------------------------------------------------------------
+
+    /// Empty messages → empty chunks.
+    #[test]
+    fn test_assistant_chunks_of_empty_messages() {
+        assert!(assistant_chunks_of(&[]).is_empty());
+    }
+
+    /// Whitespace-only content → py_has_content is false → no chunks.
+    #[test]
+    fn test_assistant_chunks_of_whitespace_only_content() {
+        let messages = vec![asst_msg(json!("   \n\t\n   ")), user_msg(json!("obs"))];
+        let chunks = assistant_chunks_of(&messages);
+        assert!(
+            chunks.is_empty(),
+            "whitespace-only content must produce no assistant chunks"
+        );
+    }
+
+    /// A plain text assistant message produces chunks with kind "asst".
+    #[test]
+    fn test_assistant_chunks_of_plain_text_produces_asst_chunks() {
+        let messages = vec![
+            asst_msg(json!("I am the assistant.\nThis is my reasoning.")),
+            user_msg(json!("obs")),
+        ];
+        let chunks = assistant_chunks_of(&messages);
+        assert!(!chunks.is_empty());
+        for c in &chunks {
+            assert_eq!(c.kind, "asst");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // truthy
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_truthy_semantics() {
+        assert!(!truthy(&json!(null)));
+        assert!(!truthy(&json!(false)));
+        assert!(!truthy(&json!(0)));
+        assert!(!truthy(&json!("")));
+        assert!(!truthy(&json!([])));
+        assert!(!truthy(&json!({})));
+
+        assert!(truthy(&json!(true)));
+        assert!(truthy(&json!(1)));
+        assert!(truthy(&json!("x")));
+        assert!(truthy(&json!(["a"])));
+        assert!(truthy(&json!({"a": 1})));
+    }
+
+    // -----------------------------------------------------------------------
+    // actions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_actions_extracts_command_strings() {
+        let m = json!({
+            "role": "assistant",
+            "extra": {"actions": [
+                {"command": "ls -la"},
+                {"command": "cat foo.rs"}
+            ]}
+        });
+        assert_eq!(actions(&m), vec!["ls -la", "cat foo.rs"]);
+    }
+
+    #[test]
+    fn test_actions_falls_back_to_query_when_command_empty() {
+        let m = json!({
+            "role": "assistant",
+            "extra": {"actions": [
+                {"command": "", "query": "search for something"}
+            ]}
+        });
+        assert_eq!(actions(&m), vec!["search for something"]);
+    }
+
+    #[test]
+    fn test_actions_missing_extra_returns_empty() {
+        let m = json!({"role": "assistant", "content": "hi"});
+        assert!(actions(&m).is_empty());
+    }
+
+    #[test]
+    fn test_actions_extra_actions_not_array_returns_empty() {
+        let m = json!({"role": "assistant", "extra": {"actions": "not an array"}});
+        assert!(actions(&m).is_empty());
+    }
+
+    /// Extra unknown fields in the message object are silently ignored.
+    #[test]
+    fn test_steps_of_extra_unknown_fields_ignored() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "x",
+                "extra": {"actions": [{"command": "ls"}]},
+                "unknown_future_field": {"nested": true},
+                "another_unknown": [1, 2, 3]
+            }),
+            user_msg(json!("obs")),
+        ];
+        let steps = steps_of(&messages);
+        assert_eq!(steps.len(), 1, "extra fields must be silently ignored");
+    }
+}
