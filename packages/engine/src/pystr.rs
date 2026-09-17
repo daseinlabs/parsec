@@ -237,6 +237,121 @@ mod tests {
     }
 
     #[test]
+    fn splitlines_handles_consecutive_starting_and_ending_breaks() {
+        assert_eq!(py_splitlines("\na"), vec!["", "a"]);
+        assert_eq!(py_splitlines("a\n"), vec!["a"]);
+        assert_eq!(py_splitlines("\na\n"), vec!["", "a"]);
+        assert_eq!(py_splitlines("a\n\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    #[test]
+    fn is_space_handles_unicode_and_ascii_separators() {
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\t'));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\u{2003}'));
+        assert!(py_is_space('\x1c'));
+        assert!(py_is_space('\x1f'));
+
+        assert!(!py_is_space('a'));
+        assert!(!py_is_space('1'));
+    }
+
+    #[test]
+    fn strip_removes_python_whitespace() {
+        assert_eq!(py_strip("  hello  "), "hello");
+        assert_eq!(py_strip("\t\nhello\r\n"), "hello");
+        assert_eq!(py_strip("\u{2003}hello\u{2003}"), "hello");
+        assert_eq!(py_strip("\x1chello\x1f"), "hello");
+        assert_eq!(py_strip("   "), "");
+        assert_eq!(py_strip("hello"), "hello");
+    }
+
+    #[test]
+    fn char_prefix_counts_unicode_characters() {
+        assert_eq!(char_prefix("héllo", 2), "hé");
+        assert_eq!(char_prefix("こんにちは", 3), "こんに");
+        assert_eq!(char_prefix("😀hello", 1), "😀");
+        assert_eq!(char_prefix("abc", 10), "abc");
+    }
+
+    #[test]
+    fn char_len_counts_characters_not_bytes() {
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("héllo"), 5);
+        assert_eq!(char_len("こんにちは"), 5);
+        assert_eq!(char_len("😀"), 1);
+        assert_eq!(char_len("😀hello"), 6);
+        assert_eq!(char_len(""), 0);
+    }
+
+    #[test]
+    fn json_dumps_sort_keys_changes_key_order() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"z": 1, "a": 2, "m": 3}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&v, true, true),
+            "{\"a\": 2, \"m\": 3, \"z\": 1}"
+        );
+    }
+
+    #[test]
+    fn json_dumps_without_sort_keys_preserves_key_order() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"z": 1, "a": 2, "m": 3}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            "{\"z\": 1, \"a\": 2, \"m\": 3}"
+        );
+    }
+
+    #[test]
+    fn json_dumps_ensure_ascii_controls_unicode_escaping() {
+        let v: serde_json::Value = serde_json::json!("café 😀");
+
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            "\"caf\\u00e9 \\ud83d\\ude00\""
+        );
+
+        assert_eq!(py_json_dumps_opts(&v, false, false), "\"café 😀\"");
+    }
+
+    #[test]
+    fn json_dumps_handles_basic_json_values() {
+        assert_eq!(py_json_dumps(&serde_json::Value::Null), "null");
+
+        assert_eq!(py_json_dumps(&serde_json::Value::Bool(true)), "true");
+
+        assert_eq!(py_json_dumps(&serde_json::Value::Bool(false)), "false");
+
+        assert_eq!(
+            py_json_dumps(&serde_json::json!([1, "hello", true, null])),
+            "[1, \"hello\", true, null]"
+        );
+    }
+
+    #[test]
+    fn has_content_checks_stripped_text() {
+        assert!(py_has_content("hello"));
+        assert!(py_has_content("  hello  "));
+        assert!(!py_has_content(""));
+        assert!(!py_has_content("   "));
+        assert!(!py_has_content("\t\n\r"));
+        assert!(!py_has_content("\u{2003}\u{2003}"));
+    }
+
+    #[test]
+    fn split_ws_handles_whitespace_runs() {
+        assert_eq!(py_split_ws("hello world"), vec!["hello", "world"]);
+        assert_eq!(py_split_ws("  hello   world  "), vec!["hello", "world"]);
+        assert_eq!(py_split_ws("\thello\nworld\r\n"), vec!["hello", "world"]);
+        assert_eq!(py_split_ws("   "), Vec::<&str>::new());
+        assert_eq!(py_split_ws(""), Vec::<&str>::new());
+    }
+
+    #[test]
     fn char_prefix_is_chars_not_bytes() {
         assert_eq!(char_prefix("héllo", 2), "hé");
         assert_eq!(char_prefix("ab", 10), "ab");
