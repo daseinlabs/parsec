@@ -397,4 +397,222 @@ mod tests {
             i64::MAX
         );
     }
+
+    #[test]
+    fn parse_grep_candidate_standard_and_colons() {
+        // Standard grep -n output: path:line:content
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:fn main() {"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+
+        // Multiple colons in content
+        assert_eq!(
+            parse_grep_candidate("src/lib.rs:15:let url = \"https://example.com:8080/path\";"),
+            Some(("lib.rs".to_string(), Some(15)))
+        );
+
+        // Grep without -n: path:content
+        assert_eq!(
+            parse_grep_candidate("src/lib.rs:pub fn example() {}"),
+            Some(("lib.rs".to_string(), None))
+        );
+
+        // Bare path (e.g. from `find` or `grep -l`)
+        assert_eq!(
+            parse_grep_candidate("packages/engine/src/chunking.rs"),
+            Some(("chunking.rs".to_string(), None))
+        );
+
+        // Trailing colon on bare path
+        assert_eq!(
+            parse_grep_candidate("packages/engine/src/chunking.rs:"),
+            Some(("chunking.rs".to_string(), None))
+        );
+
+        // Line with leading/trailing whitespace
+        assert_eq!(
+            parse_grep_candidate("   src/test.py:99:assert True   "),
+            Some(("test.py".to_string(), Some(99)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_edge_cases_and_non_matches() {
+        // Empty or whitespace-only
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("   \t  "), None);
+
+        // Reranked lines are explicitly ignored
+        assert_eq!(
+            parse_grep_candidate("[reranked] score: 0.99 path/to/file.rs:10:code"),
+            None
+        );
+
+        // Plain text without a path extension or slash
+        assert_eq!(parse_grep_candidate("just a log message with no file"), None);
+        assert_eq!(parse_grep_candidate("error: something failed"), None);
+
+        // Non-numeric line number falls back to path:content
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:NaN:not a number"),
+            Some(("main.rs".to_string(), None))
+        );
+
+        // Empty line number (double colon) falls back to path:content
+        assert_eq!(
+            parse_grep_candidate("src/main.rs::empty line number"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_windows_paths() {
+        // Path with backslashes and file extension matches EXT regex
+        assert_eq!(
+            parse_grep_candidate(r"project\src\module.rs:10:fn test()"),
+            Some((r"project\src\module.rs".to_string(), Some(10)))
+        );
+
+        // Windows drive letters: "C:\path..." splits on ':' so parts[0] is "C".
+        // Documents that bare drive letter lines are currently unparsed or
+        // treated as non-candidate because 'C' lacks an extension or forward slash.
+        assert_eq!(
+            parse_grep_candidate(r"C:\project\file.rs:10:code"),
+            None
+        );
+    }
+
+    #[test]
+    fn sed_base_formats_and_edge_cases() {
+        // Standard range sed -n '10,20p'
+        assert_eq!(sed_base("sed -n '10,20p' src/main.rs"), 10);
+        assert_eq!(sed_base("sed -n '1,100p' file.txt"), 1);
+
+        // Without quotes
+        assert_eq!(sed_base("sed -n 5,15p src/main.rs"), 5);
+
+        // With -e flag
+        assert_eq!(sed_base("sed -n -e '42,50p' src/main.rs"), 42);
+
+        // Single line sed -n '15p' or sed -n 15p
+        assert_eq!(sed_base("sed -n 25p src/main.rs"), 25);
+        assert_eq!(sed_base("sed   -n   30p   src/main.rs"), 30);
+
+        // Inverted range captures the first number
+        assert_eq!(sed_base("sed -n '50,10p' src/main.rs"), 50);
+
+        // Non-sed commands default to base line 1
+        assert_eq!(sed_base("cat src/main.rs"), 1);
+        assert_eq!(sed_base("head -n 20 src/main.rs"), 1);
+        assert_eq!(sed_base("tail -n 20 src/main.rs"), 1);
+        assert_eq!(sed_base(""), 1);
+    }
+
+    #[test]
+    fn chunk_observation_read_windows_and_metadata() {
+        let cmd = "cat src/file.rs";
+        let obs = "line 1\nline 2\nline 3\nline 4\nline 5";
+        let step = 3;
+        let win = 2;
+
+        let chunks = chunk_observation(cmd, obs, step, win, None, ChunkMode::Fixed);
+        assert_eq!(chunks.len(), 3);
+
+        // Chunk 0: lines 1-2
+        assert_eq!(chunks[0].text, "line 1\nline 2");
+        assert_eq!(chunks[0].file, Some("file.rs".to_string()));
+        assert_eq!(chunks[0].lo, Some(1));
+        assert_eq!(chunks[0].hi, Some(2));
+        assert_eq!(chunks[0].kind, "read");
+        assert_eq!(chunks[0].step, step);
+        assert_eq!(chunks[0].cmd, cmd);
+
+        // Chunk 1: lines 3-4
+        assert_eq!(chunks[1].text, "line 3\nline 4");
+        assert_eq!(chunks[1].lo, Some(3));
+        assert_eq!(chunks[1].hi, Some(4));
+
+        // Chunk 2: line 5
+        assert_eq!(chunks[2].text, "line 5");
+        assert_eq!(chunks[2].lo, Some(5));
+        assert_eq!(chunks[2].hi, Some(5));
+    }
+
+    #[test]
+    fn chunk_observation_grep_and_other_command() {
+        let cmd = "grep -n foo src/*.rs";
+        let obs = "src/a.rs:10:foo here\nnon matching output line\nsrc/b.rs:20:foo there";
+        let step = 1;
+        let chunks = chunk_observation(cmd, obs, step, 40, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].kind, "grep");
+        assert_eq!(chunks[0].file, Some("a.rs".to_string()));
+        assert_eq!(chunks[0].lo, Some(10));
+
+        assert_eq!(chunks[1].kind, "other");
+        assert_eq!(chunks[1].text, "non matching output line");
+        assert_eq!(chunks[1].file, None);
+
+        assert_eq!(chunks[2].kind, "grep");
+        assert_eq!(chunks[2].file, Some("b.rs".to_string()));
+        assert_eq!(chunks[2].lo, Some(20));
+    }
+
+    #[test]
+    fn chunk_observation_returncode_extraction() {
+        let obs_with_rc = "<returncode> 1 </returncode>\nError: File not found.";
+        let chunks = chunk_observation("ls not_existing", obs_with_rc, 0, 40, None, ChunkMode::Fixed);
+        assert!(!chunks.is_empty());
+        assert_eq!(chunks[0].rc, Some(1));
+
+        let obs_colon_rc = "returncode: 0\nSuccess!";
+        let chunks2 = chunk_observation("test", obs_colon_rc, 0, 40, None, ChunkMode::Fixed);
+        assert_eq!(chunks2[0].rc, Some(0));
+
+        let obs_negative_rc = "<returncode>-9</returncode>\nKilled";
+        let chunks3 = chunk_observation("run", obs_negative_rc, 0, 40, None, ChunkMode::Fixed);
+        assert_eq!(chunks3[0].rc, Some(-9));
+    }
+
+    #[test]
+    fn chunk_assistant_windows_and_empty() {
+        // Assistant text chunking with win=2
+        let text = "First paragraph.\nSecond paragraph.\nThird paragraph.";
+        let chunks = chunk_assistant(text, 2, 2);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].text, "First paragraph.\nSecond paragraph.");
+        assert_eq!(chunks[0].kind, "asst");
+        assert_eq!(chunks[0].step, 2);
+        assert_eq!(chunks[1].text, "Third paragraph.");
+
+        // Empty assistant text returns no chunks
+        assert!(chunk_assistant("", 0, 40).is_empty());
+
+        // Whitespace-only assistant text returns no chunks
+        assert!(chunk_assistant("   \n\t  \n  ", 0, 40).is_empty());
+    }
+
+    #[test]
+    fn chunking_full_coverage_invariant() {
+        // Full-coverage invariant: every non-empty line of content is retained
+        // across chunks without dropping lines.
+        let cmd = "python run.py";
+        let lines: Vec<String> = (1..=25).map(|i| format!("output line {i}")).collect();
+        let obs = lines.join("\n");
+
+        for win in [1, 5, 10, 25, 50] {
+            let chunks = chunk_observation(cmd, &obs, 0, win, None, ChunkMode::Fixed);
+            let reconstructed_lines: Vec<&str> = chunks
+                .iter()
+                .flat_map(|c| py_splitlines(&c.text))
+                .collect();
+            let expected_lines: Vec<&str> = py_splitlines(&obs);
+            assert_eq!(
+                reconstructed_lines, expected_lines,
+                "Failed coverage with win={win}"
+            );
+        }
+    }
 }

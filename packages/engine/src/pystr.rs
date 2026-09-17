@@ -243,6 +243,201 @@ mod tests {
     }
 
     #[test]
+    fn splitlines_all_eleven_line_breaks() {
+        // Python's str.splitlines() splits on exactly 11 line break sequences:
+        // \n, \r, \r\n, \x0b, \x0c, \x1c, \x1d, \x1e, \u{85}, \u{2028}, \u{2029}
+        let breaks = [
+            ("\n", "LINE_FEED"),
+            ("\r", "CARRIAGE_RETURN"),
+            ("\x0b", "LINE_TABULATION"),
+            ("\x0c", "FORM_FEED"),
+            ("\x1c", "FILE_SEPARATOR"),
+            ("\x1d", "GROUP_SEPARATOR"),
+            ("\x1e", "RECORD_SEPARATOR"),
+            ("\u{85}", "NEXT_LINE"),
+            ("\u{2028}", "LINE_SEPARATOR"),
+            ("\u{2029}", "PARAGRAPH_SEPARATOR"),
+        ];
+        for (brk, desc) in breaks {
+            let input = format!("first{brk}second");
+            assert_eq!(
+                py_splitlines(&input),
+                vec!["first", "second"],
+                "Failed on line break: {desc}"
+            );
+        }
+
+        // \r\n must be consumed as a SINGLE line break
+        assert_eq!(
+            py_splitlines("first\r\nsecond"),
+            vec!["first", "second"],
+            "Failed on CRLF pair"
+        );
+    }
+
+    #[test]
+    fn splitlines_crlf_and_consecutive_breaks() {
+        // Trailing newline does NOT produce an extra empty element
+        assert_eq!(py_splitlines("hello\n"), vec!["hello"]);
+        assert_eq!(py_splitlines("hello\r\n"), vec!["hello"]);
+        assert_eq!(py_splitlines("hello\r"), vec!["hello"]);
+
+        // Leading newlines DO produce empty elements for preceding empty lines
+        assert_eq!(py_splitlines("\nhello"), vec!["", "hello"]);
+        assert_eq!(py_splitlines("\r\nhello"), vec!["", "hello"]);
+
+        // Consecutive breaks
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+        assert_eq!(py_splitlines("\r\n\r\n"), vec!["", ""]);
+        assert_eq!(py_splitlines("a\n\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("a\r\n\r\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("a\r\n\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("a\n\r\nb"), vec!["a", "", "b"]);
+
+        // Mixed with unicode breaks
+        assert_eq!(
+            py_splitlines("line1\u{85}\u{2028}line3\r\n"),
+            vec!["line1", "", "line3"]
+        );
+
+        // Entirely empty string
+        assert_eq!(py_splitlines(""), Vec::<&str>::new());
+
+        // String with no breaks
+        assert_eq!(py_splitlines("no breaks here"), vec!["no breaks here"]);
+    }
+
+    #[test]
+    fn py_strip_and_py_is_space_edge_cases() {
+        // Standard ASCII and unicode whitespace
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\t'));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\r'));
+        assert!(py_is_space('\x0b'));
+        assert!(py_is_space('\x0c'));
+        assert!(py_is_space('\u{a0}')); // Non-breaking space
+        assert!(py_is_space('\u{2000}')); // En quad
+        assert!(py_is_space('\u{2028}')); // Line separator
+        assert!(py_is_space('\u{2029}')); // Paragraph separator
+        assert!(py_is_space('\u{3000}')); // Ideographic space
+
+        // Python-specific additions: ASCII 0x1c..0x1f
+        assert!(py_is_space('\x1c')); // FS
+        assert!(py_is_space('\x1d')); // GS
+        assert!(py_is_space('\x1e')); // RS
+        assert!(py_is_space('\x1f')); // US
+
+        // Non-whitespace characters must return false
+        assert!(!py_is_space('a'));
+        assert!(!py_is_space('0'));
+        assert!(!py_is_space('\0'));
+        assert!(!py_is_space('\u{200b}')); // Zero-width space is NOT White_Space
+
+        // py_strip behavior
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("   \t\r\n\x1c\x1d\x1e\x1f   "), "");
+        assert_eq!(py_strip("no whitespace"), "no whitespace");
+        assert_eq!(py_strip(" \x1ctext \x1f"), "text");
+        assert_eq!(py_strip("\t\n  hello world  \r\n"), "hello world");
+
+        // py_has_content
+        assert!(!py_has_content(""));
+        assert!(!py_has_content("  \t\r\n \x1c "));
+        assert!(py_has_content("a"));
+        assert!(py_has_content("  a  "));
+        assert!(py_has_content("\x1f."));
+
+        // py_split_ws
+        assert_eq!(
+            py_split_ws("  alpha \t\x1c beta   gamma\x1f\n delta "),
+            vec!["alpha", "beta", "gamma", "delta"]
+        );
+        assert_eq!(py_split_ws(""), Vec::<&str>::new());
+        assert_eq!(py_split_ws("    \t\x1c  "), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn char_prefix_and_char_len_multibyte_and_bounds() {
+        // Multi-byte UTF-8 characters:
+        // 'é' is 2 bytes, '語' is 3 bytes, '🦀' is 4 bytes
+        let s = "héllo 日本語 🦀 world";
+        // 'h'(1) + 'é'(1) + 'l'(1) + 'l'(1) + 'o'(1) + ' '(1) +
+        // '日'(1) + '本'(1) + '語'(1) + ' '(1) + '🦀'(1) + ' '(1) +
+        // 'w'(1) + 'o'(1) + 'r'(1) + 'l'(1) + 'd'(1) = 17 chars
+        assert_eq!(char_len(s), 17);
+        assert!(s.len() > 17); // Byte length is significantly larger
+
+        // Prefix tests
+        assert_eq!(char_prefix(s, 0), "");
+        assert_eq!(char_prefix(s, 1), "h");
+        assert_eq!(char_prefix(s, 2), "hé");
+        assert_eq!(char_prefix(s, 9), "héllo 日本語");
+        assert_eq!(char_prefix(s, 11), "héllo 日本語 🦀");
+        assert_eq!(char_prefix(s, 17), s);
+        assert_eq!(char_prefix(s, 100), s); // Exceeding bounds returns original
+
+        // Astral plane surrogate pair emoji
+        let emoji = "🚀🦀✨";
+        assert_eq!(char_len(emoji), 3);
+        assert_eq!(char_prefix(emoji, 1), "🚀");
+        assert_eq!(char_prefix(emoji, 2), "🚀🦀");
+        assert_eq!(char_prefix(emoji, 3), "🚀🦀✨");
+        assert_eq!(char_prefix(emoji, 4), "🚀🦀✨");
+
+        // Empty string prefix
+        assert_eq!(char_prefix("", 0), "");
+        assert_eq!(char_prefix("", 5), "");
+        assert_eq!(char_len(""), 0);
+    }
+
+    #[test]
+    fn py_json_dumps_opts_ascii_and_sorting() {
+        use serde_json::json;
+
+        // ensure_ascii=true escapes non-ASCII characters to \uXXXX
+        let v = json!({"accent": "café", "emoji": "🦀"});
+        let out_ascii = py_json_dumps_opts(&v, true, true);
+        assert_eq!(
+            out_ascii,
+            "{\"accent\": \"caf\\u00e9\", \"emoji\": \"\\ud83e\\udd80\"}"
+        );
+
+        // ensure_ascii=false preserves raw UTF-8 non-ASCII characters
+        let out_raw = py_json_dumps_opts(&v, true, false);
+        assert_eq!(out_raw, "{\"accent\": \"café\", \"emoji\": \"🦀\"}");
+
+        // Control characters are escaped regardless of ensure_ascii
+        let ctrl = json!({"ctl": "line1\nline2\ttab\r\x08\x0c\"quoted\\slash"});
+        let out_ctrl = py_json_dumps_opts(&ctrl, false, false);
+        assert_eq!(
+            out_ctrl,
+            "{\"ctl\": \"line1\\nline2\\ttab\\r\\b\\f\\\"quoted\\\\slash\"}"
+        );
+
+        // Low ASCII control characters (< 0x20) use \u00xx
+        let low_ctrl = json!({"low": "\x01\x1e"});
+        let out_low = py_json_dumps_opts(&low_ctrl, false, false);
+        assert_eq!(out_low, "{\"low\": \"\\u0001\\u001e\"}");
+
+        // sort_keys=true sorts keys lexicographically
+        let unsorted = json!({"z": 1, "a": 2, "m": 3});
+        let sorted = py_json_dumps_opts(&unsorted, true, true);
+        assert_eq!(sorted, "{\"a\": 2, \"m\": 3, \"z\": 1}");
+
+        // Complex nested structures with sort_keys=true
+        let nested = json!({
+            "nums": [1, 2.5, null, true, false],
+            "dict": {"b": 2, "a": 1}
+        });
+        let out_nested = py_json_dumps_opts(&nested, true, true);
+        assert_eq!(
+            out_nested,
+            "{\"dict\": {\"a\": 1, \"b\": 2}, \"nums\": [1, 2.5, null, true, false]}"
+        );
+    }
+
+    #[test]
     fn float_repr_matches_cpython() {
         for (f, want) in [
             (1e-7, "1e-07"),
@@ -253,11 +448,15 @@ mod tests {
             (123.456, "123.456"),
             (1.0, "1.0"),
             (-0.0, "-0.0"),
+            (0.0, "0.0"),
             (0.5, "0.5"),
+            (-1.0, "-1.0"),
             (3.14e100, "3.14e+100"),
             (-2.5e-7, "-2.5e-07"),
             (1.1534175185142759, "1.1534175185142759"),
             (9999999999999998.0, "9999999999999998.0"),
+            (-0.0001, "-0.0001"),
+            (-0.00001, "-1e-05"),
         ] {
             assert_eq!(py_float_repr(f), want, "repr({f})");
         }
