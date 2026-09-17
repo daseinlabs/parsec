@@ -397,4 +397,61 @@ mod tests {
             i64::MAX
         );
     }
+
+    // --- Paste these INSIDE the existing `#[cfg(test)] mod tests { ... }` block
+    // in packages/engine/src/chunking.rs, as additional #[test] fns alongside
+    // `line_numbers_beyond_i64_saturate_not_abort`. sed_base is private, so it
+    // can only be exercised from inside the module — an external tests/ file
+    // cannot see it.
+
+    #[test]
+    fn sed_base_range_uses_the_first_number_as_the_start() {
+        assert_eq!(sed_base("sed -n '10,20p' file.py"), 10);
+    }
+
+    /// BUG: SED_ONE requires whitespace directly before the digits
+    /// (`-n[\s...]+(\d+)p`). Real, correctly-quoted usage — `sed -n '15p' file`
+    /// — puts a quote character in that spot instead of whitespace, so the
+    /// regex never matches and sed_base silently falls back to line 1. The
+    /// unquoted form (which almost nobody actually writes) is the only form
+    /// that works.
+    #[test]
+    fn sed_base_quoted_single_line_form_is_not_detected() {
+        assert_eq!(
+            sed_base("sed -n '15p' file.py"),
+            1,
+            "quoted -n '15p' is misread as \"no sed pattern found\""
+        );
+    }
+
+    #[test]
+    fn sed_base_unquoted_single_line_form_works() {
+        assert_eq!(sed_base("sed -n 15p file.py"), 15);
+    }
+
+    /// Whitespace-flavor is not the constraint — tabs work fine, as long as the
+    /// digits directly follow with no quote in between.
+    #[test]
+    fn sed_base_tolerates_tabs_when_unquoted() {
+        assert_eq!(sed_base("sed\t-n\t5p file.py"), 5);
+    }
+
+    /// The range regex is purely syntactic: it does not validate that the first
+    /// number is less than the second, so an inverted range still "succeeds"
+    /// and returns the (nonsensical) first number as the base.
+    #[test]
+    fn sed_base_inverted_range_is_not_validated() {
+        assert_eq!(sed_base("sed -n '20,10p' file.py"), 20);
+    }
+
+    #[test]
+    fn sed_base_non_numeric_range_falls_back_to_default() {
+        assert_eq!(sed_base("sed -n 'abc,defp' file.py"), 1);
+    }
+
+    #[test]
+    fn sed_base_no_sed_command_defaults_to_one() {
+        assert_eq!(sed_base("cat file.py"), 1);
+        assert_eq!(sed_base(""), 1);
+    }
 }
