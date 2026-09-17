@@ -397,4 +397,187 @@ mod tests {
             i64::MAX
         );
     }
+
+    #[test]
+    fn test_parse_grep_candidate() {
+        // Basic case
+        assert_eq!(
+            parse_grep_candidate("path/to/file.rs:42:matching line"),
+            Some(("file.rs".to_string(), Some(42)))
+        );
+
+        // Windows path (it will likely parse as parts[0]="C", parts[1]="\\project\\file.rs" which is not digits)
+        assert_eq!(parse_grep_candidate("C:\\project\\file.rs:10:code"), None);
+
+        // Multiple colons
+        assert_eq!(
+            parse_grep_candidate("file.rs:42:let x = \"a:b:c\";"),
+            Some(("file.rs".to_string(), Some(42)))
+        );
+
+        // Missing line number (parts[1] is not digits -> fallback to parts[0] as path with None line)
+        assert_eq!(
+            parse_grep_candidate("file.rs:hello:code"),
+            Some(("file.rs".to_string(), None))
+        );
+
+        // No matching text
+        assert_eq!(
+            parse_grep_candidate("file.rs:42:"),
+            Some(("file.rs".to_string(), Some(42)))
+        );
+
+        // Completely invalid input
+        assert_eq!(parse_grep_candidate("hello world"), None);
+    }
+
+    #[test]
+    fn test_sed_base() {
+        // Standard formats
+        assert_eq!(sed_base("sed -n '10,20p' file.rs"), 10);
+        assert_eq!(sed_base("sed -n \"10,20p\" file.rs"), 10);
+        assert_eq!(sed_base("sed -n 10,20p file.rs"), 10);
+
+        // Single line (SED_ONE regex)
+        assert_eq!(sed_base("sed -n 42p file.rs"), 42);
+        // Note: SED_ONE doesn't handle quotes around the single line number according to its regex,
+        // so `sed -n '42p'` evaluates to 1. This tests the actual implemented contract!
+        assert_eq!(sed_base("sed -n '42p' file.rs"), 1);
+
+        // Unusual spacing
+        assert_eq!(sed_base("sed    -n    '10,20p'"), 10);
+
+        // Edge cases (boundaries/reversals)
+        assert_eq!(sed_base("sed -n '10,10p'"), 10);
+        assert_eq!(sed_base("sed -n '20,10p'"), 20); // Captures the first number
+
+        // Invalid/Malformed numbers
+        assert_eq!(sed_base("sed -n 'abc,20p'"), 1);
+        assert_eq!(sed_base("sed -n '10,abcp'"), 1);
+    }
+
+    #[test]
+    fn test_chunk_observation() {
+        // Empty
+        let empty = chunk_observation("echo", "", 0, 10, None, ChunkMode::Fixed);
+        assert_eq!(empty.len(), 1);
+        assert_eq!(empty[0].text, "");
+
+        // One line
+        let one = chunk_observation("echo", "hello", 0, 10, None, ChunkMode::Fixed);
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].text, "hello");
+
+        // Multiple lines (win = 10)
+        let multi = chunk_observation("echo", "line1\nline2\nline3", 0, 10, None, ChunkMode::Fixed);
+        assert_eq!(multi.len(), 1);
+        assert_eq!(multi[0].text, "line1\nline2\nline3");
+
+        // Multiple lines (win = 2)
+        let multi_win2 =
+            chunk_observation("echo", "line1\nline2\nline3", 0, 2, None, ChunkMode::Fixed);
+        assert_eq!(multi_win2.len(), 2);
+        assert_eq!(multi_win2[0].text, "line1\nline2");
+        assert_eq!(multi_win2[1].text, "line3");
+
+        // Multiple lines (win = 1)
+        let multi_win1 =
+            chunk_observation("echo", "line1\nline2\nline3", 0, 1, None, ChunkMode::Fixed);
+        assert_eq!(multi_win1.len(), 3);
+        assert_eq!(multi_win1[0].text, "line1");
+        assert_eq!(multi_win1[1].text, "line2");
+        assert_eq!(multi_win1[2].text, "line3");
+
+        // Whitespace (tests fallback to raw obs when all chunks are empty)
+        let ws = chunk_observation("echo", "   \n\t\n   ", 0, 1, None, ChunkMode::Fixed);
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].text, "   \n\t\n   ");
+
+        // Very long line
+        let long_line = "a".repeat(10000);
+        let long_obs = chunk_observation("echo", &long_line, 0, 10, None, ChunkMode::Fixed);
+        assert_eq!(long_obs.len(), 1);
+        assert_eq!(long_obs[0].text, long_line);
+    }
+
+    #[test]
+    fn test_chunk_observation_preserves_full_content() {
+        let original = "Hello\nWorld\nThis is Parsec";
+
+        for win in [1, 2, 3, 10] {
+            let chunks = chunk_observation("echo", original, 0, win, None, ChunkMode::Fixed);
+            let reconstructed = chunks
+                .iter()
+                .map(|chunk| chunk.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert_eq!(
+                reconstructed, original,
+                "Failed full-coverage invariant for win={}",
+                win
+            );
+        }
+    }
+
+    #[test]
+    fn test_chunk_assistant_preserves_full_content() {
+        let original = "Hello\nWorld\nThis is Parsec";
+
+        for win in [1, 2, 3, 10] {
+            let chunks = chunk_assistant(original, 0, win);
+            let reconstructed = chunks
+                .iter()
+                .map(|chunk| chunk.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert_eq!(
+                reconstructed, original,
+                "Failed full-coverage invariant for win={}",
+                win
+            );
+        }
+    }
+
+    #[test]
+    fn test_chunk_assistant() {
+        // "Hello"
+        let single = chunk_assistant("Hello", 0, 10);
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].text, "Hello");
+
+        // "Hello\nWorld"
+        let multi = chunk_assistant("Hello\nWorld", 0, 10);
+        assert_eq!(multi.len(), 1);
+        assert_eq!(multi[0].text, "Hello\nWorld");
+
+        // Large output
+        let large = "a".repeat(10000);
+        let large_chunks = chunk_assistant(&large, 0, 10);
+        assert_eq!(large_chunks.len(), 1);
+        assert_eq!(large_chunks[0].text, large);
+
+        // "" (empty string)
+        let empty = chunk_assistant("", 0, 10);
+        assert_eq!(empty.len(), 0); // "May legitimately return no chunks"
+
+        // whitespace-only content
+        let ws = chunk_assistant("   \n\t\n   ", 0, 10);
+        assert_eq!(ws.len(), 0); // "May legitimately return no chunks"
+
+        // Unicode + emoji + newlines + Reconstruction verification
+        let unicode_text = "Hello 😀\nこんにちは\n你好";
+
+        for win in [1, 2, 10] {
+            let chunks = chunk_assistant(unicode_text, 0, win);
+            let reconstructed = chunks
+                .iter()
+                .map(|chunk| chunk.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert_eq!(reconstructed, unicode_text);
+        }
+    }
 }

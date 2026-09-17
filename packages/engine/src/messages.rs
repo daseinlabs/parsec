@@ -201,3 +201,162 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_content_text_extraction() {
+        // Simple string content block
+        let string_content = json!("Hello");
+        assert_eq!(content_text(&string_content), "Hello");
+
+        // Array of content blocks
+        let array_content = json!([
+            {
+                "type": "text",
+                "text": "Hello"
+            },
+            {
+                "type": "text",
+                "text": "World"
+            }
+        ]);
+
+        // Note: The implementation of `content_text` joins array parts with a space
+        assert_eq!(content_text(&array_content), "Hello World");
+
+        // Missing "text" field in an object block
+        let missing_text = json!([
+            {
+                "type": "text"
+            },
+            {
+                "type": "text",
+                "text": "World"
+            }
+        ]);
+        assert_eq!(content_text(&missing_text), " World"); // First block returns "", joined with " World"
+
+        // Invalid types
+        assert_eq!(content_text(&json!(null)), "");
+        assert_eq!(content_text(&json!(123)), "");
+    }
+
+    #[test]
+    fn test_actions_extraction() {
+        // Test extraction of command and query from extra.actions
+        let msg = json!({
+            "extra": {
+                "actions": [
+                    { "command": "ls -l" },
+                    { "query": "find stuff" },
+                    { "other": "ignored" }
+                ]
+            }
+        });
+
+        let acts = actions(&msg);
+        assert_eq!(acts.len(), 3);
+        assert_eq!(acts[0], "ls -l");
+        assert_eq!(acts[1], "find stuff");
+        assert_eq!(acts[2], ""); // Missing command/query defaults to ""
+    }
+
+    #[test]
+    fn test_blob_tokens_tool_calls() {
+        // Test extraction of tokens from provider_specific_fields inside tool_calls
+        let msg = json!({
+            "tool_calls": [
+                {
+                    "provider_specific_fields": {
+                        "tool_id": "call_123",
+                        "tool_name": "bash",
+                        "input": "echo hello"
+                    }
+                }
+            ]
+        });
+
+        let tokens = blob_tokens(&msg);
+        assert!(tokens > 0); // Ensures it successfully reads and weighs the tool call fields
+    }
+
+    #[test]
+    fn test_steps_of_tool_results() {
+        let conversation = json!([
+            {
+                "role": "assistant",
+                "extra": {
+                    "actions": [
+                        { "command": "echo 'hello'" }
+                    ]
+                }
+            },
+            {
+                // Normal tool result
+                "role": "tool",
+                "content": "hello\n"
+            },
+            {
+                "role": "assistant",
+                "extra": {
+                    "actions": [
+                        { "command": "touch new_file.txt" }
+                    ]
+                }
+            },
+            {
+                // Empty tool result
+                "role": "tool",
+                "content": ""
+            }
+        ]);
+
+        let steps = steps_of(conversation.as_array().unwrap());
+
+        assert_eq!(steps.len(), 2);
+
+        // Normal tool result verification
+        assert_eq!(steps[0].0, "echo 'hello'");
+        assert_eq!(steps[0].1, "hello\n");
+
+        // Empty tool result verification
+        assert_eq!(steps[1].0, "touch new_file.txt");
+        assert_eq!(steps[1].1, "");
+    }
+
+    #[test]
+    fn test_malformed_json_graceful_handling() {
+        // We pass an array of malformed messages to `assistant_chunks_of`.
+        // The contract dictates it should gracefully handle these without panicking.
+        let conversation = json!([
+            {
+                "role": "assistant",
+                "content": 123 // Invalid content type (number instead of string/array)
+            },
+            {
+                "role": "user",
+                "content": null // Null content
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    { "type": "text" } // Missing the actual "text" field
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    1, 2, 3 // Array of integers instead of objects
+                ]
+            }
+        ]);
+
+        // It successfully processes the conversation, skipping the invalid blocks safely.
+        let chunks = assistant_chunks_of(conversation.as_array().unwrap());
+        assert_eq!(chunks.len(), 0);
+    }
+}

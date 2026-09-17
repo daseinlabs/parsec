@@ -240,6 +240,9 @@ mod tests {
     fn char_prefix_is_chars_not_bytes() {
         assert_eq!(char_prefix("héllo", 2), "hé");
         assert_eq!(char_prefix("ab", 10), "ab");
+        assert_eq!(char_prefix("hello", 100), "hello");
+        assert_eq!(char_prefix("Hello 😀 世界", 7), "Hello 😀");
+        assert_eq!(char_prefix("café", 3), "caf");
     }
 
     #[test]
@@ -267,5 +270,95 @@ mod tests {
     fn json_dumps_default_formatting() {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
+    }
+
+    #[test]
+    fn test_char_len() {
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("café"), 4);
+        assert_eq!(char_len("こんにちは"), 5);
+        assert_eq!(char_len("你好"), 2);
+        assert_eq!(char_len("😀"), 1);
+        assert_eq!(char_len("Hello 😀 世界"), 10);
+    }
+
+    #[test]
+    fn test_py_json_dumps_opts() {
+        // sort_keys test
+        let obj = serde_json::json!({
+            "z": 1,
+            "a": 2
+        });
+
+        // sort_keys = true ensures "a" comes before "z"
+        assert_eq!(
+            py_json_dumps_opts(&obj, true, false),
+            "{\"a\": 2, \"z\": 1}"
+        );
+        // sort_keys = false preserves iteration/insertion order
+        assert_eq!(
+            py_json_dumps_opts(&obj, false, false),
+            "{\"z\": 1, \"a\": 2}"
+        );
+
+        // ensure_ascii test
+        let unicode_arr = serde_json::json!(["你好", "😀", "é"]);
+
+        // ensure_ascii = true: non-ASCII are escaped (Python surrogate pairs for emoji)
+        assert_eq!(
+            py_json_dumps_opts(&unicode_arr, false, true),
+            "[\"\\u4f60\\u597d\", \"\\ud83d\\ude00\", \"\\u00e9\"]"
+        );
+
+        // ensure_ascii = false: unicode remains UTF-8
+        assert_eq!(
+            py_json_dumps_opts(&unicode_arr, false, false),
+            "[\"你好\", \"😀\", \"é\"]"
+        );
+    }
+
+    #[test]
+    fn test_py_is_space() {
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\r'));
+        assert!(py_is_space('\t'));
+        assert!(py_is_space('\x1c'));
+        assert!(py_is_space('\x1f'));
+        assert!(!py_is_space('a'));
+        assert!(!py_is_space('\0'));
+    }
+
+    #[test]
+    fn test_py_splitlines_handles_crlf_as_single_break() {
+        assert_eq!(py_splitlines("hello\nworld"), vec!["hello", "world"]);
+        assert_eq!(py_splitlines("hello\r\nworld"), vec!["hello", "world"]);
+        assert_eq!(py_splitlines("hello\n\nworld"), vec!["hello", "", "world"]);
+        assert_eq!(py_splitlines("\nhello"), vec!["", "hello"]);
+        assert_eq!(py_splitlines("hello\n"), vec!["hello"]);
+    }
+
+    #[test]
+    fn test_py_splitlines_handles_unicode_line_breaks() {
+        assert_eq!(
+            py_splitlines("a\x0bb\x0cc\x1cd\x1de\x1ef\u{85}g\u{2028}h\u{2029}i"),
+            vec!["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+        );
+    }
+
+    #[test]
+    fn test_py_strip() {
+        assert_eq!(py_strip("  hello  "), "hello");
+        assert_eq!(py_strip("\thello\t"), "hello");
+        assert_eq!(py_strip("\nhello\n"), "hello");
+        assert_eq!(py_strip("     "), "");
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("hello"), "hello");
+
+        // Unicode and Python-specific whitespace
+        assert_eq!(
+            py_strip("\x1c\x1d\x1e\x1f hello \u{85}\u{2028}\u{2029}"),
+            "hello"
+        );
     }
 }
