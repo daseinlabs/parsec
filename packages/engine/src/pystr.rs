@@ -155,7 +155,24 @@ pub fn py_float_repr(f: f64) -> String {
     }
     // {:e} gives shortest round-trip digits as d[.ddd]e<exp> with the
     // exponent of the leading digit — the same exponent CPython's rule uses.
-    let sci = format!("{:e}", f);
+    let mut sci = format!("{:e}", f);
+    // Two shortest candidates can be equally close to the exact value
+    // (e.g. 779235279045435.25 -> ".2" or ".3"). Rust rounds that tie up,
+    // CPython picks the even digit. Exact-precision formatting rounds half
+    // to even, so re-round to the same digit count and keep it if it still
+    // round-trips.
+    let sig_digits = sci
+        .split_once('e')
+        .map_or(0, |(m, _)| m.chars().filter(char::is_ascii_digit).count());
+    if sig_digits > 1 {
+        let even = format!("{:.*e}", sig_digits - 1, f);
+        if even
+            .parse::<f64>()
+            .is_ok_and(|g| g.to_bits() == f.to_bits())
+        {
+            sci = even;
+        }
+    }
     let neg = sci.starts_with('-');
     let body = if neg { &sci[1..] } else { &sci[..] };
     let (mant, exp) = body.split_once('e').expect("{:e} always has an exponent");
@@ -260,6 +277,13 @@ mod tests {
             (-2.5e-7, "-2.5e-07"),
             (1.1534175185142759, "1.1534175185142759"),
             (9999999999999998.0, "9999999999999998.0"),
+            // Exact values halfway between two shortest candidates: CPython
+            // picks the even last digit.
+            (-(779235279045435.0 + 0.25), "-779235279045435.2"),
+            (779235279045435.0 + 0.75, "779235279045435.8"),
+            (752425007713457.0 + 0.25, "752425007713457.2"),
+            (-(94509237745610.0 + 0.125), "-94509237745610.12"),
+            (78234646435938.0 + 0.625, "78234646435938.62"),
         ] {
             assert_eq!(py_float_repr(f), want, "repr({f})");
         }
