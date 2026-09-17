@@ -225,6 +225,128 @@ mod tests {
     use super::*;
 
     #[test]
+    fn splitlines_handles_consecutive_newlines() {
+        assert_eq!(py_splitlines("a\n\nb"), vec!["a", "", "b"]);
+
+        assert_eq!(py_splitlines("\n"), vec![""]);
+
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    #[test]
+    fn splitlines_handles_all_line_boundaries() {
+        let separators = [
+            '\n', '\r', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\u{85}', '\u{2028}', '\u{2029}',
+        ];
+
+        for separator in separators {
+            let input = format!("before{separator}after");
+
+            assert_eq!(
+                py_splitlines(&input),
+                vec!["before", "after"],
+                "Failed for separator U+{:04X}",
+                separator as u32
+            );
+        }
+    }
+
+    #[test]
+    fn strip_handles_whitespace() {
+        assert_eq!(py_strip("  hello  "), "hello");
+        assert_eq!(py_strip("\n\t hello \r\n"), "hello");
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("   \t\n"), "");
+    }
+
+    #[test]
+    fn is_space_handles_python_extra_whitespace() {
+        for c in '\x1c'..='\x1f' {
+            assert!(
+                py_is_space(c),
+                "Expected U+{:04X} to be whitespace",
+                c as u32
+            );
+        }
+
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\t'));
+        assert!(!py_is_space('a'));
+    }
+    #[test]
+    fn has_content_matches_stripped_value() {
+        assert!(!py_has_content(""));
+        assert!(!py_has_content("   \n\t"));
+        assert!(py_has_content("hello"));
+        assert!(py_has_content("  hello  "));
+    }
+    #[test]
+    fn split_ws_handles_runs_of_whitespace() {
+        assert_eq!(py_split_ws("hello   world"), vec!["hello", "world"]);
+
+        assert_eq!(
+            py_split_ws("  hello\tworld\nrust  "),
+            vec!["hello", "world", "rust"]
+        );
+
+        assert_eq!(py_split_ws("   \t\n"), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn split_ws_handles_unicode_whitespace() {
+        assert_eq!(py_split_ws("hello\u{2028}world"), vec!["hello", "world"]);
+    }
+    #[test]
+    fn char_prefix_handles_unicode_characters() {
+        assert_eq!(char_prefix("こんにちは", 3), "こんに");
+        assert_eq!(char_prefix("😊🚀🔥", 2), "😊🚀");
+        assert_eq!(char_prefix("hello", 0), "");
+    }
+
+    #[test]
+    fn char_prefix_handles_prefix_larger_than_length() {
+        assert_eq!(char_prefix("hello", 100), "hello");
+        assert_eq!(char_prefix("", 10), "");
+    }
+
+    #[test]
+    fn char_len_counts_chars_not_bytes() {
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("héllo"), 5);
+        assert_eq!(char_len("こんにちは"), 5);
+        assert_eq!(char_len("😊🚀"), 2);
+        assert_eq!(char_len(""), 0);
+    }
+
+    #[test]
+    fn json_dumps_ensure_ascii_options() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"text": "café 😊"}"#).unwrap();
+
+        let ascii = py_json_dumps_opts(&v, false, true);
+        let unicode = py_json_dumps_opts(&v, false, false);
+
+        assert!(ascii.contains("\\u00e9"));
+        assert!(ascii.contains("\\ud83d\\ude0a"));
+
+        assert!(unicode.contains("café"));
+        assert!(unicode.contains("😊"));
+    }
+    #[test]
+    fn json_dumps_sort_keys_option() {
+        let mut map = serde_json::Map::new();
+
+        map.insert("z".into(), serde_json::json!(1));
+        map.insert("a".into(), serde_json::json!(2));
+
+        let value = serde_json::Value::Object(map);
+
+        let sorted = py_json_dumps_opts(&value, true, true);
+
+        assert_eq!(sorted, r#"{"a": 2, "z": 1}"#);
+    }
+
+    #[test]
     fn splitlines_matches_python() {
         assert_eq!(py_splitlines("a\nb"), vec!["a", "b"]);
         assert_eq!(py_splitlines("a\r\nb\rc"), vec!["a", "b", "c"]);

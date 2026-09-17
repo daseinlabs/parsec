@@ -41,11 +41,50 @@ fn content_text(c: &Value) -> String {
         Value::Array(parts) => parts
             .iter()
             .filter_map(|p| {
-                p.as_object()
-                    .map(|o| o.get("text").and_then(Value::as_str).unwrap_or(""))
+                let obj = p.as_object()?;
+                let block_type = obj.get("type").and_then(Value::as_str);
+                if block_type
+                    .is_some_and(|t| t != "text" && t != "output_text" && t != "tool_result")
+                {
+                    return None;
+                }
+
+                if block_type.is_none()
+                    || block_type == Some("text")
+                    || block_type == Some("output_text")
+                {
+                    if let Some(text) = obj.get("text").and_then(Value::as_str) {
+                        return Some(text.to_string());
+                    }
+                }
+
+                if let Some(content) = obj.get("content") {
+                    let text = content_text(content);
+                    if !text.is_empty() {
+                        return Some(text);
+                    }
+                }
+
+                None
             })
             .collect::<Vec<_>>()
             .join(" "),
+
+        Value::Object(obj) => {
+            let is_text_block = obj.get("type").and_then(Value::as_str) == Some("text");
+
+            if is_text_block {
+                if let Some(text) = obj.get("text").and_then(Value::as_str) {
+                    return text.to_string();
+                }
+            }
+
+            if let Some(content) = obj.get("content") {
+                return content_text(content);
+            }
+
+            String::new()
+        }
         _ => String::new(),
     }
 }
@@ -200,4 +239,125 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn content_text_extracts_single_string() {
+        let content = json!("Hello, world!");
+
+        assert_eq!(content_text(&content), "Hello, world!");
+    }
+
+    #[test]
+    fn content_text_extracts_text_blocks() {
+        let content = json!([
+            {"type": "text", "text": "Hello"},
+            {"type": "text", "text": "world"}
+        ]);
+
+        assert_eq!(content_text(&content), "Hello world");
+    }
+
+    #[test]
+    fn content_text_ignores_missing_text_field() {
+        let content = json!([
+            {"type": "text"},
+            {"type": "text", "text": "Valid"}
+        ]);
+
+        assert_eq!(content_text(&content), "Valid");
+    }
+
+    #[test]
+    fn content_text_handles_malformed_content() {
+        assert_eq!(content_text(&json!(null)), "");
+        assert_eq!(content_text(&json!(123)), "");
+        assert_eq!(content_text(&json!({"text": "object"})), "");
+    }
+
+    #[test]
+    fn actions_extracts_command_and_query() {
+        let message = json!({
+            "extra": {
+                "actions": [
+                    {"command": "ls -la"},
+                    {"query": "search term"}
+                ]
+            }
+        });
+
+        assert_eq!(
+            actions(&message),
+            vec!["ls -la".to_string(), "search term".to_string()]
+        );
+    }
+
+    #[test]
+    fn actions_handles_malformed_actions() {
+        let message = json!({
+            "extra": {
+                "actions": "not-an-array"
+            }
+        });
+
+        assert!(actions(&message).is_empty());
+    }
+
+    #[test]
+    fn steps_of_handles_missing_content() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {
+                    "actions": [{"command": "echo hello"}]
+                }
+            }),
+            json!({
+                "role": "user"
+            }),
+        ];
+
+        let result = steps_of(&messages);
+
+        assert_eq!(result, vec![("echo hello".to_string(), "".to_string())]);
+    }
+
+    #[test]
+    fn truthy_handles_different_json_types() {
+        assert!(!truthy(&json!(null)));
+        assert!(!truthy(&json!(false)));
+        assert!(!truthy(&json!(0)));
+        assert!(!truthy(&json!("")));
+        assert!(!truthy(&json!([])));
+
+        assert!(truthy(&json!(true)));
+        assert!(truthy(&json!(1)));
+        assert!(truthy(&json!("text")));
+        assert!(truthy(&json!([1])));
+    }
+
+    #[test]
+    fn content_text_handles_tool_result_string() {
+        let content = json!("Tool execution completed");
+        assert_eq!(content_text(&content), "Tool execution completed");
+    }
+
+    #[test]
+    fn content_text_handles_tool_result_blocks() {
+        let content = json!([
+            {
+                "type": "tool_result",
+                "content": "Result from tool"
+            }
+        ]);
+
+        // Current implementation only extracts `text`.
+        // This test documents the expected behavior to implement.
+        assert_eq!(content_text(&content), "Result from tool");
+    }
 }
