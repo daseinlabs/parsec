@@ -224,6 +224,8 @@ fn py_json_quote_opts(s: &str, ensure_ascii: bool) -> String {
 mod tests {
     use super::*;
 
+    // ── existing baseline tests ──────────────────────────────────────────────
+
     #[test]
     fn splitlines_matches_python() {
         assert_eq!(py_splitlines("a\nb"), vec!["a", "b"]);
@@ -238,7 +240,7 @@ mod tests {
 
     #[test]
     fn char_prefix_is_chars_not_bytes() {
-        assert_eq!(char_prefix("héllo", 2), "hé");
+        assert_eq!(char_prefix("h\u{e9}llo", 2), "h\u{e9}");
         assert_eq!(char_prefix("ab", 10), "ab");
     }
 
@@ -265,7 +267,304 @@ mod tests {
 
     #[test]
     fn json_dumps_default_formatting() {
-        let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"a": [1, "\u00e9"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
+    }
+
+    // ── py_splitlines edge cases ─────────────────────────────────────────────
+
+    /// All eleven Python line-break characters individually produce a split.
+    #[test]
+    fn test_py_splitlines_all_eleven_line_break_chars() {
+        let breaks: &[char] = &[
+            '\n', '\r', '\x0b',     // vertical tab
+            '\x0c',     // form feed
+            '\x1c',     // file separator
+            '\x1d',     // group separator
+            '\x1e',     // record separator
+            '\u{85}',   // NEL
+            '\u{2028}', // line separator
+            '\u{2029}', // paragraph separator
+        ];
+        for &lb in breaks {
+            let mut s = String::from("a");
+            s.push(lb);
+            s.push('b');
+            assert_eq!(
+                py_splitlines(&s),
+                vec!["a", "b"],
+                "line break char U+{:04X} did not split",
+                lb as u32
+            );
+        }
+    }
+
+    /// \r\n must be consumed as exactly one break, not two.
+    #[test]
+    fn test_py_splitlines_crlf_consumed_as_one() {
+        assert_eq!(py_splitlines("a\r\nb"), vec!["a", "b"]);
+        assert_eq!(py_splitlines("a\r\nb\r\nc"), vec!["a", "b", "c"]);
+        // CR not followed by LF is its own single break
+        assert_eq!(py_splitlines("a\rb"), vec!["a", "b"]);
+    }
+
+    /// Consecutive newlines preserve intermediate empty lines.
+    #[test]
+    fn test_py_splitlines_consecutive_newlines() {
+        assert_eq!(py_splitlines("a\n\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("a\n\n\nb"), vec!["a", "", "", "b"]);
+    }
+
+    /// A leading newline produces an empty-string first element.
+    #[test]
+    fn test_py_splitlines_newline_at_start() {
+        assert_eq!(py_splitlines("\na"), vec!["", "a"]);
+        assert_eq!(py_splitlines("\n\na"), vec!["", "", "a"]);
+    }
+
+    /// A trailing newline does NOT produce a trailing empty element.
+    /// This is the key Python `str.splitlines()` vs Rust `str::lines()` difference.
+    #[test]
+    fn test_py_splitlines_no_trailing_empty_on_trailing_newline() {
+        assert_eq!(py_splitlines("a\n"), vec!["a"]);
+        assert_eq!(py_splitlines("a\nb\n"), vec!["a", "b"]);
+        assert_eq!(py_splitlines("a\r\n"), vec!["a"]);
+        assert_eq!(py_splitlines("a\r\nb\r\n"), vec!["a", "b"]);
+    }
+
+    /// A string of only newlines: n newlines -> n empty strings.
+    #[test]
+    fn test_py_splitlines_only_newlines() {
+        assert_eq!(py_splitlines("\n\n\n"), vec!["", "", ""]);
+        assert_eq!(py_splitlines("\n"), vec![""]);
+    }
+
+    // ── py_is_space / py_strip ───────────────────────────────────────────────
+
+    /// Python's whitespace set includes \x1c..\x1f (C0 separators); Rust's does not.
+    #[test]
+    fn test_py_is_space_python_whitespace_set() {
+        // Standard whitespace
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\t'));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\r'));
+        // Python-specific C0 separators
+        assert!(py_is_space('\x1c'));
+        assert!(py_is_space('\x1d'));
+        assert!(py_is_space('\x1e'));
+        assert!(py_is_space('\x1f'));
+        // Non-whitespace
+        assert!(!py_is_space('a'));
+        assert!(!py_is_space('0'));
+        assert!(!py_is_space('\x1b')); // ESC - NOT in the Python set
+    }
+
+    /// py_strip removes \x1c..\x1f from edges (not stripped by Rust's trim()).
+    #[test]
+    fn test_py_strip_trims_ascii_file_separators() {
+        assert_eq!(py_strip("\x1chello\x1e"), "hello");
+        assert_eq!(py_strip("\x1f\x1d text \x1c\x1f"), "text");
+    }
+
+    /// Empty string and all-whitespace strings strip to empty.
+    #[test]
+    fn test_py_strip_empty_and_all_whitespace() {
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("   "), "");
+        assert_eq!(py_strip("\t\n\r"), "");
+        assert_eq!(py_strip("\x1c\x1d\x1e\x1f"), "");
+    }
+
+    /// A string with no leading/trailing whitespace is unchanged.
+    #[test]
+    fn test_py_strip_no_whitespace() {
+        assert_eq!(py_strip("hello"), "hello");
+        assert_eq!(py_strip("hello world"), "hello world");
+    }
+
+    // ── char_prefix / char_len ───────────────────────────────────────────────
+
+    /// Multi-byte UTF-8: each character counts as 1, regardless of byte width.
+    #[test]
+    fn test_char_prefix_multibyte_utf8() {
+        // "\u{65e5}\u{672c}\u{8a9e}" (Japanese: Nihongo) is 3 chars, 9 bytes
+        let s = "\u{65e5}\u{672c}\u{8a9e}";
+        assert_eq!(char_prefix(s, 1), "\u{65e5}");
+        assert_eq!(char_prefix(s, 2), "\u{65e5}\u{672c}");
+        assert_eq!(char_prefix(s, 3), s);
+        // Accented characters (2-byte UTF-8)
+        assert_eq!(char_prefix("h\u{e9}llo", 3), "h\u{e9}l");
+        // Emoji (4-byte UTF-8, astral plane)
+        assert_eq!(
+            char_prefix("\u{1f600}\u{1f601}\u{1f602}", 2),
+            "\u{1f600}\u{1f601}"
+        );
+    }
+
+    /// When n exceeds string character length, the whole string is returned.
+    #[test]
+    fn test_char_prefix_exceeds_length() {
+        assert_eq!(char_prefix("abc", 100), "abc");
+        assert_eq!(char_prefix("", 5), "");
+        assert_eq!(
+            char_prefix("\u{65e5}\u{672c}\u{8a9e}", 99),
+            "\u{65e5}\u{672c}\u{8a9e}"
+        );
+    }
+
+    /// char_prefix with n=0 returns an empty string.
+    #[test]
+    fn test_char_prefix_zero() {
+        assert_eq!(char_prefix("hello", 0), "");
+        assert_eq!(char_prefix("", 0), "");
+    }
+
+    /// char_len counts Unicode scalar values, not bytes.
+    #[test]
+    fn test_char_len_multibyte() {
+        assert_eq!(char_len("\u{65e5}\u{672c}"), 2); // 6 bytes, 2 chars
+        assert_eq!(char_len("h\u{e9}llo"), 5); // 6 bytes, 5 chars
+        assert_eq!(char_len(""), 0);
+        assert_eq!(char_len("abc"), 3);
+    }
+
+    /// Astral-plane emoji count as 1 char each (not 2 UTF-16 code units).
+    #[test]
+    fn test_char_len_emoji() {
+        assert_eq!(char_len("\u{1f600}"), 1); // U+1F600, 4 bytes
+        assert_eq!(char_len("\u{1f600}\u{1f601}\u{1f602}"), 3);
+    }
+
+    // ── py_json_dumps_opts ───────────────────────────────────────────────────
+
+    /// sort_keys=true: keys appear in lexicographic (code-point) order.
+    #[test]
+    fn test_py_json_dumps_opts_sort_keys_true() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"z": 1, "a": 2, "m": 3}"#).unwrap();
+        let result = py_json_dumps_opts(&v, true, false);
+        assert_eq!(result, r#"{"a": 2, "m": 3, "z": 1}"#);
+    }
+
+    /// sort_keys=false: insertion order preserved (preserve_order feature).
+    #[test]
+    fn test_py_json_dumps_opts_sort_keys_false() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"z": 1, "a": 2, "m": 3}"#).unwrap();
+        let result = py_json_dumps_opts(&v, false, false);
+        assert_eq!(result, r#"{"z": 1, "a": 2, "m": 3}"#);
+    }
+
+    /// ensure_ascii=true: non-ASCII chars escaped as \uXXXX.
+    #[test]
+    fn test_py_json_dumps_opts_ensure_ascii_true() {
+        // U+00E9 = e with acute
+        let v = serde_json::Value::String("caf\u{e9}".to_string());
+        let result = py_json_dumps_opts(&v, false, true);
+        assert_eq!(result, r#""caf\u00e9""#);
+    }
+
+    /// ensure_ascii=false: non-ASCII chars appear as raw UTF-8.
+    #[test]
+    fn test_py_json_dumps_opts_ensure_ascii_false() {
+        let v = serde_json::Value::String("caf\u{e9}".to_string());
+        let result = py_json_dumps_opts(&v, false, false);
+        // U+00E9 should appear as raw UTF-8 bytes
+        assert_eq!(result, "\"caf\u{e9}\"");
+    }
+
+    /// Astral-plane chars are encoded as UTF-16 surrogate pairs when ensure_ascii=true.
+    /// This matches Python's json.dumps behavior exactly.
+    #[test]
+    fn test_py_json_dumps_opts_astral_surrogate_pairs() {
+        // U+1F600 (grinning face emoji) -> surrogate pair \uD83D\uDE00
+        let v = serde_json::Value::String("\u{1f600}".to_string());
+        let result = py_json_dumps_opts(&v, false, true);
+        assert_eq!(result, r#""\ud83d\ude00""#);
+    }
+
+    /// Astral chars pass through unescaped when ensure_ascii=false.
+    #[test]
+    fn test_py_json_dumps_opts_astral_ensure_ascii_false() {
+        let v = serde_json::Value::String("\u{1f600}".to_string());
+        let result = py_json_dumps_opts(&v, false, false);
+        assert_eq!(result, "\"\u{1f600}\"");
+    }
+
+    /// Control characters below 0x20 (excluding named escapes) -> \u00XX.
+    #[test]
+    fn test_py_json_dumps_control_chars() {
+        // \x01 (SOH), \x1b (ESC)
+        let v = serde_json::Value::String("\x01\x1b".to_string());
+        let result = py_json_dumps_opts(&v, false, false);
+        assert_eq!(result, r#""\u0001\u001b""#);
+    }
+
+    /// Named special escapes: `"` `\` `\n` `\r` `\t` `\b` `\f`.
+    #[test]
+    fn test_py_json_dumps_special_escapes() {
+        let cases: &[(&str, &str)] = &[
+            ("\"", r#""\"""#),
+            ("\\", r#""\\""#),
+            ("\n", r#""\n""#),
+            ("\r", r#""\r""#),
+            ("\t", r#""\t""#),
+            ("\x08", r#""\b""#),
+            ("\x0c", r#""\f""#),
+        ];
+        for (input, expected) in cases {
+            let v = serde_json::Value::String(input.to_string());
+            let result = py_json_dumps_opts(&v, false, false);
+            assert_eq!(result, *expected, "input={input:?}");
+        }
+    }
+
+    /// Nested arrays and objects use Python's ", " / ": " separators.
+    #[test]
+    fn test_py_json_dumps_opts_nested_structure() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"a": [1, 2, 3], "b": {"c": true, "d": null}}"#).unwrap();
+        let result = py_json_dumps_opts(&v, true, true);
+        assert_eq!(result, r#"{"a": [1, 2, 3], "b": {"c": true, "d": null}}"#);
+    }
+
+    /// Scalars: null, bool, integers serialise correctly.
+    #[test]
+    fn test_py_json_dumps_opts_scalars() {
+        assert_eq!(
+            py_json_dumps_opts(&serde_json::Value::Null, false, false),
+            "null"
+        );
+        assert_eq!(
+            py_json_dumps_opts(&serde_json::Value::Bool(true), false, false),
+            "true"
+        );
+        assert_eq!(
+            py_json_dumps_opts(&serde_json::Value::Bool(false), false, false),
+            "false"
+        );
+        assert_eq!(
+            py_json_dumps_opts(&serde_json::json!(42), false, false),
+            "42"
+        );
+    }
+
+    // ── py_float_repr additional boundary values ──────────────────────────────
+
+    #[test]
+    fn test_py_float_repr_boundary_values() {
+        // exp == -4: boundary of the [-4, 16) positional range
+        assert_eq!(py_float_repr(1e-4), "0.0001");
+        // exp == 15: largest positional
+        assert_eq!(py_float_repr(1e15), "1000000000000000.0");
+        // Negative values
+        assert_eq!(py_float_repr(-1.0), "-1.0");
+        assert_eq!(py_float_repr(-123.456), "-123.456");
+        // Very small negative
+        assert_eq!(py_float_repr(-1e-7), "-1e-07");
+        // Multi-digit mantissa in scientific notation
+        assert_eq!(py_float_repr(1.23e20), "1.23e+20");
+        // Zero
+        assert_eq!(py_float_repr(0.0), "0.0");
     }
 }
