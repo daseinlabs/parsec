@@ -43,16 +43,13 @@ fn content_text(c: &Value) -> String {
             .filter_map(|part| {
                 let object = part.as_object()?;
 
-                object
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .or_else(|| {
-                        if object.get("type").and_then(Value::as_str) == Some("tool_result") {
-                            object.get("content").and_then(Value::as_str)
-                        } else {
-                            None
-                        }
-                    })
+                object.get("text").and_then(Value::as_str).or_else(|| {
+                    if object.get("type").and_then(Value::as_str) == Some("tool_result") {
+                        object.get("content").and_then(Value::as_str)
+                    } else {
+                        None
+                    }
+                })
             })
             .collect::<Vec<_>>()
             .join(" "),
@@ -264,10 +261,7 @@ mod tests {
 
         assert_eq!(
             steps_of(&messages),
-            vec![(
-                "rg TODO".to_string(),
-                "src/lib.rs:10: TODO".to_string()
-            )]
+            vec![("rg TODO".to_string(), "src/lib.rs:10: TODO".to_string())]
         );
     }
 
@@ -307,6 +301,9 @@ mod tests {
         assert_eq!(steps_of(&messages), vec![(String::new(), String::new())]);
         assert!(assistant_chunks_of(&messages).is_empty());
         assert_eq!(content_text(&json!(42)), "");
-        assert_eq!(content_text(&json!({"text": "not a content block array"})), "");
+        assert_eq!(
+            content_text(&json!({"text": "not a content block array"})),
+            ""
+        );
     }
 }
