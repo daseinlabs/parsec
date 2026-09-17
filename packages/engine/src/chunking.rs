@@ -222,6 +222,9 @@ pub fn chunk_observation(
 ) -> Vec<Chunk> {
     let mut out: Vec<Chunk>;
     if let Some(g) = read_lines.filter(|_| !SEARCH.is_match(cmd) && READ.is_match(cmd)) {
+        // Same reasoning as `win`: a zero group size would index an empty
+        // window, so treat it as one line per chunk.
+        let g = g.max(1);
         let (f, coord_lines) = read_atom_lines(cmd, obs);
         out = Vec::new();
         let atoms = if mode == ChunkMode::Cst && !coord_lines.is_empty() {
