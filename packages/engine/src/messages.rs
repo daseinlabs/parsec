@@ -40,9 +40,19 @@ fn content_text(c: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Array(parts) => parts
             .iter()
-            .filter_map(|p| {
-                p.as_object()
-                    .map(|o| o.get("text").and_then(Value::as_str).unwrap_or(""))
+            .filter_map(|part| {
+                let object = part.as_object()?;
+
+                object
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .or_else(|| {
+                        if object.get("type").and_then(Value::as_str) == Some("tool_result") {
+                            object.get("content").and_then(Value::as_str)
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect::<Vec<_>>()
             .join(" "),
