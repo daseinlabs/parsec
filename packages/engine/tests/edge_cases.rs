@@ -10,8 +10,8 @@ use parsec_engine::chunking::{
 };
 use parsec_engine::messages;
 use parsec_engine::pystr::{
-    char_len, char_prefix, py_has_content, py_is_space, py_json_dumps_opts, py_splitlines,
-    py_split_ws, py_strip,
+    char_len, char_prefix, py_has_content, py_is_space, py_json_dumps_opts, py_split_ws,
+    py_splitlines, py_strip,
 };
 use serde_json::{json, Value};
 
@@ -178,21 +178,33 @@ fn test_py_splitlines_unicode_content_between_breaks() {
 #[test]
 fn test_py_is_space_standard_unicode_whitespace() {
     for c in [' ', '\t', '\n', '\r', '\x0c', '\x0b'] {
-        assert!(py_is_space(c), "expected py_is_space for U+{:04X}", c as u32);
+        assert!(
+            py_is_space(c),
+            "expected py_is_space for U+{:04X}",
+            c as u32
+        );
     }
 }
 
 #[test]
 fn test_py_is_space_c0_separators_0x1c_to_0x1f() {
     for c in ['\x1c', '\x1d', '\x1e', '\x1f'] {
-        assert!(py_is_space(c), "expected py_is_space for U+{:04X}", c as u32);
+        assert!(
+            py_is_space(c),
+            "expected py_is_space for U+{:04X}",
+            c as u32
+        );
     }
 }
 
 #[test]
 fn test_py_is_space_not_space_for_printable_ascii() {
     for c in ['a', 'Z', '0', '_', '-', '.'] {
-        assert!(!py_is_space(c), "U+{:04X} should NOT be a py space", c as u32);
+        assert!(
+            !py_is_space(c),
+            "U+{:04X} should NOT be a py space",
+            c as u32
+        );
     }
 }
 
@@ -513,6 +525,27 @@ fn test_parse_grep_candidate_whitespace_trimmed() {
     assert_eq!(result, Some(("file.rs".to_string(), Some(5))));
 }
 
+#[test]
+fn test_parse_grep_candidate_empty_text_after_line_number() {
+    // `file.rs:10:` — a match line with empty text still yields the coordinate.
+    let result = parse_grep_candidate("file.rs:10:");
+    assert_eq!(result, Some(("file.rs".to_string(), Some(10))));
+}
+
+#[test]
+fn test_parse_grep_candidate_windows_backslash_path_not_a_candidate() {
+    // Known limitation (documents current behaviour, no panic): backslash
+    // separators are not recognised, so `C:\project\file.rs:10:code` parses
+    // to None instead of (file.rs, 10). The forward-slash drive form falls
+    // through to the path-only branch on the whole line (basename splits on
+    // '/' only), yielding the trailing segment with no line number.
+    assert_eq!(parse_grep_candidate("C:\\project\\file.rs:10:code"), None);
+    assert_eq!(
+        parse_grep_candidate("C:/project/file.rs:10:code"),
+        Some(("file.rs:10:code".to_string(), None))
+    );
+}
+
 // -- chunk_observation helpers --
 
 fn chunk_obs(cmd: &str, obs: &str) -> Vec<Chunk> {
@@ -522,7 +555,10 @@ fn chunk_obs(cmd: &str, obs: &str) -> Vec<Chunk> {
 #[test]
 fn test_chunk_observation_empty_obs_returns_one_chunk() {
     let chunks = chunk_obs("echo hello", "");
-    assert!(!chunks.is_empty(), "should produce at least one chunk for empty obs");
+    assert!(
+        !chunks.is_empty(),
+        "should produce at least one chunk for empty obs"
+    );
 }
 
 #[test]
@@ -563,7 +599,10 @@ fn test_chunk_observation_grep_cmd_produces_grep_chunks() {
 fn test_chunk_observation_grep_chunk_has_file_and_line() {
     let obs = "utils.rs:42:let x = 1;";
     let chunks = chunk_observation("grep let", obs, 0, DEFAULT_WIN, None, ChunkMode::Fixed);
-    let grep_chunk = chunks.iter().find(|c| c.kind == "grep").expect("grep chunk");
+    let grep_chunk = chunks
+        .iter()
+        .find(|c| c.kind == "grep")
+        .expect("grep chunk");
     assert_eq!(grep_chunk.file.as_deref(), Some("utils.rs"));
     assert_eq!(grep_chunk.lo, Some(42));
 }
@@ -636,8 +675,14 @@ fn test_chunk_observation_all_chunks_share_cmd_and_head() {
 #[test]
 fn test_chunk_observation_read_cmd_produces_read_chunks() {
     let obs = "fn main() {\n    println!(\"hello\");\n}";
-    let chunks =
-        chunk_observation("cat src/main.rs", obs, 0, DEFAULT_WIN, None, ChunkMode::Fixed);
+    let chunks = chunk_observation(
+        "cat src/main.rs",
+        obs,
+        0,
+        DEFAULT_WIN,
+        None,
+        ChunkMode::Fixed,
+    );
     assert!(
         chunks.iter().all(|c| c.kind == "read"),
         "cat command should produce read chunks"
@@ -659,6 +704,62 @@ fn test_chunk_observation_sed_base_line_number() {
         ChunkMode::Fixed,
     );
     assert_eq!(chunks[0].lo, Some(10), "sed base should set lo to 10");
+}
+
+#[test]
+fn test_chunk_observation_sed_inverted_range_keeps_first_number() {
+    // `sed -n '20,10p'` is an inverted range; the parser takes the first
+    // number as the base (documents current behaviour, no panic).
+    let obs = (0..10)
+        .map(|i| format!("code line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let chunks = chunk_observation(
+        "sed -n '20,10p' main.rs",
+        &obs,
+        0,
+        DEFAULT_WIN,
+        None,
+        ChunkMode::Fixed,
+    );
+    assert_eq!(chunks[0].lo, Some(20));
+}
+
+#[test]
+fn test_chunk_observation_sed_non_numeric_range_falls_back_to_one() {
+    // `sed -n 'a,bp'` matches no range pattern, so the base falls back to 1.
+    let obs = (0..10)
+        .map(|i| format!("code line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let chunks = chunk_observation(
+        "sed -n 'a,bp' main.rs",
+        &obs,
+        0,
+        DEFAULT_WIN,
+        None,
+        ChunkMode::Fixed,
+    );
+    assert_eq!(chunks[0].lo, Some(1));
+}
+
+#[test]
+fn test_chunk_observation_sed_unusual_spacing_still_parses_range() {
+    // Extra spacing around `-n` does not matter: the range pattern is
+    // searched anywhere in the command string.
+    let obs = (0..10)
+        .map(|i| format!("code line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let chunks = chunk_observation(
+        "sed  -n   '30,40p'  main.rs",
+        &obs,
+        0,
+        DEFAULT_WIN,
+        None,
+        ChunkMode::Fixed,
+    );
+    assert_eq!(chunks[0].lo, Some(30));
 }
 
 #[test]
@@ -880,6 +981,19 @@ fn test_steps_of_no_extra_actions_yields_empty_command() {
 }
 
 #[test]
+fn test_steps_of_numeric_content_yields_empty_obs_without_panic() {
+    // Malformed `content` with an unexpected type must not panic;
+    // non-string/non-array content extracts as an empty observation.
+    let msgs = vec![
+        json!({"role": "assistant", "extra": {"actions": [{"command": "ls"}]}}),
+        json!({"role": "user", "content": 42}),
+    ];
+    let steps = messages::steps_of(&msgs);
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0], ("ls".to_string(), String::new()));
+}
+
+#[test]
 fn test_reasoning_chunks_of_no_reasoning_empty() {
     let msgs = vec![
         json!({"role": "assistant", "content": "plain text"}),
@@ -970,7 +1084,10 @@ fn test_assistant_chunks_of_mixed_text_and_tool_use_skipped() {
         json!({"role": "user", "content": "obs"}),
     ];
     let chunks = messages::assistant_chunks_of(&msgs);
-    assert!(chunks.is_empty(), "mixed content with tool_use should be skipped");
+    assert!(
+        chunks.is_empty(),
+        "mixed content with tool_use should be skipped"
+    );
 }
 
 #[test]
