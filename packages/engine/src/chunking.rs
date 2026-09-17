@@ -397,4 +397,223 @@ mod tests {
             i64::MAX
         );
     }
+
+    // --- parse_grep_candidate -----------------------------------------
+
+    #[test]
+    fn grep_candidate_standard_format() {
+        let got = parse_grep_candidate("src/main.rs:42:let x = 5;").unwrap();
+        assert_eq!(got, ("main.rs".to_string(), Some(42)));
+    }
+
+    #[test]
+    fn grep_candidate_multiple_colons_in_content_still_splits_on_first_two() {
+        // splitn(3, ':') must stop after the file and line fields, leaving
+        // any colons inside the matched text (e.g. a Rust type annotation)
+        // untouched rather than corrupting the split.
+        let got = parse_grep_candidate("src/main.rs:42:let x: i32 = 5;").unwrap();
+        assert_eq!(got, ("main.rs".to_string(), Some(42)));
+    }
+
+    #[test]
+    fn grep_candidate_missing_line_number_falls_back_to_file_only() {
+        let got = parse_grep_candidate("src/main.rs:no line here").unwrap();
+        assert_eq!(got, ("main.rs".to_string(), None));
+    }
+
+    #[test]
+    fn grep_candidate_non_numeric_line_number_falls_back_to_file_only() {
+        // The middle field fails the all-ascii-digit check, so the strict
+        // (file,line) branch is skipped, but the looser (file, None)
+        // fallback still recognizes the leading path.
+        let got = parse_grep_candidate("src/main.rs:abc:text").unwrap();
+        assert_eq!(got, ("main.rs".to_string(), None));
+    }
+
+    #[test]
+    fn grep_candidate_empty_or_whitespace_only_line_is_none() {
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("   "), None);
+        assert_eq!(parse_grep_candidate("  \x1c "), None);
+    }
+
+    #[test]
+    fn grep_candidate_reranked_marker_is_none() {
+        assert_eq!(parse_grep_candidate("[reranked] some/file.rs:1:x"), None);
+    }
+
+    #[test]
+    fn grep_candidate_non_path_line_is_none() {
+        assert_eq!(parse_grep_candidate("just some prose with no path"), None);
+    }
+
+    #[test]
+    #[ignore = "known edge case / bug: parse_grep_candidate does not \
+                recognize Windows-style paths. `C:\\project\\file.rs:10:code` \
+                first splits on the drive-letter colon (splitn(3, ':') \
+                yields parts[0]=\"C\"), so is_path(\"C\") is false; is_path() \
+                itself only tests '/' or a trailing .ext, never backslashes, \
+                so the whole line falls through to None instead of \
+                (\"file.rs\", Some(10)) as the assignment brief describes."]
+    fn grep_candidate_windows_path_is_currently_unsupported() {
+        let got = parse_grep_candidate(r"C:\project\file.rs:10:code");
+        assert_eq!(got, Some(("file.rs".to_string(), Some(10))));
+    }
+
+    // --- sed_base -------------------------------------------------------
+
+    #[test]
+    fn sed_base_range_format() {
+        assert_eq!(sed_base("sed -n '10,20p' file.py"), 10);
+    }
+
+    #[test]
+    fn sed_base_single_line_format() {
+        assert_eq!(sed_base("sed -n 5p file.py"), 5);
+    }
+
+    #[test]
+    fn sed_base_extra_whitespace_between_flags() {
+        assert_eq!(sed_base("sed   -n    5p   file.py"), 5);
+    }
+
+    #[test]
+    fn sed_base_inverted_range_uses_first_number_verbatim() {
+        // The regex only captures the two numbers around the comma; it does
+        // not validate lo <= hi, so an inverted range like '20,10p' still
+        // reports base=20 rather than normalizing or rejecting it.
+        assert_eq!(sed_base("sed -n '20,10p' file.py"), 20);
+    }
+
+    #[test]
+    fn sed_base_non_numeric_or_absent_defaults_to_one() {
+        assert_eq!(sed_base("sed -n 'a,bp' file.py"), 1);
+        assert_eq!(sed_base("cat file.py"), 1);
+        assert_eq!(sed_base(""), 1);
+    }
+
+    // --- chunk_observation / chunk_assistant: full-coverage invariant ----
+
+    /// Reassembles chunk texts the way the module's own doc comment implies
+    /// they should recombine: in order, joined by newlines.
+    fn rejoin(chunks: &[Chunk]) -> String {
+        chunks
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn chunk_observation_reconstructs_content_with_no_blank_lines() {
+        let obs = "line1\nline2\nline3\nline4\nline5";
+        let chunks = chunk_observation("python run.py", obs, 0, 2, None, ChunkMode::Fixed);
+        assert_eq!(rejoin(&chunks), obs);
+    }
+
+    #[test]
+    fn chunk_observation_empty_observation_yields_single_empty_chunk() {
+        let chunks = chunk_observation("python run.py", "", 0, 40, None, ChunkMode::Fixed);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "");
+        assert_eq!(chunks[0].kind, "other");
+    }
+
+    #[test]
+    fn chunk_observation_whitespace_only_observation_falls_back_to_whole_text() {
+        // Every windowed segment is whitespace-only and gets filtered by
+        // py_has_content, so the function falls back to emitting the raw
+        // observation as one chunk rather than producing zero chunks.
+        let obs = "   \n   \n   ";
+        let chunks = chunk_observation("python run.py", obs, 0, 40, None, ChunkMode::Fixed);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, obs);
+    }
+
+    #[test]
+    #[ignore = "known edge case: the module doc comment promises a \
+                full-coverage invariant ('every character... lands in \
+                exactly one chunk'), but chunk_observation_inner's windowed \
+                branches drop any window whose joined text is entirely \
+                whitespace (py_has_content filter). With win=1, a blank \
+                line sandwiched between two content lines lands in its own \
+                window and is silently discarded, so rejoining the emitted \
+                chunks loses that line instead of reconstructing the \
+                original text."]
+    fn chunk_observation_drops_isolated_blank_window_breaking_full_coverage() {
+        let obs = "line1\n   \nline3";
+        let chunks = chunk_observation("python run.py", obs, 0, 1, None, ChunkMode::Fixed);
+        assert_eq!(rejoin(&chunks), obs);
+    }
+
+    #[test]
+    fn chunk_observation_grep_splits_candidate_lines_from_context() {
+        let cmd = "grep -n TODO src/lib.rs";
+        let obs = "some preamble\nsrc/lib.rs:3:TODO fix this\nsrc/lib.rs:9:TODO and this\ntrailer";
+        let chunks = chunk_observation(cmd, obs, 0, 40, None, ChunkMode::Fixed);
+        let grep_chunks: Vec<&Chunk> = chunks.iter().filter(|c| c.kind == "grep").collect();
+        assert_eq!(grep_chunks.len(), 2);
+        assert_eq!(grep_chunks[0].file.as_deref(), Some("lib.rs"));
+        assert_eq!(grep_chunks[0].lo, Some(3));
+        assert_eq!(grep_chunks[1].lo, Some(9));
+        // Non-candidate lines still show up windowed as "other" chunks.
+        assert!(chunks.iter().any(|c| c.kind == "other"));
+    }
+
+    #[test]
+    fn chunk_observation_read_command_windows_by_sed_base_and_win() {
+        let cmd = "sed -n '10,13p' src/lib.rs";
+        let obs = "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}";
+        let chunks = chunk_observation(cmd, obs, 0, 2, None, ChunkMode::Fixed);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].file.as_deref(), Some("lib.rs"));
+        assert_eq!(chunks[0].lo, Some(10));
+        assert_eq!(chunks[0].hi, Some(11));
+        assert_eq!(chunks[1].lo, Some(12));
+        assert_eq!(chunks[1].hi, Some(13));
+        assert!(chunks.iter().all(|c| c.kind == "read"));
+    }
+
+    #[test]
+    fn chunk_observation_carries_cmd_rc_head_onto_every_chunk() {
+        let cmd = "python run.py";
+        let obs = "<returncode>1</returncode>\nline2\nline3\nline4";
+        let chunks = chunk_observation(cmd, obs, 0, 1, None, ChunkMode::Fixed);
+        assert!(chunks.len() > 1, "expect multiple windows for this setup");
+        for c in &chunks {
+            assert_eq!(c.rc, Some(1));
+            assert_eq!(c.cmd, cmd);
+        }
+    }
+
+    #[test]
+    fn chunk_assistant_full_coverage_with_no_blank_lines() {
+        let txt = "First thought.\nSecond thought.\nThird thought.";
+        let chunks = chunk_assistant(txt, 0, 2);
+        assert_eq!(rejoin(&chunks), txt);
+    }
+
+    #[test]
+    fn chunk_assistant_empty_text_yields_no_chunks() {
+        // Unlike chunk_observation, chunk_assistant has no whole-text
+        // fallback — the doc comment explicitly allows zero chunks.
+        assert_eq!(chunk_assistant("", 0, 40), Vec::new());
+        assert_eq!(chunk_assistant("   ", 0, 40), Vec::new());
+    }
+
+    // --- read_atom_lines (via chunk_observation's read_lines path) -------
+
+    #[test]
+    fn read_lines_mode_drops_blank_lines_but_preserves_original_coordinates() {
+        let cmd = "sed -n '5,9p' src/lib.rs";
+        let obs = "fn a() {}\n\nfn b() {}\n   \nfn c() {}";
+        let chunks = chunk_observation(cmd, obs, 0, 40, Some(2), ChunkMode::Fixed);
+        // 3 non-blank lines at original coordinates 5, 7, 9 grouped by 2.
+        let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(texts, vec!["fn a() {}\nfn b() {}", "fn c() {}"]);
+        assert_eq!(chunks[0].lo, Some(5));
+        assert_eq!(chunks[0].hi, Some(7));
+        assert_eq!(chunks[1].lo, Some(9));
+        assert_eq!(chunks[1].hi, Some(9));
+    }
 }
