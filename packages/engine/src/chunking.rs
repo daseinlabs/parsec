@@ -948,12 +948,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known edge case / bug: read_lines = Some(0) indexes an empty window and panics"]
-    fn observation_read_lines_zero_does_not_panic() {
-        let r = std::panic::catch_unwind(|| {
-            chunk_observation("cat a.py", "x", 0, 40, Some(0), ChunkMode::Fixed)
-        });
-        assert!(r.is_ok());
+    fn observation_read_lines_zero_behaves_like_one() {
+        let cmd = "sed -n '10,13p' a.py";
+        for obs in ["x\n\ny\nz", "\n \n"] {
+            assert_eq!(
+                chunk_observation(cmd, obs, 0, 40, Some(0), ChunkMode::Fixed),
+                chunk_observation(cmd, obs, 0, 40, Some(1), ChunkMode::Fixed),
+                "obs: {obs:?}"
+            );
+        }
     }
 
     /// Runs `f` on a worker thread; None if it has not returned in time, so a
