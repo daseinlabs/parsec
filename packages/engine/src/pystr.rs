@@ -237,6 +237,24 @@ mod tests {
     }
 
     #[test]
+    fn string_helpers() {
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\t'));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\x1c'));
+        assert!(!py_is_space('a'));
+
+        assert_eq!(py_strip("  hello \n"), "hello");
+        assert_eq!(py_strip("abc"), "abc");
+
+        assert!(py_has_content("  abc  "));
+        assert!(!py_has_content("   \t\n "));
+
+        assert_eq!(py_split_ws("  foo   bar\nbaz\t"), vec!["foo", "bar", "baz"]);
+        assert_eq!(char_len("héllo"), 5);
+    }
+
+    #[test]
     fn char_prefix_is_chars_not_bytes() {
         assert_eq!(char_prefix("héllo", 2), "hé");
         assert_eq!(char_prefix("ab", 10), "ab");
@@ -267,5 +285,328 @@ mod tests {
     fn json_dumps_default_formatting() {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
+    }
+
+    // -----------------------------------------------------------------------
+    // py_splitlines — all 11 Python line-break characters (exhaustive)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_py_splitlines_all_11_line_break_chars() {
+        assert_eq!(py_splitlines("a\nb"), vec!["a", "b"], "LF");
+        assert_eq!(py_splitlines("a\rb"), vec!["a", "b"], "CR standalone");
+        assert_eq!(py_splitlines("a\r\nb"), vec!["a", "b"], "CRLF");
+        assert_eq!(py_splitlines("a\x0bb"), vec!["a", "b"], "VT");
+        assert_eq!(py_splitlines("a\x0cb"), vec!["a", "b"], "FF");
+        assert_eq!(py_splitlines("a\x1cb"), vec!["a", "b"], "FS");
+        assert_eq!(py_splitlines("a\x1db"), vec!["a", "b"], "GS");
+        assert_eq!(py_splitlines("a\x1eb"), vec!["a", "b"], "RS");
+        assert_eq!(py_splitlines("a\u{85}b"), vec!["a", "b"], "NEL");
+        assert_eq!(py_splitlines("a\u{2028}b"), vec!["a", "b"], "LS");
+        assert_eq!(py_splitlines("a\u{2029}b"), vec!["a", "b"], "PS");
+    }
+
+    #[test]
+    fn test_py_splitlines_crlf_no_phantom_line() {
+        let result = py_splitlines("a\r\nb");
+        assert_eq!(
+            result,
+            vec!["a", "b"],
+            "\\r\\n must be a single line break, got {result:?}"
+        );
+        // Two consecutive CRLF sequences produce an empty middle line
+        assert_eq!(
+            py_splitlines("x\r\n\r\ny"),
+            vec!["x", "", "y"],
+            "two CRLF sequences produce an empty middle line"
+        );
+    }
+
+    #[test]
+    fn test_py_splitlines_consecutive_newlines() {
+        assert_eq!(
+            py_splitlines("a\n\nb"),
+            vec!["a", "", "b"],
+            "double LF produces empty middle line"
+        );
+        assert_eq!(
+            py_splitlines("\n\n\n"),
+            vec!["", "", ""],
+            "three LFs produce three empty strings"
+        );
+    }
+
+    #[test]
+    fn test_py_splitlines_trailing_newline_no_empty_tail() {
+        assert_eq!(
+            py_splitlines("hello\n"),
+            vec!["hello"],
+            "trailing \\n must not create empty trailing element"
+        );
+        assert_eq!(
+            py_splitlines("a\r\n"),
+            vec!["a"],
+            "trailing CRLF must not create empty trailing element"
+        );
+        assert_eq!(
+            py_splitlines("a\u{2028}"),
+            vec!["a"],
+            "trailing LS must not create empty trailing element"
+        );
+    }
+
+    #[test]
+    fn test_py_splitlines_leading_newline() {
+        assert_eq!(
+            py_splitlines("\nhello"),
+            vec!["", "hello"],
+            "leading \\n produces empty first element"
+        );
+        assert_eq!(
+            py_splitlines("\r\nhello"),
+            vec!["", "hello"],
+            "leading CRLF produces empty first element"
+        );
+    }
+
+    #[test]
+    fn test_py_splitlines_empty_string() {
+        assert_eq!(
+            py_splitlines(""),
+            Vec::<&str>::new(),
+            "empty string must return empty vec"
+        );
+    }
+
+    #[test]
+    fn test_py_splitlines_no_break_returns_single_element() {
+        assert_eq!(py_splitlines("hello world"), vec!["hello world"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // py_is_space / py_strip
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_py_is_space_includes_c0_separators() {
+        for c in ['\x1c', '\x1d', '\x1e', '\x1f'] {
+            assert!(
+                py_is_space(c),
+                "\\x{:02x} must be classified as Python whitespace",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn test_py_is_space_standard_whitespace() {
+        for c in [' ', '\t', '\n', '\r', '\x0b', '\x0c'] {
+            assert!(
+                py_is_space(c),
+                "'{}' must be Python whitespace",
+                c.escape_default()
+            );
+        }
+    }
+
+    #[test]
+    fn test_py_is_space_non_whitespace() {
+        for c in ['a', 'Z', '0', '!', 'é', '中'] {
+            assert!(!py_is_space(c), "'{c}' must NOT be Python whitespace");
+        }
+    }
+
+    #[test]
+    fn test_py_strip_empty_string() {
+        assert_eq!(py_strip(""), "");
+    }
+
+    #[test]
+    fn test_py_strip_all_whitespace_returns_empty() {
+        assert_eq!(py_strip("   "), "", "spaces");
+        assert_eq!(py_strip("\t\n\r"), "", "common escapes");
+        assert_eq!(py_strip("\x1c\x1d\x1e\x1f"), "", "C0 separators");
+        assert_eq!(py_strip("  \x1c  \x1f  "), "", "mixed whitespace");
+    }
+
+    #[test]
+    fn test_py_strip_no_whitespace_unchanged() {
+        assert_eq!(py_strip("hello"), "hello");
+        assert_eq!(py_strip("abc123"), "abc123");
+    }
+
+    #[test]
+    fn test_py_strip_trims_both_ends() {
+        assert_eq!(py_strip("  hello  "), "hello");
+        assert_eq!(py_strip("\x1chello\x1f"), "hello");
+        assert_eq!(py_strip("\n\r  hello world  \t\n"), "hello world");
+    }
+
+    #[test]
+    fn test_py_strip_preserves_interior_whitespace() {
+        assert_eq!(py_strip("  a b  "), "a b");
+        assert_eq!(py_strip("\x1ca\x1cb\x1c"), "a\x1cb");
+    }
+
+    // -----------------------------------------------------------------------
+    // char_prefix / char_len
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_char_prefix_ascii() {
+        assert_eq!(char_prefix("hello", 3), "hel");
+        assert_eq!(char_prefix("hello", 0), "");
+        assert_eq!(char_prefix("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_char_prefix_accented_latin() {
+        // 'é' is 2 bytes (U+00E9)
+        assert_eq!(char_prefix("héllo", 1), "h");
+        assert_eq!(char_prefix("héllo", 2), "hé");
+        assert_eq!(char_prefix("héllo", 3), "hél");
+    }
+
+    #[test]
+    fn test_char_prefix_cjk() {
+        // Each CJK char is 3 bytes
+        assert_eq!(char_prefix("日本語", 1), "日");
+        assert_eq!(char_prefix("日本語", 2), "日本");
+        assert_eq!(char_prefix("日本語", 3), "日本語");
+    }
+
+    #[test]
+    fn test_char_prefix_emoji_four_byte() {
+        // U+1F600 😀 is 4 bytes; it is ONE char
+        let s = "😀😁😂";
+        assert_eq!(char_prefix(s, 1), "😀");
+        assert_eq!(char_prefix(s, 2), "😀😁");
+    }
+
+    #[test]
+    fn test_char_prefix_n_exceeds_char_count_returns_full_string() {
+        assert_eq!(char_prefix("hi", 100), "hi", "ASCII: n beyond length");
+        assert_eq!(char_prefix("日本語", 10), "日本語", "CJK: n beyond length");
+        assert_eq!(char_prefix("😀", 5), "😀", "emoji: n beyond length");
+        assert_eq!(char_prefix("", 1), "", "empty: n beyond length");
+    }
+
+    #[test]
+    fn test_char_len_counts_chars_not_bytes() {
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("é"), 1, "'é' is 2 bytes but 1 char");
+        assert_eq!(char_len("héllo"), 5);
+        assert_eq!(char_len("日本語"), 3, "each CJK is 3 bytes");
+        assert_eq!(char_len("😀"), 1, "😀 is 4 bytes but 1 char");
+    }
+
+    #[test]
+    fn test_char_len_never_exceeds_byte_len() {
+        for s in ["", "hello", "héllo", "日本語", "😀😁", "a😀b"] {
+            assert!(
+                char_len(s) <= s.len(),
+                "char_len({s:?})={} > byte_len={}",
+                char_len(s),
+                s.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_char_len_empty_string_is_zero() {
+        assert_eq!(char_len(""), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // py_json_dumps_opts — all 4 sort_keys × ensure_ascii combinations
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_py_json_dumps_opts_no_sort_ascii_true() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 1, "a": 2}"#).unwrap();
+        let s = py_json_dumps_opts(&v, false, true);
+        assert!(
+            s.starts_with("{\"b\""),
+            "unsorted: b should appear first, got {s:?}"
+        );
+        let v2 = serde_json::json!({"k": "é"});
+        let s2 = py_json_dumps_opts(&v2, false, true);
+        assert!(
+            s2.contains("\\u00e9"),
+            "ensure_ascii=true must escape é as \\u00e9, got {s2:?}"
+        );
+    }
+
+    #[test]
+    fn test_py_json_dumps_opts_sort_ascii_true() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 1, "a": 2}"#).unwrap();
+        let s = py_json_dumps_opts(&v, true, true);
+        assert!(
+            s.starts_with("{\"a\""),
+            "sorted: a should appear first, got {s:?}"
+        );
+        let v2 = serde_json::json!({"k": "é"});
+        let s2 = py_json_dumps_opts(&v2, true, true);
+        assert!(
+            s2.contains("\\u00e9"),
+            "ensure_ascii=true must escape é, got {s2:?}"
+        );
+    }
+
+    #[test]
+    fn test_py_json_dumps_opts_no_sort_ascii_false() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 1, "a": 2}"#).unwrap();
+        let s = py_json_dumps_opts(&v, false, false);
+        assert!(
+            s.starts_with("{\"b\""),
+            "unsorted: b should appear first, got {s:?}"
+        );
+        let v2 = serde_json::json!({"k": "é"});
+        let s2 = py_json_dumps_opts(&v2, false, false);
+        assert!(
+            s2.contains('é'),
+            "ensure_ascii=false must emit é raw, got {s2:?}"
+        );
+        assert!(
+            !s2.contains("\\u00e9"),
+            "ensure_ascii=false must NOT escape é, got {s2:?}"
+        );
+    }
+
+    #[test]
+    fn test_py_json_dumps_opts_sort_ascii_false() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 1, "a": 2}"#).unwrap();
+        let s = py_json_dumps_opts(&v, true, false);
+        assert!(
+            s.starts_with("{\"a\""),
+            "sorted: a should appear first, got {s:?}"
+        );
+        let v2 = serde_json::json!({"k": "日"});
+        let s2 = py_json_dumps_opts(&v2, true, false);
+        assert!(
+            s2.contains('日'),
+            "ensure_ascii=false must emit 日 raw, got {s2:?}"
+        );
+    }
+
+    #[test]
+    fn test_py_json_dumps_opts_astral_char_surrogate_pair_encoding() {
+        // U+1F600 😀 → surrogate pair \uD83D\uDE00
+        let v = serde_json::json!({"emoji": "😀"});
+        let s = py_json_dumps_opts(&v, false, true);
+        assert!(
+            s.contains("\\ud83d\\ude00"),
+            "astral char must be encoded as surrogate pair under ensure_ascii=true, got {s:?}"
+        );
+    }
+
+    #[test]
+    fn test_py_json_dumps_opts_astral_char_raw_when_ascii_false() {
+        let v = serde_json::json!({"emoji": "😀"});
+        let s = py_json_dumps_opts(&v, false, false);
+        assert!(
+            s.contains('😀'),
+            "ensure_ascii=false must emit astral char raw, got {s:?}"
+        );
     }
 }

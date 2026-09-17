@@ -397,4 +397,329 @@ mod tests {
             i64::MAX
         );
     }
+
+    // -----------------------------------------------------------------------
+    // parse_grep_candidate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_grep_candidate_standard_format() {
+        // path/to/file.rs:42:matching line
+        let r = parse_grep_candidate("src/main.rs:42:let x = 1;").unwrap();
+        assert_eq!(r, ("main.rs".to_string(), Some(42)));
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_deep_path() {
+        let r = parse_grep_candidate("packages/engine/src/chunking.rs:100:fn foo()").unwrap();
+        assert_eq!(r.0, "chunking.rs");
+        assert_eq!(r.1, Some(100));
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_multiple_colons_in_content() {
+        // The match text itself contains colons — only first two splits matter
+        let r = parse_grep_candidate("foo.rs:7:url: http://example.com:8080/").unwrap();
+        assert_eq!(r.0, "foo.rs");
+        assert_eq!(r.1, Some(7));
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_missing_line_number_returns_none_line() {
+        // path:content (no numeric middle field) → file without line number
+        let r = parse_grep_candidate("src/lib.rs:some content without a line").unwrap();
+        assert_eq!(r.0, "lib.rs");
+        assert_eq!(r.1, None);
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_non_numeric_line_number() {
+        // path:abc:content — "abc" is not numeric, so no line
+        let r = parse_grep_candidate("src/lib.rs:abc:content").unwrap();
+        assert_eq!(r.0, "lib.rs");
+        assert_eq!(r.1, None);
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_empty_match_text() {
+        // path:10:  (empty match text after the line number)
+        let r = parse_grep_candidate("foo.rs:10:").unwrap();
+        assert_eq!(r.0, "foo.rs");
+        assert_eq!(r.1, Some(10));
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_empty_line_returns_none() {
+        assert!(
+            parse_grep_candidate("").is_none(),
+            "empty line must return None"
+        );
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_whitespace_only_returns_none() {
+        assert!(
+            parse_grep_candidate("   ").is_none(),
+            "whitespace-only line must return None"
+        );
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_no_path_like_token_returns_none() {
+        // A plain word with no dot or slash is not a path
+        assert!(
+            parse_grep_candidate("justwords notafile 42").is_none(),
+            "no path-like token must return None"
+        );
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_reranked_prefix_returns_none() {
+        assert!(
+            parse_grep_candidate("[reranked] src/main.rs:1:x").is_none(),
+            "[reranked] lines must be filtered out"
+        );
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_large_but_valid_line_number() {
+        // u128 max saturates to i64::MAX
+        let r = parse_grep_candidate("a.py:12345678901234567890:huge").unwrap();
+        assert_eq!(r.1, Some(i64::MAX));
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_line_1() {
+        let r = parse_grep_candidate("foo.rs:1:first line").unwrap();
+        assert_eq!(r.1, Some(1));
+    }
+
+    #[test]
+    fn test_parse_grep_candidate_file_no_path_separator_with_ext() {
+        // A filename with extension but no slash still counts as a path via EXT regex
+        let r = parse_grep_candidate("readme.md:1:hello").unwrap();
+        assert_eq!(r.0, "readme.md");
+        assert_eq!(r.1, Some(1));
+    }
+
+    // -----------------------------------------------------------------------
+    // sed_base / head_window
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_sed_base_range_format() {
+        // sed -n '10,20p'  →  base 10
+        assert_eq!(sed_base("sed -n '10,20p' file.rs"), 10);
+        assert_eq!(sed_base("sed -n '1,5p' a.txt"), 1);
+    }
+
+    #[test]
+    fn test_sed_base_single_line_format() {
+        // sed -n 42p  →  base 42
+        assert_eq!(sed_base("sed -n 42p file.rs"), 42);
+    }
+
+    #[test]
+    fn test_sed_base_no_match_defaults_to_1() {
+        // cat, head, tail without a recognised sed pattern → 1
+        assert_eq!(sed_base("cat file.rs"), 1);
+        assert_eq!(sed_base("head -n 20 file.rs"), 1);
+        assert_eq!(sed_base("some random command"), 1);
+    }
+
+    #[test]
+    fn test_sed_base_inverted_range_uses_first_number() {
+        // SED_RANGE regex extracts the FIRST capture group (lower bound);
+        // for an inverted range like '20,10p' it still returns 20.
+        assert_eq!(sed_base("sed -n '20,10p' file.rs"), 20);
+    }
+
+    #[test]
+    fn test_sed_base_overflow_saturates() {
+        assert_eq!(
+            sed_base("sed -n '99999999999999999999,99999999999999999999p' f.py"),
+            i64::MAX
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // chunk_observation — "other" path (non-search, non-read)
+    // -----------------------------------------------------------------------
+
+    fn other_chunks(obs: &str, win: usize) -> Vec<Chunk> {
+        // "echo" matches neither SEARCH nor READ regexes → "other" path
+        chunk_observation("echo", obs, 0, win, None, ChunkMode::Fixed)
+    }
+
+    #[test]
+    fn test_chunk_observation_empty_string_produces_one_chunk() {
+        let chunks = other_chunks("", 40);
+        // Even for empty obs the function guarantees at least one chunk
+        assert_eq!(chunks.len(), 1, "empty obs must produce exactly 1 chunk");
+        assert_eq!(chunks[0].kind, "other");
+    }
+
+    #[test]
+    fn test_chunk_observation_whitespace_only_produces_one_chunk() {
+        let chunks = other_chunks("   \n\t\n   ", 40);
+        // Pure whitespace obs: py_has_content is false for every window so the
+        // empty-fallback fires → exactly one "other" chunk
+        assert_eq!(chunks.len(), 1);
+    }
+
+    #[test]
+    fn test_chunk_observation_single_long_line_single_chunk() {
+        let long_line = "x".repeat(5000);
+        let chunks = other_chunks(&long_line, 40);
+        // py_splitlines on a no-break string returns a single element;
+        // win=40 lines → one chunk (a single line < 40 lines)
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, long_line);
+    }
+
+    #[test]
+    fn test_chunk_observation_windows_over_multiline_input() {
+        // 100 lines, win=40 → ceil(100/40) = 3 chunks
+        let obs: String = (1..=100).map(|i| format!("line{}\n", i)).collect();
+        let chunks = other_chunks(obs.trim_end_matches('\n'), 40);
+        // We can't assert exact count without knowing exact splitlines count
+        // but we can assert all lines are covered (full-coverage invariant)
+        let reconstructed = chunks
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        // Original split by lines, windows joined by \n, then joined by \n
+        let original_lines = py_splitlines(obs.trim_end_matches('\n'));
+        let expected = original_lines.join("\n");
+        assert_eq!(
+            reconstructed, expected,
+            "chunk_observation full-coverage invariant violated"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // chunk_assistant — full-coverage invariant
+    // -----------------------------------------------------------------------
+
+    fn assert_full_coverage(original: &str, win: usize) {
+        let chunks = chunk_assistant(original, 0, win);
+        if chunks.is_empty() {
+            // chunk_assistant may legitimately return no chunks for whitespace-only input
+            assert!(
+                !py_has_content(original),
+                "non-empty content produced zero chunks for {original:?}"
+            );
+            return;
+        }
+        let reconstructed = chunks
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let lines = py_splitlines(original);
+        let expected = lines.join("\n");
+        assert_eq!(
+            reconstructed, expected,
+            "full-coverage violated for win={win}: reconstructed != original lines joined"
+        );
+    }
+
+    #[test]
+    fn test_chunk_assistant_empty_string() {
+        let chunks = chunk_assistant("", 0, 40);
+        assert!(chunks.is_empty(), "empty string → no assistant chunks");
+    }
+
+    #[test]
+    fn test_chunk_assistant_whitespace_only_no_chunks() {
+        let chunks = chunk_assistant("   \n\n  ", 0, 40);
+        assert!(
+            chunks.is_empty(),
+            "whitespace-only text → no assistant chunks"
+        );
+    }
+
+    #[test]
+    fn test_chunk_assistant_single_line_full_coverage() {
+        assert_full_coverage("hello world", 40);
+    }
+
+    #[test]
+    fn test_chunk_assistant_multiline_full_coverage_win1() {
+        let txt = "alpha\nbeta\ngamma\ndelta";
+        assert_full_coverage(txt, 1);
+    }
+
+    #[test]
+    fn test_chunk_assistant_multiline_full_coverage_win40() {
+        let txt: String = (1..=80)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_full_coverage(&txt, 40);
+    }
+
+    #[test]
+    fn test_chunk_assistant_very_long_single_line_full_coverage() {
+        let long_line = "x".repeat(10_000);
+        assert_full_coverage(&long_line, 40);
+    }
+
+    #[test]
+    fn test_chunk_assistant_large_multiline_full_coverage() {
+        let txt: String = (1..=500)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_full_coverage(&txt, 40);
+    }
+
+    #[test]
+    fn test_chunk_assistant_kind_is_asst() {
+        let chunks = chunk_assistant("hello\nworld", 0, 40);
+        for c in &chunks {
+            assert_eq!(
+                c.kind, "asst",
+                "chunk_assistant must produce 'asst' kind chunks"
+            );
+        }
+    }
+
+    #[test]
+    fn test_chunk_observation_full_coverage_invariant_other_path() {
+        // Representative inputs across different sizes and break chars
+        let inputs: &[&str] = &[
+            "single line",
+            "line one\nline two\nline three",
+            &"x".repeat(5000),
+            &(1..=150)
+                .map(|i| format!("L{i}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            // consecutive newlines
+            "a\n\nb\n\nc",
+            // ends with newline (trailing empty not produced by splitlines)
+            "a\nb\n",
+        ];
+        for input in inputs {
+            let chunks = other_chunks(input, 40);
+            if chunks.len() == 1 && chunks[0].text == *input {
+                // Single-chunk passthrough (empty/whitespace fallback) — OK
+                continue;
+            }
+            let reconstructed = chunks
+                .iter()
+                .map(|c| c.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let expected = py_splitlines(input).join("\n");
+            assert_eq!(
+                reconstructed,
+                expected,
+                "full-coverage invariant failed for input of len={}",
+                input.len()
+            );
+        }
+    }
 }
