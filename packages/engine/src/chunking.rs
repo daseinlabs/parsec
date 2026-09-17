@@ -166,10 +166,7 @@ pub fn parse_grep_candidate(line: &str) -> Option<(String, Option<i64>)> {
             .as_str();
 
         if is_path(path) {
-            return Some((
-                basename(path).to_string(),
-                Some(parse_line_no(line_number)),
-            ));
+            return Some((basename(path).to_string(), Some(parse_line_no(line_number))));
         }
     }
 
