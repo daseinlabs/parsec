@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
     }
 
-        #[test]
+    #[test]
     fn splitlines_handles_all_python_boundaries_and_consecutive_breaks() {
         let text = "a\nb\rc\r\nd\x0be\x0cf\x1cg\x1dh\x1ei\u{85}j\u{2028}k\u{2029}l";
 
@@ -306,8 +306,7 @@ mod tests {
 
     #[test]
     fn json_dumps_options_sort_keys_and_control_ascii_escaping() {
-        let value: serde_json::Value =
-            serde_json::from_str(r#"{"z":"é","a":"😀"}"#).unwrap();
+        let value: serde_json::Value = serde_json::from_str(r#"{"z":"é","a":"😀"}"#).unwrap();
 
         assert_eq!(
             py_json_dumps_opts(&value, true, true),
@@ -322,5 +321,4 @@ mod tests {
             r#"{"z": "\u00e9", "a": "\ud83d\ude00"}"#
         );
     }
-
 }
