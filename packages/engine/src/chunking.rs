@@ -116,8 +116,9 @@ static RC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 static SED_RANGE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\b(\d+),(\d+)p").unwrap());
-static SED_ONE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\bsed[\s\x1c-\x1f]+-n[\s\x1c-\x1f]+(\d+)p").unwrap());
+static SED_ONE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r##"\bsed[\s\x1c-\x1f]+-n[\s\x1c-\x1f]+['\"]?(\d+)p['\"]?"##).unwrap()
+});
 
 /// Python `int()` of an ASCII-digit run is unbounded; i64 is not. Saturate
 /// instead of failing the whole parse (documented deviation for line numbers
@@ -385,7 +386,110 @@ pub fn accumulated_chunks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn grep_candidate_parses_standard_format() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:matching line"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
 
+    #[test]
+    fn grep_candidate_handles_multiple_colons_in_content() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:let x = a::b;"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn grep_candidate_handles_missing_or_invalid_line_number() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:not-a-number:code"),
+            Some(("main.rs".to_string(), None))
+        );
+
+        assert_eq!(
+            parse_grep_candidate("src/main.rs::code"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn grep_candidate_rejects_empty_and_reranked_lines() {
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("[reranked results]"), None);
+    }
+    #[test]
+    fn sed_base_handles_ranges_and_single_lines() {
+        assert_eq!(sed_base("sed -n '10,20p' file.py"), 10);
+
+        assert_eq!(sed_base("sed -n '25p' file.py"), 25);
+
+        assert_eq!(sed_base("cat file.py"), 1);
+    }
+
+    #[test]
+    fn sed_base_handles_inverted_ranges() {
+        assert_eq!(sed_base("sed -n '20,10p' file.py"), 20);
+    }
+    fn reconstruct_chunks(chunks: &[Chunk]) -> String {
+        chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    #[test]
+    fn observation_chunking_preserves_normal_multiline_content() {
+        let original = "line1\nline2\nline3";
+
+        let chunks = chunk_observation("python script.py", original, 1, 2, None, ChunkMode::Fixed);
+
+        let reconstructed = reconstruct_chunks(&chunks);
+
+        assert_eq!(reconstructed, original);
+    }
+    #[test]
+    fn observation_chunking_handles_trailing_newline() {
+        let chunks = chunk_observation(
+            "python script.py", // cmd
+            "line1\n",          // obs
+            1,                  // step
+            40,                 // win
+            None,               // read_lines
+            ChunkMode::Fixed,   // mode
+        );
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "line1");
+    }
+    #[test]
+    fn assistant_chunking_handles_empty_text() {
+        let chunks = chunk_assistant("", 1, 40);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn assistant_chunking_handles_whitespace_only_text() {
+        let chunks = chunk_assistant("   \n\t", 1, 40);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn assistant_chunking_preserves_content() {
+        let original = "Hello\nWorld\nRust";
+
+        let chunks = chunk_assistant(original, 1, 2);
+
+        assert!(!chunks.is_empty());
+
+        let reconstructed = reconstruct_chunks(&chunks);
+
+        assert_eq!(reconstructed, original);
+    }
     #[test]
     fn line_numbers_beyond_i64_saturate_not_abort() {
         // Python's unbounded int() keeps the line a grep chunk; we saturate
