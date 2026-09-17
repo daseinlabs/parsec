@@ -397,4 +397,102 @@ mod tests {
             i64::MAX
         );
     }
+
+    #[test]
+    fn parse_grep_candidate_handles_standard_grep_output() {
+        let result = parse_grep_candidate("src/main.rs:42:some matching text");
+
+        assert_eq!(result, Some(("main.rs".to_string(), Some(42))));
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_invalid_line_number() {
+        let result = parse_grep_candidate("src/main.rs:not-a-number:some text");
+
+        assert_eq!(result, Some(("main.rs".to_string(), None)));
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_colons_in_matched_content() {
+        let result = parse_grep_candidate("src/main.rs:42:http://localhost:3000/api");
+
+        assert_eq!(result, Some(("main.rs".to_string(), Some(42))));
+    }
+
+    #[test]
+    fn chunk_observation_preserves_all_text_across_chunks() {
+        let obs = "line one\nline two\nline three\nline four\nline five";
+
+        let chunks = chunk_observation("python script.py", obs, 1, 2, None, ChunkMode::Fixed);
+
+        let reconstructed = chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, obs);
+    }
+
+    #[test]
+    fn chunk_observation_preserves_long_single_line() {
+        let obs = "a".repeat(10_000);
+
+        let chunks = chunk_observation("python script.py", &obs, 1, 2, None, ChunkMode::Fixed);
+
+        let reconstructed = chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, obs);
+    }
+
+    #[test]
+    fn chunk_observation_handles_empty_and_whitespace_input() {
+        let empty_chunks = chunk_observation("python script.py", "", 1, 2, None, ChunkMode::Fixed);
+
+        assert_eq!(empty_chunks.len(), 1);
+        assert_eq!(empty_chunks[0].text, "");
+
+        let whitespace_chunks =
+            chunk_observation("python script.py", "   ", 1, 2, None, ChunkMode::Fixed);
+
+        assert_eq!(whitespace_chunks.len(), 1);
+        assert_eq!(whitespace_chunks[0].text, "   ");
+    }
+
+    #[test]
+    fn chunk_observation_tracks_file_and_lines_for_sed_read() {
+        let obs = "line ten\nline eleven\nline twelve\nline thirteen";
+
+        let chunks = chunk_observation(
+            "sed -n '10,13p' src/main.rs",
+            obs,
+            1,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 2);
+
+        assert_eq!(chunks[0].file.as_deref(), Some("main.rs"));
+        assert_eq!(chunks[0].lo, Some(10));
+        assert_eq!(chunks[0].hi, Some(11));
+        assert_eq!(chunks[0].text, "line ten\nline eleven");
+
+        assert_eq!(chunks[1].file.as_deref(), Some("main.rs"));
+        assert_eq!(chunks[1].lo, Some(12));
+        assert_eq!(chunks[1].hi, Some(13));
+        assert_eq!(chunks[1].text, "line twelve\nline thirteen");
+    }
+
+    #[test]
+    fn sed_base_extracts_starting_line_and_uses_default() {
+        assert_eq!(sed_base("sed -n '10,20p' src/main.rs"), 10);
+        assert_eq!(sed_base("sed -n 25p src/main.rs"), 25);
+        assert_eq!(sed_base("cat src/main.rs"), 1);
+    }
 }
