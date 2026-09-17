@@ -130,6 +130,9 @@ fn parse_line_no(s: &str) -> i64 {
 static EXT: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\.[A-Za-z][A-Za-z0-9]{0,4}$").unwrap());
 
+static GREP_WITH_LINE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^(.*?):[ \t]*([0-9]+)[ \t]*:").unwrap());
+
 fn obs_rc(obs: &str) -> Option<i64> {
     let head = char_prefix(obs, 400);
     RC_RE.captures(head).and_then(|m| {
@@ -145,7 +148,7 @@ fn is_path(tok: &str) -> bool {
 }
 
 fn basename(tok: &str) -> &str {
-    tok.rsplit('/').next().unwrap_or(tok)
+    tok.rsplit(['/', '\\']).next().unwrap_or(tok)
 }
 
 /// labelers.parse_grep_candidate: one grep/find result line -> (file_basename, line|None).
@@ -154,18 +157,27 @@ pub fn parse_grep_candidate(line: &str) -> Option<(String, Option<i64>)> {
     if line.is_empty() || line.starts_with("[reranked") {
         return None;
     }
-    let parts: Vec<&str> = line.splitn(3, ':').collect();
-    if parts.len() >= 3
-        && !py_strip(parts[1]).is_empty()
-        && py_strip(parts[1]).chars().all(|c| c.is_ascii_digit())
-        && is_path(parts[0])
-    {
-        let n = parse_line_no(py_strip(parts[1]));
-        return Some((basename(parts[0]).to_string(), Some(n)));
+
+    if let Some(captures) = GREP_WITH_LINE.captures(line) {
+        let path = captures.get(1).expect("path capture exists").as_str();
+        let line_number = captures
+            .get(2)
+            .expect("line-number capture exists")
+            .as_str();
+
+        if is_path(path) {
+            return Some((
+                basename(path).to_string(),
+                Some(parse_line_no(line_number)),
+            ));
+        }
     }
+
+    let parts: Vec<&str> = line.splitn(3, ':').collect();
     if parts.len() >= 2 && is_path(parts[0]) {
         return Some((basename(parts[0]).to_string(), None));
     }
+
     let tok = py_split_ws(line)[0].trim_end_matches(':');
     if is_path(tok) {
         Some((basename(tok).to_string(), None))
@@ -398,7 +410,7 @@ mod tests {
         );
     }
 
-        #[test]
+    #[test]
     fn grep_candidates_handle_standard_invalid_and_windows_paths() {
         assert_eq!(
             parse_grep_candidate("src/lib.rs:42:matching: text"),
