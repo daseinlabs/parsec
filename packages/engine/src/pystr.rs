@@ -200,7 +200,9 @@ fn py_json_quote_opts(s: &str, ensure_ascii: bool) -> String {
             '\x08' => out.push_str("\\b"),
             '\x0c' => out.push_str("\\f"),
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c if c.is_ascii() || !ensure_ascii => out.push(c),
+            // Python's ensure_ascii only passes printable ASCII (' '..='~')
+            // through, so DEL (0x7f) is escaped like any non-ASCII char.
+            c if (c as u32) < 0x7f || !ensure_ascii => out.push(c),
             c => {
                 let cp = c as u32;
                 if cp > 0xFFFF {
@@ -523,7 +525,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known edge case / bug: ensure_ascii=true leaves DEL (\\x7f) raw; Python escapes it as \\u007f"]
     fn json_dumps_ensure_ascii_escapes_del() {
         let v = serde_json::json!("\u{7f}");
         assert_eq!(py_json_dumps_opts(&v, false, true), r#""\u007f""#);
