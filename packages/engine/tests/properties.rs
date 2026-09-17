@@ -277,7 +277,7 @@ proptest! {
     }
 
     #[test]
-    fn chunk_observation_never_panics_for_positive_windows(
+    fn chunk_observation_never_panics(
         cmd in prop_oneof![
             prop::sample::select(vec![
                 "cat a.py", "sed -n '5,9p' src/x.rs", "sed -n 3p b.go", "grep -rn foo .",
@@ -286,7 +286,7 @@ proptest! {
             text(),
         ],
         obs in text(),
-        win in 1usize..50,
+        win in 0usize..50,
         read_lines in prop::option::of(1usize..50),
     ) {
         let chunks = chunk_observation(&cmd, &obs, 0, win, read_lines, ChunkMode::Fixed);

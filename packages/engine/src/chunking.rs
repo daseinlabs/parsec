@@ -270,6 +270,9 @@ pub fn chunk_observation(
 
 /// chunking._chunk_observation (the legacy win-window path).
 fn chunk_observation_inner(cmd: &str, obs: &str, step: i64, win: usize) -> Vec<Chunk> {
+    // Python's range(0, n, 0) raises; a zero window here would never advance
+    // and hang. Treat it as one line per window instead.
+    let win = win.max(1);
     let lines = py_splitlines(obs);
     if SEARCH.is_match(cmd) {
         // grep/find: each match line is a tiny chunk; non-candidate runs window.
@@ -341,8 +344,10 @@ fn chunk_observation_inner(cmd: &str, obs: &str, step: i64, win: usize) -> Vec<C
 }
 
 /// chunking.chunk_assistant: the agent's own message text, windowed with the
-/// same full-coverage invariant. May legitimately return no chunks.
+/// same full-coverage invariant. May legitimately return no chunks. A `win`
+/// of 0 is treated as 1 (see `chunk_observation_inner`).
 pub fn chunk_assistant(txt: &str, step: i64, win: usize) -> Vec<Chunk> {
+    let win = win.max(1);
     let lines = py_splitlines(txt);
     let mut out = Vec::new();
     let mut i = 0;
@@ -951,25 +956,33 @@ mod tests {
         assert!(r.is_ok());
     }
 
-    /// Runs `f` on a worker thread; false if it has not returned in time.
-    fn finishes_in_time(f: impl FnOnce() + Send + 'static) -> bool {
+    /// Runs `f` on a worker thread; None if it has not returned in time, so a
+    /// regression fails the test instead of hanging the suite.
+    fn run_with_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            f();
-            let _ = tx.send(());
+            let _ = tx.send(f());
         });
-        rx.recv_timeout(std::time::Duration::from_secs(2)).is_ok()
+        rx.recv_timeout(std::time::Duration::from_secs(5)).ok()
     }
 
     #[test]
-    #[ignore = "known edge case / bug: win = 0 never advances the window loop and hangs (Python's range step 0 raises instead)"]
-    fn window_size_zero_terminates() {
-        assert!(finishes_in_time(|| {
-            chunk_observation("pytest", "a\nb", 0, 0, None, ChunkMode::Fixed);
-        }));
-        assert!(finishes_in_time(|| {
-            chunk_assistant("a\nb", 0, 0);
-        }));
+    fn observation_window_size_zero_behaves_like_one() {
+        let obs = "a\nb\n\nsrc/f.rs:3:x\nc";
+        for cmd in ["pytest", "grep -rn x ."] {
+            let want = chunk_observation(cmd, obs, 0, 1, None, ChunkMode::Fixed);
+            let got =
+                run_with_timeout(move || chunk_observation(cmd, obs, 0, 0, None, ChunkMode::Fixed));
+            assert_eq!(got, Some(want), "cmd: {cmd:?}");
+        }
+    }
+
+    #[test]
+    fn assistant_window_size_zero_behaves_like_one() {
+        let txt = "a\n\nb\nc";
+        let want = chunk_assistant(txt, 0, 1);
+        let got = run_with_timeout(move || chunk_assistant(txt, 0, 0));
+        assert_eq!(got, Some(want));
     }
 
     #[test]
