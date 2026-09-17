@@ -397,4 +397,76 @@ mod tests {
             i64::MAX
         );
     }
+
+        #[test]
+    fn grep_candidates_handle_standard_invalid_and_windows_paths() {
+        assert_eq!(
+            parse_grep_candidate("src/lib.rs:42:matching: text"),
+            Some(("lib.rs".to_string(), Some(42)))
+        );
+        assert_eq!(
+            parse_grep_candidate("src/lib.rs:not-a-number:matching text"),
+            Some(("lib.rs".to_string(), None))
+        );
+        assert_eq!(
+            parse_grep_candidate("src/lib.rs:10:"),
+            Some(("lib.rs".to_string(), Some(10)))
+        );
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("[reranked result]"), None);
+
+        // Assignment requirement: Windows drive-letter paths must parse too.
+        assert_eq!(
+            parse_grep_candidate(r"C:\project\file.rs:10:code"),
+            Some(("file.rs".to_string(), Some(10)))
+        );
+    }
+
+    #[test]
+    fn sed_base_reads_ranges_single_lines_and_defaults_safely() {
+        assert_eq!(sed_base("sed -n '10,20p' src/lib.rs"), 10);
+        assert_eq!(sed_base("sed -n 7p src/lib.rs"), 7);
+        assert_eq!(sed_base("sed -n '20,10p' src/lib.rs"), 20);
+        assert_eq!(sed_base("sed -n nope src/lib.rs"), 1);
+        assert_eq!(sed_base("cat src/lib.rs"), 1);
+    }
+
+    #[test]
+    fn observation_chunks_window_lines_and_keep_metadata() {
+        let chunks = chunk_observation(
+            "echo hello",
+            "one\ntwo\nthree",
+            4,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].text, "one\ntwo");
+        assert_eq!(chunks[1].text, "three");
+        assert!(chunks.iter().all(|chunk| chunk.kind == "other"));
+        assert!(chunks.iter().all(|chunk| chunk.step == 4));
+
+        let rebuilt = chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(rebuilt, "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn assistant_chunks_skip_blank_text_and_keep_long_lines_intact() {
+        assert!(chunk_assistant("", 2, 2).is_empty());
+        assert!(chunk_assistant(" \n\t ", 2, 2).is_empty());
+
+        let long_line = "x".repeat(1_000);
+        let chunks = chunk_assistant(&long_line, 3, 1);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, long_line);
+        assert_eq!(chunks[0].kind, "asst");
+        assert_eq!(chunks[0].step, 3);
+    }
 }
