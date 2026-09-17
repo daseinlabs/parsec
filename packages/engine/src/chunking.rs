@@ -397,4 +397,238 @@ mod tests {
             i64::MAX
         );
     }
+
+    // ---- new tests below ----
+
+    #[test]
+    fn parse_grep_candidate_standard_format() {
+        assert_eq!(
+            parse_grep_candidate("path/to/file.rs:42:matching line"),
+            Some(("file.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_windows_path_is_not_recognized() {
+        // KNOWN LIMITATION: the drive-letter colon in a Windows path collides
+        // with the "path:line:content" delimiter, so `parts[0]` is just "C"
+        // and never matches `is_path`. Documenting rather than assuming this
+        // "just works" for Windows-style grep output.
+        assert_eq!(
+            parse_grep_candidate(r"C:\project\file.rs:10:code"),
+            None,
+            "Windows-style paths are misparsed because the drive-letter colon \
+             is consumed as the path/line separator"
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_multiple_colons_in_content() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:some: text: here"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_missing_line_number() {
+        assert_eq!(
+            parse_grep_candidate("path/to/file.rs:matching line"),
+            Some(("file.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_non_numeric_line_number() {
+        assert_eq!(
+            parse_grep_candidate("file.rs:abc:content"),
+            Some(("file.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_empty_text_after_line_number() {
+        assert_eq!(
+            parse_grep_candidate("file.rs:42:"),
+            Some(("file.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_reranked_and_empty() {
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("   "), None);
+        assert_eq!(parse_grep_candidate("[reranked results]"), None);
+    }
+
+    #[test]
+    fn parse_grep_candidate_single_token_path() {
+        // find-style output: a bare path, no colon at all.
+        assert_eq!(
+            parse_grep_candidate("src/lib.rs"),
+            Some(("lib.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn sed_base_various_formats() {
+        assert_eq!(sed_base("sed -n '10,20p' file.py"), 10);
+        assert_eq!(sed_base("sed -n 5p file.py"), 5);
+        assert_eq!(sed_base("cat file.py"), 1); // no sed spec -> default
+        assert_eq!(sed_base("sed -n '20,10p' file.py"), 20); // inverted range: no validation, just takes lo
+    }
+
+    #[test]
+    fn sed_base_unusual_spacing() {
+        assert_eq!(sed_base("sed   -n   '15,30p'   file.py"), 15);
+    }
+
+    #[test]
+    fn sed_base_non_numeric_falls_back_to_one() {
+        assert_eq!(sed_base("sed -n 'x,yp' file.py"), 1);
+    }
+
+    #[test]
+    fn chunk_observation_empty_and_whitespace_only() {
+        let out = chunk_observation("ls", "", 0, 40, None, ChunkMode::Fixed);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "");
+
+        let out = chunk_observation("ls", "   \n\n  ", 0, 40, None, ChunkMode::Fixed);
+        // Whitespace-only content: no non-empty window gets pushed, so the
+        // function falls back to a single chunk holding the raw observation.
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn chunk_observation_full_coverage_invariant_other_branch() {
+        let obs = (0..100)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = chunk_observation("python script.py", &obs, 0, 10, None, ChunkMode::Fixed);
+        let rebuilt = out
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(rebuilt, obs);
+    }
+
+    #[test]
+    fn chunk_observation_other_branch_can_silently_drop_whitespace_only_windows() {
+        // KNOWN LIMITATION vs the module's stated "full-coverage invariant":
+        // a window that is *entirely* whitespace is dropped rather than kept.
+        // With real content on both sides, a mid-stream blank-only window
+        // vanishes from the reconstructed text. win=1 makes each line its
+        // own window, so the blank line has nowhere to hide.
+        let obs = "line1\n   \nline2";
+        let out = chunk_observation("python x.py", obs, 0, 1, None, ChunkMode::Fixed);
+        let rebuilt = out
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_ne!(
+            rebuilt, obs,
+            "the whitespace-only middle window was dropped, breaking full coverage"
+        );
+        assert_eq!(rebuilt, "line1\nline2");
+    }
+
+    #[test]
+    fn chunk_observation_windows_by_win_size() {
+        let obs = (0..25)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = chunk_observation("python script.py", &obs, 0, 10, None, ChunkMode::Fixed);
+        assert_eq!(out.len(), 3); // 10, 10, 5
+        assert_eq!(out[2].text.lines().count(), 5);
+    }
+
+    #[test]
+    fn chunk_observation_very_long_single_line() {
+        let obs = "x".repeat(10_000);
+        let out = chunk_observation("cat huge.txt", &obs, 0, 40, None, ChunkMode::Fixed);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, obs);
+        assert_eq!(out[0].file, Some("huge.txt".to_string()));
+    }
+
+    #[test]
+    fn chunk_observation_grep_mixes_grep_and_other_chunks() {
+        let obs = "noise before\nsrc/a.rs:1:fn main() {}\nmore noise\nsrc/b.rs:2:let x = 1;";
+        let out = chunk_observation("grep -rn fn src/", obs, 0, 40, None, ChunkMode::Fixed);
+        let kinds: Vec<&str> = out.iter().map(|c| c.kind.as_str()).collect();
+        assert!(kinds.contains(&"grep"));
+        assert!(kinds.contains(&"other"));
+    }
+
+    #[test]
+    fn chunk_observation_carries_cmd_rc_head_on_every_chunk() {
+        let obs = "<returncode>0</returncode>\nsome output here";
+        let out = chunk_observation("cat f.py", obs, 3, 40, None, ChunkMode::Fixed);
+        for c in &out {
+            assert_eq!(c.rc, Some(0));
+            assert_eq!(c.cmd, "cat f.py");
+            assert_eq!(c.step, 3);
+        }
+    }
+
+    #[test]
+    fn chunk_observation_read_lines_windows_by_group_size() {
+        let obs = "line1\nline2\nline3\nline4\nline5";
+        let out = chunk_observation("cat f.py", obs, 0, 40, Some(2), ChunkMode::Fixed);
+        assert_eq!(out.len(), 3); // groups of 2, 2, 1
+        assert_eq!(out[0].lo, Some(1));
+        assert_eq!(out[0].hi, Some(2));
+    }
+
+    #[test]
+    fn chunk_observation_read_lines_drops_blank_lines_but_keeps_coordinates() {
+        let obs = "a\n\nb\n   \nc";
+        let out = chunk_observation("cat f.py", obs, 0, 40, Some(10), ChunkMode::Fixed);
+        // Blank/whitespace-only lines are dropped entirely, so coordinates
+        // jump (1, 3, 5) instead of being contiguous.
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].lo, Some(1));
+        assert_eq!(out[0].hi, Some(5));
+        assert_eq!(out[0].text, "a\nb\nc");
+    }
+
+    #[test]
+    fn chunk_assistant_empty_and_whitespace_returns_no_chunks() {
+        assert_eq!(chunk_assistant("", 0, 40), vec![]);
+        assert_eq!(chunk_assistant("   \n  \n ", 0, 40), vec![]);
+    }
+
+    #[test]
+    fn chunk_assistant_full_coverage_invariant() {
+        let txt = (0..50)
+            .map(|i| format!("thought {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = chunk_assistant(&txt, 0, 12);
+        let rebuilt = out
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(rebuilt, txt);
+    }
+
+    #[test]
+    fn chunk_assistant_large_multiline_windows_correctly() {
+        let txt = (0..1000)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = chunk_assistant(&txt, 7, 40);
+        assert_eq!(out.len(), 25);
+        for c in &out {
+            assert_eq!(c.step, 7);
+            assert_eq!(c.kind, "asst");
+        }
+    }
 }
