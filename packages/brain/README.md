@@ -13,14 +13,17 @@ repository.
 
 ## Self-host
 
-You need a curator checkpoint. Either download one to
-`~/.parsec/brain/curator_v4_prod.pt` (the default `PARSEC_CKPT`) or point
-`PARSEC_CKPT` at the Hub: `hf://<org>/<repo>/<file>.pt` fetches and caches it.
+You need a curator checkpoint. The released ones are on the Hugging Face
+Hub at [huggingface.co/parsecai/curator](https://huggingface.co/parsecai/curator);
+`curator_v7-9_10nn_prod.pt` is self-contained (no neighbor store at serve
+time). Either download one to `~/.parsec/brain/curator_v4_prod.pt` (the
+default `PARSEC_CKPT`) or point `PARSEC_CKPT` at the Hub:
+`hf://parsecai/curator/<file>.pt` fetches and caches it via `huggingface_hub`.
 
 **Docker (recommended):** from the repository root,
 
 ```sh
-PARSEC_CKPT=hf://<org>/<repo>/<file>.pt docker compose up -d   # http://127.0.0.1:8090
+PARSEC_CKPT=hf://parsecai/curator/curator_v7-9_10nn_prod.pt docker compose up -d   # http://127.0.0.1:8090
 curl -s http://127.0.0.1:8090/v1/bundle                         # checkpoint id, tau_q, contracts
 ```
 
@@ -29,7 +32,7 @@ curl -s http://127.0.0.1:8090/v1/bundle                         # checkpoint id,
 ```sh
 cd packages/brain
 python -m venv .venv && .venv/bin/pip install -e ".[embed]"
-PARSEC_CKPT=hf://<org>/<repo>/<file>.pt \
+PARSEC_CKPT=hf://parsecai/curator/curator_v7-9_10nn_prod.pt \
   .venv/bin/uvicorn --factory parsec_brain.app:create_app --port 8090
 ```
 
@@ -107,7 +110,7 @@ Any mismatch raises at load — the app never starts on a bad bundle.
 
 | piece | where | tracked? |
 |---|---|---|
-| curator checkpoint (36MB `.pt`) | `PARSEC_CKPT`: a path (default `~/.parsec/brain/curator_v4_prod.pt`) or `hf://<org>/<repo>/<file>`; baked into the image at deploy | no — out of the repo |
+| curator checkpoint (36MB `.pt`) | `PARSEC_CKPT`: a path (default `~/.parsec/brain/curator_v4_prod.pt`) or `hf://parsecai/curator/<file>`; baked into the image at deploy | no — out of the repo |
 | `rules.json` (16-rule roster; `/v1/score/rules` default = the `active`+`always_on` subset) | `models/rules.json` (override: `PARSEC_RULES_JSON`) | yes |
 | `changeprone.pkl` (readout col 42 sidecar) | `models/changeprone.pkl` (override: `AC_CHANGEPRONE_PKL`); absent ⇒ zero-filled col | yes |
 | checkpoint identity | `checkpoint_id` = sha256 of the `.pt`, on every response + `/v1/bundle` | — |

@@ -17,7 +17,7 @@
 </p>
 
 **Context savings for coding agents.** parsec is a local proxy and plugin for
-Claude Code, OpenCode, Codex CLI, and Claude Desktop that cuts the tokens your
+Claude Code, OpenCode, Codex CLI, pi, and Claude Desktop that cuts the tokens your
 agent spends per turn: it blocks wasteful re-reads, breaks command loops, and
 (with scoring enabled) curates the conversation context before each request,
 cache-safely. Savings are measured per request against the provider's own
@@ -156,9 +156,16 @@ savings ledger). Curation needs one, and you can run it yourself: it is
 `packages/brain`, one Python process holding the curator checkpoint and the
 bge-large encoder.
 
+The released curator checkpoints live on the Hugging Face Hub at
+[huggingface.co/parsecai/curator](https://huggingface.co/parsecai/curator).
+Use `curator_v7-9_10nn_prod.pt`: it is self-contained and needs no neighbor
+store at serve time. The model card lists the other checkpoint and its
+calibration tables.
+
 ```sh
-# 1. a curator checkpoint — the released base model on the Hugging Face Hub
-export PARSEC_CKPT=hf://<org>/<repo>/<checkpoint>.pt   # or a local path
+# 1. a curator checkpoint — fetched and cached via huggingface_hub, or a local path
+pip install huggingface_hub
+export PARSEC_CKPT=hf://parsecai/curator/curator_v7-9_10nn_prod.pt
 # 2. the service (in-process bge-large; CPU works, a GPU is faster)
 docker compose up -d                                   # http://127.0.0.1:8090
 # 3. point the proxy at it
