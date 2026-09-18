@@ -201,3 +201,177 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn actions_extracts_commands_and_queries() {
+        let message = json!({
+            "role": "assistant",
+            "extra": {
+                "actions": [
+                    {
+                        "command": "cargo test"
+                    },
+                    {
+                        "query": "find rust files"
+                    }
+                ]
+            }
+        });
+
+        assert_eq!(
+            actions(&message),
+            vec!["cargo test".to_string(), "find rust files".to_string()]
+        );
+    }
+
+    #[test]
+    fn steps_of_extracts_plain_string_observation() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {
+                    "actions": [
+                        {
+                            "command": "cargo test"
+                        }
+                    ]
+                }
+            }),
+            json!({
+                "role": "tool",
+                "content": "all tests passed"
+            }),
+        ];
+
+        assert_eq!(
+            steps_of(&messages),
+            vec![("cargo test".to_string(), "all tests passed".to_string())]
+        );
+    }
+
+    #[test]
+    fn steps_of_extracts_text_from_content_array() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {
+                    "actions": [
+                        {
+                            "command": "read file"
+                        }
+                    ]
+                }
+            }),
+            json!({
+                "role": "tool",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "first part"
+                    },
+                    {
+                        "type": "text",
+                        "text": "second part"
+                    }
+                ]
+            }),
+        ];
+
+        assert_eq!(
+            steps_of(&messages),
+            vec![(
+                "read file".to_string(),
+                "first part second part".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn assistant_chunks_of_extracts_plain_text() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "Here is the answer."
+            }),
+            json!({
+                "role": "user",
+                "content": "Thanks"
+            }),
+        ];
+
+        let chunks = assistant_chunks_of(&messages);
+
+        assert!(!chunks.is_empty());
+        assert_eq!(chunks[0].text, "Here is the answer.");
+        assert_eq!(chunks[0].step, 0);
+    }
+
+    #[test]
+    fn assistant_chunks_of_skips_tool_use_blocks() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "I will inspect the file."
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "tool_1",
+                        "name": "read_file",
+                        "input": {
+                            "path": "src/main.rs"
+                        }
+                    }
+                ]
+            }),
+            json!({
+                "role": "tool",
+                "content": "file contents"
+            }),
+        ];
+
+        let chunks = assistant_chunks_of(&messages);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn message_helpers_handle_malformed_and_missing_fields() {
+        let messages = vec![
+            json!({}),
+            json!({
+                "role": 123,
+                "content": null
+            }),
+            json!({
+                "role": "assistant"
+            }),
+            json!({
+                "role": "user",
+                "content": {
+                    "unexpected": "object"
+                }
+            }),
+        ];
+
+        assert_eq!(steps_of(&messages), vec![("".to_string(), "".to_string())]);
+
+        assert!(assistant_chunks_of(&messages).is_empty());
+
+        assert!(actions(&json!({})).is_empty());
+
+        assert!(actions(&json!({
+            "extra": {
+                "actions": "not-an-array"
+            }
+        }))
+        .is_empty());
+    }
+}
