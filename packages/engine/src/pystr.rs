@@ -28,22 +28,28 @@ pub fn py_splitlines(s: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let mut iter = s.char_indices().peekable();
+
     while let Some((i, c)) = iter.next() {
         if is_line_break(c) {
             out.push(&s[start..i]);
+
             let mut end = i + c.len_utf8();
+
             if c == '\r' {
                 if let Some(&(j, '\n')) = iter.peek() {
                     iter.next();
                     end = j + 1;
                 }
             }
+
             start = end;
         }
     }
+
     if start < s.len() {
         out.push(&s[start..]);
     }
+
     out
 }
 
@@ -94,23 +100,32 @@ pub fn py_json_dumps(v: &serde_json::Value) -> String {
 /// str by code point; Rust's byte-wise UTF-8 Ord is the same order.
 pub fn py_json_dumps_opts(v: &serde_json::Value, sort_keys: bool, ensure_ascii: bool) -> String {
     use serde_json::Value;
+
     match v {
         Value::Null => "null".into(),
+
         Value::Bool(b) => if *b { "true" } else { "false" }.into(),
+
         Value::Number(n) => py_number_repr(n),
+
         Value::String(s) => py_json_quote_opts(s, ensure_ascii),
+
         Value::Array(a) => {
             let items: Vec<String> = a
                 .iter()
                 .map(|x| py_json_dumps_opts(x, sort_keys, ensure_ascii))
                 .collect();
+
             format!("[{}]", items.join(", "))
         }
+
         Value::Object(o) => {
             let mut entries: Vec<(&String, &Value)> = o.iter().collect();
+
             if sort_keys {
                 entries.sort_by_key(|(k, _)| *k);
             }
+
             let items: Vec<String> = entries
                 .iter()
                 .map(|(k, val)| {
@@ -121,6 +136,7 @@ pub fn py_json_dumps_opts(v: &serde_json::Value, sort_keys: bool, ensure_ascii: 
                     )
                 })
                 .collect();
+
             format!("{{{}}}", items.join(", "))
         }
     }
@@ -140,7 +156,9 @@ fn py_number_repr(n: &serde_json::Number) -> String {
     if n.is_i64() || n.is_u64() {
         return n.to_string();
     }
+
     let f = n.as_f64().unwrap_or(0.0);
+
     py_float_repr(f)
 }
 
@@ -153,21 +171,30 @@ pub fn py_float_repr(f: f64) -> String {
             "0.0".into()
         };
     }
+
     // {:e} gives shortest round-trip digits as d[.ddd]e<exp> with the
     // exponent of the leading digit — the same exponent CPython's rule uses.
     let sci = format!("{:e}", f);
+
     let neg = sci.starts_with('-');
+
     let body = if neg { &sci[1..] } else { &sci[..] };
+
     let (mant, exp) = body.split_once('e').expect("{:e} always has an exponent");
+
     let exp: i32 = exp.parse().expect("exponent parses");
+
     let digits: String = mant.chars().filter(|c| *c != '.').collect();
+
     let sign = if neg { "-" } else { "" };
+
     if !(-4..16).contains(&exp) {
         let m = if digits.len() == 1 {
             digits
         } else {
             format!("{}.{}", &digits[..1], &digits[1..])
         };
+
         format!(
             "{}{}e{}{:02}",
             sign,
@@ -177,6 +204,7 @@ pub fn py_float_repr(f: f64) -> String {
         )
     } else if exp >= 0 {
         let e = exp as usize;
+
         if digits.len() <= e + 1 {
             format!("{}{}{}.0", sign, digits, "0".repeat(e + 1 - digits.len()))
         } else {
@@ -189,7 +217,9 @@ pub fn py_float_repr(f: f64) -> String {
 
 fn py_json_quote_opts(s: &str, ensure_ascii: bool) -> String {
     let mut out = String::with_capacity(s.len() + 2);
+
     out.push('"');
+
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
@@ -199,12 +229,21 @@ fn py_json_quote_opts(s: &str, ensure_ascii: bool) -> String {
             '\t' => out.push_str("\\t"),
             '\x08' => out.push_str("\\b"),
             '\x0c' => out.push_str("\\f"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c if c.is_ascii() || !ensure_ascii => out.push(c),
+
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+
+            c if c.is_ascii() || !ensure_ascii => {
+                out.push(c);
+            }
+
             c => {
                 let cp = c as u32;
+
                 if cp > 0xFFFF {
                     let v = cp - 0x10000;
+
                     out.push_str(&format!(
                         "\\u{:04x}\\u{:04x}",
                         0xD800 + (v >> 10),
@@ -216,7 +255,9 @@ fn py_json_quote_opts(s: &str, ensure_ascii: bool) -> String {
             }
         }
     }
+
     out.push('"');
+
     out
 }
 
@@ -224,12 +265,20 @@ fn py_json_quote_opts(s: &str, ensure_ascii: bool) -> String {
 mod tests {
     use super::*;
 
+    // ------------------------------------------------------------
+    // py_splitlines tests
+    // ------------------------------------------------------------
+
     #[test]
     fn splitlines_matches_python() {
         assert_eq!(py_splitlines("a\nb"), vec!["a", "b"]);
+
         assert_eq!(py_splitlines("a\r\nb\rc"), vec!["a", "b", "c"]);
+
         assert_eq!(py_splitlines("a\n"), vec!["a"]);
+
         assert_eq!(py_splitlines(""), Vec::<&str>::new());
+
         assert_eq!(
             py_splitlines("a\x0bb\x1cc\u{2028}d"),
             vec!["a", "b", "c", "d"]
@@ -237,10 +286,183 @@ mod tests {
     }
 
     #[test]
+    fn py_splitlines_handles_all_python_line_boundaries() {
+        let input = "a\nb\rc\rd\ne\x0bf\x0cg\x1ch\x1di\x1ej\u{85}k\u{2028}l\u{2029}m";
+
+        assert_eq!(
+            py_splitlines(input),
+            vec!["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m"]
+        );
+    }
+
+    #[test]
+    fn py_splitlines_treats_crlf_as_one_line_break() {
+        assert_eq!(py_splitlines("first\r\nsecond"), vec!["first", "second"]);
+
+        assert_eq!(
+            py_splitlines("first\r\n\r\nsecond"),
+            vec!["first", "", "second"]
+        );
+    }
+
+    #[test]
+    fn py_splitlines_handles_newlines_at_boundaries() {
+        assert_eq!(py_splitlines("\nhello"), vec!["", "hello"]);
+
+        assert_eq!(py_splitlines("hello\n"), vec!["hello"]);
+
+        assert_eq!(py_splitlines("\n"), vec![""]);
+
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    // ------------------------------------------------------------
+    // py_is_space tests
+    // ------------------------------------------------------------
+
+    #[test]
+    fn py_is_space_handles_python_specific_whitespace() {
+        for c in ['\x1c', '\x1d', '\x1e', '\x1f'] {
+            assert!(py_is_space(c), "expected {c:?} to be whitespace");
+        }
+
+        for c in [' ', '\t', '\n', '\r'] {
+            assert!(py_is_space(c), "expected {c:?} to be whitespace");
+        }
+
+        for c in ['a', '1', 'é', '中'] {
+            assert!(!py_is_space(c), "expected {c:?} to be non-whitespace");
+        }
+    }
+
+    // ------------------------------------------------------------
+    // py_strip tests
+    // ------------------------------------------------------------
+
+    #[test]
+    fn py_strip_handles_empty_whitespace_and_content() {
+        assert_eq!(py_strip(""), "");
+
+        assert_eq!(py_strip("   "), "");
+
+        assert_eq!(py_strip("\t\n\r"), "");
+
+        assert_eq!(py_strip("  hello  "), "hello");
+
+        assert_eq!(py_strip("\n\t hello \r\n"), "hello");
+
+        assert_eq!(py_strip("hello"), "hello");
+    }
+
+    #[test]
+    fn py_strip_handles_python_specific_whitespace() {
+        assert_eq!(py_strip("\x1c\x1dhello\x1e\x1f"), "hello");
+    }
+
+    // ------------------------------------------------------------
+    // py_has_content tests
+    // ------------------------------------------------------------
+
+    #[test]
+    fn py_has_content_distinguishes_whitespace_from_content() {
+        assert!(!py_has_content(""));
+
+        assert!(!py_has_content("   "));
+
+        assert!(!py_has_content("\t\n\r"));
+
+        assert!(!py_has_content("\x1c\x1d\x1e\x1f"));
+
+        assert!(py_has_content("a"));
+
+        assert!(py_has_content(" hello "));
+
+        assert!(py_has_content("é"));
+
+        assert!(py_has_content("中"));
+    }
+
+    // ------------------------------------------------------------
+    // py_split_ws tests
+    // ------------------------------------------------------------
+
+    #[test]
+    fn py_split_ws_handles_whitespace_runs() {
+        assert_eq!(py_split_ws("hello world"), vec!["hello", "world"]);
+
+        assert_eq!(py_split_ws("  hello   world  "), vec!["hello", "world"]);
+
+        assert_eq!(
+            py_split_ws("\thello\nworld\r\nrust"),
+            vec!["hello", "world", "rust"]
+        );
+
+        assert_eq!(py_split_ws("   "), Vec::<&str>::new());
+
+        assert_eq!(py_split_ws(""), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn py_split_ws_handles_python_specific_whitespace() {
+        assert_eq!(
+            py_split_ws("hello\x1cworld\x1d rust\x1eengine\x1f"),
+            vec!["hello", "world", "rust", "engine"]
+        );
+    }
+
+    // ------------------------------------------------------------
+    // char_len tests
+    // ------------------------------------------------------------
+
+    #[test]
+    fn char_len_counts_characters_not_utf8_bytes() {
+        assert_eq!(char_len("hello"), 5);
+
+        assert_eq!(char_len("héllo"), 5);
+
+        assert_eq!(char_len("你好"), 2);
+
+        assert_eq!(char_len("नमस्ते"), 6);
+
+        assert_eq!(char_len("😀"), 1);
+    }
+
+    // ------------------------------------------------------------
+    // char_prefix tests
+    // ------------------------------------------------------------
+
+    #[test]
     fn char_prefix_is_chars_not_bytes() {
         assert_eq!(char_prefix("héllo", 2), "hé");
+
         assert_eq!(char_prefix("ab", 10), "ab");
     }
+
+    #[test]
+    fn char_prefix_handles_multibyte_unicode() {
+        assert_eq!(char_prefix("你好世界", 2), "你好");
+
+        assert_eq!(char_prefix("😀😎🚀", 2), "😀😎");
+
+        assert_eq!(char_prefix("नमस्ते", 3), "नमस");
+    }
+
+    #[test]
+    fn char_prefix_handles_zero_and_large_prefixes() {
+        assert_eq!(char_prefix("hello", 0), "");
+
+        assert_eq!(char_prefix("hello", 5), "hello");
+
+        assert_eq!(char_prefix("hello", 100), "hello");
+
+        assert_eq!(char_prefix("", 0), "");
+
+        assert_eq!(char_prefix("", 10), "");
+    }
+
+    // ------------------------------------------------------------
+    // float tests
+    // ------------------------------------------------------------
 
     #[test]
     fn float_repr_matches_cpython() {
@@ -263,9 +485,40 @@ mod tests {
         }
     }
 
+    // ------------------------------------------------------------
+    // JSON tests
+    // ------------------------------------------------------------
+
     #[test]
     fn json_dumps_default_formatting() {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
+
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
+    }
+
+    #[test]
+    fn json_dumps_respects_ensure_ascii_option() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"text": "é中😀"}"#).unwrap();
+
+        let ascii = py_json_dumps_opts(&v, false, true);
+
+        let utf8 = py_json_dumps_opts(&v, false, false);
+
+        assert_eq!(ascii, "{\"text\": \"\\u00e9\\u4e2d\\ud83d\\ude00\"}");
+
+        assert_eq!(utf8, "{\"text\": \"é中😀\"}");
+    }
+
+    #[test]
+    fn json_dumps_respects_sort_keys_option() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 2, "a": 1, "c": 3}"#).unwrap();
+
+        let sorted = py_json_dumps_opts(&v, true, true);
+
+        let unsorted = py_json_dumps_opts(&v, false, true);
+
+        assert_eq!(sorted, "{\"a\": 1, \"b\": 2, \"c\": 3}");
+
+        assert_eq!(unsorted, "{\"b\": 2, \"a\": 1, \"c\": 3}");
     }
 }
