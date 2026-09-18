@@ -397,4 +397,109 @@ mod tests {
             i64::MAX
         );
     }
+
+    #[test]
+    fn parse_grep_candidate_standard_format() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:hello world"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_multiple_colons_in_content() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:http://example.com"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_missing_or_invalid_line_number() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:hello"),
+            Some(("main.rs".to_string(), None))
+        );
+
+        assert_eq!(
+            parse_grep_candidate("src/main.rs"),
+            Some(("main.rs".to_string(), None))
+        );
+
+        assert_eq!(parse_grep_candidate("not a file:hello"), None);
+    }
+
+    #[test]
+    fn sed_base_parses_single_and_range_commands() {
+        assert_eq!(sed_base("sed -n '10,20p' file.rs"), 10);
+        assert_eq!(sed_base("sed -n 30p file.rs"), 30);
+    }
+
+    #[test]
+    fn sed_base_defaults_for_invalid_commands() {
+        assert_eq!(sed_base("cat file.rs"), 1);
+        assert_eq!(sed_base("sed -n 'abc,defp' file.rs"), 1);
+        assert_eq!(sed_base("sed -n '20,10p' file.rs"), 20);
+    }
+
+    #[test]
+    fn chunk_observation_windows_other_output() {
+        let chunks = chunk_observation(
+            "echo hello",
+            "line1\nline2\nline3\nline4\nline5",
+            7,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "line1\nline2");
+        assert_eq!(chunks[1].text, "line3\nline4");
+        assert_eq!(chunks[2].text, "line5");
+        assert!(chunks.iter().all(|c| c.kind == "other"));
+    }
+
+    #[test]
+    fn chunk_observation_empty_and_whitespace_output() {
+        let empty = chunk_observation("", "", 1, 2, None, ChunkMode::Fixed);
+        assert_eq!(empty.len(), 1);
+        assert_eq!(empty[0].text, "");
+
+        let whitespace = chunk_observation("echo", "   \n\t", 1, 2, None, ChunkMode::Fixed);
+        assert_eq!(whitespace.len(), 1);
+        assert_eq!(whitespace[0].text, "   \n\t");
+    }
+
+    #[test]
+    fn chunk_assistant_respects_window_size() {
+        let chunks = chunk_assistant("one\ntwo\nthree\nfour", 3, 2);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].text, "one\ntwo");
+        assert_eq!(chunks[1].text, "three\nfour");
+        assert!(chunks.iter().all(|c| c.kind == "asst"));
+    }
+
+    #[test]
+    fn chunk_assistant_skips_whitespace_only_chunks() {
+        let chunks = chunk_assistant("   \n\t\nhello", 1, 2);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "hello");
+    }
+
+    #[test]
+    fn chunk_assistant_full_coverage() {
+        let original = "one\ntwo\nthree\nfour\nfive";
+        let chunks = chunk_assistant(original, 1, 2);
+
+        let reconstructed = chunks
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, original);
+    }
 }
