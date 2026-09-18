@@ -9,6 +9,19 @@ are published on the releases page.
 
 ## [Unreleased]
 
+### Added
+
+- `parsec setup pi` / `parsec disable pi`: route the pi coding agent through
+  the local proxy. Setup re-points pi's built-in `anthropic` provider in
+  `<pi dir>/models.json` (`baseUrl` plus an `x-parsec-tool: pi` attribution
+  header; existing OAuth or API-key auth keeps working) and drops a managed,
+  dependency-free extension at `<pi dir>/extensions/parsec.ts` that revives
+  the proxy at session start and bridges pi's `tool_call` / `tool_result`
+  events to the same `parsec hook` gates the Claude Code plugin runs. Both
+  artifacts are ownership-gated: a foreign `baseUrl` or a non-parsec
+  extension file is refused, never overwritten, and `disable` removes only
+  what setup added. `parsec uninstall` cleans them up too.
+
 ### Changed
 
 - Releases are published as GitHub Release assets on this repository:

@@ -106,7 +106,7 @@ enum Command {
     Savings,
     /// One-time activation. `claude` (or no TOOL): write Claude Code routing
     /// env and start the proxy; runs automatically on first session. With
-    /// another TOOL (`parsec setup opencode|codex|desktop`): install that
+    /// another TOOL (`parsec setup opencode|codex|pi|desktop`): install that
     /// tool's shim instead.
     Setup {
         /// Hook-spawned first-run mode: respects terminal states (disable,
@@ -138,16 +138,16 @@ enum Command {
         /// machine-readable PARSEC_DESKTOP_PREPARE line, exit 0.
         #[arg(long)]
         prepare: bool,
-        /// Tool to set up: `claude` | `opencode` | `codex` | `desktop`
+        /// Tool to set up: `claude` | `opencode` | `codex` | `pi` | `desktop`
         /// (default: claude).
         tool: Option<String>,
     },
     /// Undo setup. `claude` (or no TOOL): remove the parsec-managed env keys
     /// from Claude Code settings and stop auto-setup from re-running. With
-    /// another TOOL (`parsec disable opencode|codex|desktop`): remove that
+    /// another TOOL (`parsec disable opencode|codex|pi|desktop`): remove that
     /// tool's managed artifacts.
     Disable {
-        /// Tool to disable: `claude` | `opencode` | `codex` | `desktop`
+        /// Tool to disable: `claude` | `opencode` | `codex` | `pi` | `desktop`
         /// (default: claude).
         tool: Option<String>,
     },
@@ -299,6 +299,7 @@ fn main() -> anyhow::Result<()> {
             match tool.as_deref() {
                 None | Some("claude") => parsec_proxy::setup::run(auto),
                 Some("opencode") => parsec_proxy::setup_opencode::setup(),
+                Some("pi") => parsec_proxy::setup_pi::setup(),
                 Some("codex") => parsec_proxy::setup_codex::setup(if byok {
                     parsec_proxy::setup_codex::Mode::Byok
                 } else {
@@ -313,17 +314,18 @@ fn main() -> anyhow::Result<()> {
                     })
                 }
                 Some(t) => anyhow::bail!(
-                    "unknown tool '{t}' — supported: claude, opencode, codex, desktop"
+                    "unknown tool '{t}' — supported: claude, opencode, codex, pi, desktop"
                 ),
             }
         }
         Command::Disable { tool } => match tool.as_deref() {
             None | Some("claude") => parsec_proxy::setup::disable(),
             Some("opencode") => parsec_proxy::setup_opencode::disable(),
+            Some("pi") => parsec_proxy::setup_pi::disable(),
             Some("codex") => parsec_proxy::setup_codex::disable(),
             Some("desktop") => parsec_proxy::setup_desktop::disable(),
             Some(t) => {
-                anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex, desktop")
+                anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex, pi, desktop")
             }
         },
         Command::Desktop { action } => match action {

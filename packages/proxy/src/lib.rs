@@ -39,6 +39,7 @@ pub mod setup;
 pub mod setup_codex;
 pub mod setup_desktop;
 pub mod setup_opencode;
+pub mod setup_pi;
 pub mod splice;
 pub mod statusline;
 pub mod supervisor;

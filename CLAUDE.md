@@ -27,9 +27,13 @@ decisions. Non-negotiables when writing code here:
   under; parity with the trainer forward is by construction. Do not
   "clean it up" — every struct column and env flag there is score-affecting.
   The bundle self-validates at startup and refuses a mismatched checkpoint.
-- **No TypeScript in client/plugin code.** Client = Rust (`parsec` binary +
-  plugin markdown/JSON); server = Python. The OpenCode plugin shim is the one
-  JS file.
+- **No TypeScript in client/plugin code**, with two named exceptions. Client =
+  Rust (`parsec` binary + plugin markdown/JSON); server = Python. The OpenCode
+  plugin shim (`packages/opencode-plugin/index.js`) and the pi extension
+  (`packages/pi-extension/parsec.ts`) are the only JS/TS files: each is a
+  single dependency-free file, embedded into the binary with `include_str!`,
+  that only routes, revives the proxy, and bridges hooks. Curation logic never
+  lives there.
 - **Parity fixtures are frozen goldens.** They were generated from a Python
   reference implementation that is not in this repository. Do not regenerate
   or hand-edit them; a change in behaviour that breaks a fixture needs a

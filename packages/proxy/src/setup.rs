@@ -798,6 +798,7 @@ pub fn uninstall() -> anyhow::Result<()> {
     // leave it pointing at a port nothing will listen on again.
     crate::setup_opencode::remove_if_managed();
     crate::setup_codex::remove_if_managed();
+    crate::setup_pi::remove_if_managed();
     // Same reason for Claude Desktop: an interceptor left running would keep
     // redirecting Desktop at a port nothing answers on.
     crate::setup_desktop::remove_if_managed();

@@ -142,6 +142,7 @@ Delete it whenever you like.
 | `packages/contracts` | JSON Schema | Cross-language schemas: scoring API, savings ledger, telemetry, install report. |
 | `packages/plugin` | Markdown/JSON | The Claude Code plugin (agents, skills, hooks, launcher shims). |
 | `packages/opencode-plugin` | JS | OpenCode plugin shim. |
+| `packages/pi-extension` | TS | pi extension: one dependency-free file, embedded into the binary, that revives the proxy and bridges pi's tool events to the parsec hooks. |
 | `packages/installer` | Shell/Inno | Native macOS and Windows installer sources. |
 | `packages/brain` | Python | The scoring service: GNN inference over a curator checkpoint, self-validating bundle, calibrated tau. Self-hostable. |
 
