@@ -116,8 +116,9 @@ static RC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 static SED_RANGE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\b(\d+),(\d+)p").unwrap());
-static SED_ONE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"\bsed[\s\x1c-\x1f]+-n[\s\x1c-\x1f]+(\d+)p").unwrap());
+static SED_ONE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"\bsed[\s\x1c-\x1f]+-n[\s\x1c-\x1f]+['"]?(\d+)p"#).unwrap()
+});
 
 /// Python `int()` of an ASCII-digit run is unbounded; i64 is not. Saturate
 /// instead of failing the whole parse (documented deviation for line numbers
@@ -141,11 +142,11 @@ fn obs_rc(obs: &str) -> Option<i64> {
 
 /// labelers._is_path
 fn is_path(tok: &str) -> bool {
-    !tok.is_empty() && (tok.contains('/') || EXT.is_match(tok))
+    !tok.is_empty() && (tok.contains('/') || tok.contains('\\') || EXT.is_match(tok))
 }
 
 fn basename(tok: &str) -> &str {
-    tok.rsplit('/').next().unwrap_or(tok)
+    tok.rsplit(['/', '\\']).next().unwrap_or(tok)
 }
 
 /// labelers.parse_grep_candidate: one grep/find result line -> (file_basename, line|None).
@@ -154,18 +155,39 @@ pub fn parse_grep_candidate(line: &str) -> Option<(String, Option<i64>)> {
     if line.is_empty() || line.starts_with("[reranked") {
         return None;
     }
-    let parts: Vec<&str> = line.splitn(3, ':').collect();
+
+    // Windows drive letters contain a colon (`C:`), so skip that colon
+    // when looking for the file/line separator.
+    let start = if line.len() >= 2
+        && line.as_bytes()[0].is_ascii_alphabetic()
+        && line.as_bytes()[1] == b':'
+    {
+        2
+    } else {
+        0
+    };
+
+    let rest = &line[start..];
+    let parts: Vec<&str> = rest.splitn(3, ':').collect();
+
     if parts.len() >= 3
         && !py_strip(parts[1]).is_empty()
         && py_strip(parts[1]).chars().all(|c| c.is_ascii_digit())
-        && is_path(parts[0])
     {
-        let n = parse_line_no(py_strip(parts[1]));
-        return Some((basename(parts[0]).to_string(), Some(n)));
+        let path = &line[..start + parts[0].len()];
+        if is_path(path) {
+            let n = parse_line_no(py_strip(parts[1]));
+            return Some((basename(path).to_string(), Some(n)));
+        }
     }
-    if parts.len() >= 2 && is_path(parts[0]) {
-        return Some((basename(parts[0]).to_string(), None));
+
+    if parts.len() >= 2 {
+        let path = &line[..start + parts[0].len()];
+        if is_path(path) {
+            return Some((basename(path).to_string(), None));
+        }
     }
+
     let tok = py_split_ws(line)[0].trim_end_matches(':');
     if is_path(tok) {
         Some((basename(tok).to_string(), None))
@@ -327,6 +349,7 @@ fn chunk_observation_inner(cmd: &str, obs: &str, step: i64, win: usize) -> Vec<C
     let mut out = Vec::new();
     let mut i = 0;
     let end = std::cmp::max(1, lines.len());
+
     while i < end {
         let seg = lines[i..std::cmp::min(i + win, lines.len())].join("\n");
         if py_has_content(&seg) {
@@ -334,9 +357,11 @@ fn chunk_observation_inner(cmd: &str, obs: &str, step: i64, win: usize) -> Vec<C
         }
         i += win;
     }
+
     if out.is_empty() {
         out.push(Chunk::new(obs, None, None, None, step, "other"));
     }
+
     out
 }
 
@@ -346,14 +371,15 @@ pub fn chunk_assistant(txt: &str, step: i64, win: usize) -> Vec<Chunk> {
     let lines = py_splitlines(txt);
     let mut out = Vec::new();
     let mut i = 0;
-    let end = std::cmp::max(1, lines.len());
-    while i < end {
+
+    while i < lines.len() {
         let seg = lines[i..std::cmp::min(i + win, lines.len())].join("\n");
         if py_has_content(&seg) {
             out.push(Chunk::new(seg, None, None, None, step, "asst"));
         }
         i += win;
     }
+
     out
 }
 
@@ -396,5 +422,99 @@ mod tests {
             sed_base("sed -n '99999999999999999999,99999999999999999999p' f.py"),
             i64::MAX
         );
+    }
+
+    #[test]
+    fn chunk_assistant_handles_long_single_line() {
+        let original = "a".repeat(1000);
+
+        let chunks = chunk_assistant(&original, 1, 40);
+
+        assert!(!chunks.is_empty());
+        assert!(chunks.iter().all(|chunk| !chunk.text.is_empty()));
+
+        let reconstructed: String = chunks.iter().map(|chunk| chunk.text.as_str()).collect();
+
+        assert_eq!(reconstructed, original);
+    }
+    #[test]
+    fn parse_grep_candidate_handles_windows_paths() {
+        assert_eq!(
+            parse_grep_candidate(r"C:\project\src\main.rs:42:error"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_multiple_colons() {
+        assert_eq!(
+            parse_grep_candidate("src/main.py:12:value:with:colons"),
+            Some(("main.py".to_string(), Some(12)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_rejects_missing_or_invalid_line_numbers() {
+        assert_eq!(
+            parse_grep_candidate("src/main.py::missing"),
+            Some(("main.py".to_string(), None))
+        );
+        assert_eq!(
+            parse_grep_candidate("src/main.py:not-a-number:text"),
+            Some(("main.py".to_string(), None))
+        );
+        assert_eq!(parse_grep_candidate(""), None);
+    }
+
+    #[test]
+    fn sed_base_handles_single_line_and_range_commands() {
+        assert_eq!(sed_base("sed -n '25p' file.py"), 25);
+        assert_eq!(sed_base("sed -n 10,20p file.py"), 10);
+        assert_eq!(sed_base("sed -n \"7p\" file.py"), 7);
+    }
+
+    #[test]
+    fn sed_base_defaults_for_malformed_commands() {
+        assert_eq!(sed_base("sed -n nope file.py"), 1);
+        assert_eq!(sed_base("sed file.py"), 1);
+        assert_eq!(sed_base(""), 1);
+    }
+
+    #[test]
+    fn chunk_observation_handles_empty_and_whitespace_output() {
+        let empty = chunk_observation("python test.py", "", 1, 40, None, ChunkMode::Fixed);
+        assert_eq!(empty.len(), 1);
+        assert_eq!(empty[0].text, "");
+
+        let whitespace =
+            chunk_observation("python test.py", "   \n\t  ", 1, 40, None, ChunkMode::Fixed);
+        assert_eq!(whitespace.len(), 1);
+        assert_eq!(whitespace[0].text, "   \n\t  ");
+    }
+
+    #[test]
+    fn chunk_assistant_handles_empty_and_whitespace_output() {
+        assert!(chunk_assistant("", 1, 40).is_empty());
+        assert!(chunk_assistant("   \n\t  ", 1, 40).is_empty());
+    }
+
+    #[test]
+    fn chunk_observation_windows_long_single_line() {
+        let original = "x".repeat(1000);
+
+        let chunks = chunk_observation("python test.py", &original, 1, 40, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, original);
+    }
+
+    #[test]
+    fn chunk_assistant_preserves_order_across_windows() {
+        let original = "one\ntwo\nthree\nfour";
+        let chunks = chunk_assistant(original, 1, 2);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].text, "one\ntwo");
+        assert_eq!(chunks[1].text, "three\nfour");
     }
 }
