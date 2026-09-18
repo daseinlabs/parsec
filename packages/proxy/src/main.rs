@@ -325,7 +325,9 @@ fn main() -> anyhow::Result<()> {
             Some("codex") => parsec_proxy::setup_codex::disable(),
             Some("desktop") => parsec_proxy::setup_desktop::disable(),
             Some(t) => {
-                anyhow::bail!("unknown tool '{t}' — supported: claude, opencode, codex, pi, desktop")
+                anyhow::bail!(
+                    "unknown tool '{t}' — supported: claude, opencode, codex, pi, desktop"
+                )
             }
         },
         Command::Desktop { action } => match action {
