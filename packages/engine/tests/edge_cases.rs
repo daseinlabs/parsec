@@ -901,6 +901,38 @@ fn test_steps_of_content_as_array_of_text_blocks() {
 }
 
 #[test]
+fn test_steps_of_tool_result_block_text_extracted() {
+    // Tool responses arrive as content blocks; any block carrying a "text"
+    // field contributes its text (e.g. a tool_result block).
+    let msgs = vec![
+        json!({"role": "assistant", "extra": {"actions": [{"command": "cat f"}]}}),
+        json!({
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "text": "file bytes here"},
+                {"type": "text", "text": "trailer"}
+            ]
+        }),
+    ];
+    let steps = messages::steps_of(&msgs);
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].1, "file bytes here trailer");
+}
+
+#[test]
+fn test_steps_of_content_array_with_non_object_items_skipped() {
+    // Malformed content arrays (numbers, nulls mixed in) must not panic;
+    // non-object items are ignored during text extraction.
+    let msgs = vec![
+        json!({"role": "assistant", "extra": {"actions": [{"command": "ls"}]}}),
+        json!({"role": "user", "content": [{"type": "text", "text": "ok"}, 42, null]}),
+    ];
+    let steps = messages::steps_of(&msgs);
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].1, "ok");
+}
+
+#[test]
 fn test_steps_of_no_trailing_user_creates_no_step() {
     let msgs = vec![json!({
         "role": "assistant",
