@@ -387,11 +387,307 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_grep_candidate_parses_standard_grep_output() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:hello world"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_preserves_text_after_multiple_colons() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:message:with:colons"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_missing_line_number() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:hello world"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_rejects_non_numeric_line_number_when_path_is_valid() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:not-a-number:hello"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_rejects_empty_input() {
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("   "), None);
+    }
+
+    #[test]
+    fn parse_grep_candidate_rejects_reranked_lines() {
+        assert_eq!(parse_grep_candidate("[reranked results]"), None);
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_bare_path() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn sed_base_parses_line_range() {
+        assert_eq!(sed_base("sed -n '10,20p' file.py"), 10);
+        assert_eq!(sed_base("sed -n '100,150p' file.py"), 100);
+    }
+
+    #[test]
+    fn sed_base_parses_single_line_form() {
+        assert_eq!(sed_base("sed -n 25p file.py"), 25);
+    }
+
+    #[test]
+    fn sed_base_defaults_to_one_for_unrecognised_commands() {
+        assert_eq!(sed_base("cat file.py"), 1);
+        assert_eq!(sed_base("sed file.py"), 1);
+    }
+
+    #[test]
+    fn sed_base_handles_unusual_spacing() {
+        assert_eq!(sed_base("sed   -n   25p file.py"), 25);
+        assert_eq!(sed_base("sed\t-n\t25p file.py"), 25);
+    }
+
+    #[test]
+    fn sed_base_uses_first_number_for_inverted_range() {
+        assert_eq!(sed_base("sed -n '20,10p' file.py"), 20);
+    }
+
+    #[test]
+    fn sed_base_handles_non_numeric_ranges_by_defaulting_to_one() {
+        assert_eq!(sed_base("sed -n 'abc,20p' file.py"), 1);
+        assert_eq!(sed_base("sed -n abcp file.py"), 1);
+    }
+
+    #[test]
+    fn chunk_observation_windows_non_read_output() {
+        let chunks = chunk_observation(
+            "echo test",
+            "line1\nline2\nline3\nline4\nline5",
+            7,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "line1\nline2");
+        assert_eq!(chunks[1].text, "line3\nline4");
+        assert_eq!(chunks[2].text, "line5");
+
+        for chunk in &chunks {
+            assert_eq!(chunk.step, 7);
+            assert_eq!(chunk.kind, "other");
+        }
+    }
+
+    #[test]
+    fn chunk_observation_windows_read_output_with_line_metadata() {
+        let chunks = chunk_observation(
+            "sed -n '10,20p' src/main.py",
+            "line10\nline11\nline12\nline13\nline14",
+            3,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 3);
+
+        assert_eq!(chunks[0].text, "line10\nline11");
+        assert_eq!(chunks[0].lo, Some(10));
+        assert_eq!(chunks[0].hi, Some(11));
+        assert_eq!(chunks[0].file, Some("main.py".to_string()));
+
+        assert_eq!(chunks[1].text, "line12\nline13");
+        assert_eq!(chunks[1].lo, Some(12));
+        assert_eq!(chunks[1].hi, Some(13));
+
+        assert_eq!(chunks[2].text, "line14");
+        assert_eq!(chunks[2].lo, Some(14));
+        assert_eq!(chunks[2].hi, Some(14));
+    }
+
+    #[test]
+    fn chunk_observation_preserves_command_and_observation_metadata() {
+        let chunks =
+            chunk_observation("echo hello", "first\nsecond", 12, 1, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 2);
+
+        for chunk in &chunks {
+            assert_eq!(chunk.cmd, "echo hello");
+            assert_eq!(chunk.rc, None);
+            assert_eq!(chunk.head, "first\nsecond");
+            assert_eq!(chunk.step, 12);
+        }
+    }
+
+    #[test]
+    fn chunk_observation_extracts_return_code() {
+        let chunks = chunk_observation(
+            "echo hello",
+            "output\n<returncode> 7 </returncode>",
+            1,
+            10,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].rc, Some(7));
+    }
+
+    #[test]
+    fn chunk_observation_handles_empty_observation() {
+        let chunks = chunk_observation("echo test", "", 1, 10, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "");
+        assert_eq!(chunks[0].kind, "other");
+    }
+
+    #[test]
+    fn chunk_observation_handles_whitespace_only_observation() {
+        let chunks = chunk_observation("echo test", "   \n\t\n  ", 1, 10, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "   \n\t\n  ");
+    }
+
+    #[test]
+    fn chunk_observation_handles_long_single_line() {
+        let input = "x".repeat(1000);
+
+        let chunks = chunk_observation("echo test", &input, 1, 10, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, input);
+    }
+
+    #[test]
+    fn chunk_observation_preserves_grep_matches_as_individual_chunks() {
+        let chunks = chunk_observation(
+            "grep -n TODO src/main.rs",
+            "src/main.rs:10:TODO one\nordinary output\nsrc/main.rs:20:TODO two",
+            4,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 3);
+
+        assert_eq!(chunks[0].kind, "grep");
+        assert_eq!(chunks[0].file, Some("main.rs".to_string()));
+        assert_eq!(chunks[0].lo, Some(10));
+        assert_eq!(chunks[0].hi, Some(10));
+
+        assert_eq!(chunks[1].kind, "other");
+        assert_eq!(chunks[1].text, "ordinary output");
+
+        assert_eq!(chunks[2].kind, "grep");
+        assert_eq!(chunks[2].file, Some("main.rs".to_string()));
+        assert_eq!(chunks[2].lo, Some(20));
+        assert_eq!(chunks[2].hi, Some(20));
+    }
+
+    #[test]
+    fn chunk_observation_full_coverage_for_multiline_output() {
+        let input = "one\ntwo\nthree\nfour\nfive\nsix";
+
+        let chunks = chunk_observation("echo test", input, 1, 2, None, ChunkMode::Fixed);
+
+        let reconstructed = chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn chunk_assistant_windows_text() {
+        let chunks = chunk_assistant("one\ntwo\nthree\nfour\nfive", 8, 2);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "one\ntwo");
+        assert_eq!(chunks[1].text, "three\nfour");
+        assert_eq!(chunks[2].text, "five");
+
+        for chunk in &chunks {
+            assert_eq!(chunk.kind, "asst");
+            assert_eq!(chunk.step, 8);
+        }
+    }
+
+    #[test]
+    fn chunk_assistant_preserves_full_coverage() {
+        let input = "first\nsecond\nthird\nfourth\nfifth";
+
+        let chunks = chunk_assistant(input, 1, 2);
+
+        let reconstructed = chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn chunk_assistant_handles_empty_text() {
+        let chunks = chunk_assistant("", 1, 10);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn chunk_assistant_handles_whitespace_only_text() {
+        let chunks = chunk_assistant("   \n\t\n  ", 1, 10);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn chunk_assistant_handles_long_single_line() {
+        let input = "a".repeat(2000);
+
+        let chunks = chunk_assistant(&input, 1, 10);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, input);
+    }
+
+    #[test]
+    fn chunk_assistant_handles_different_window_sizes() {
+        let input = "a\nb\nc\nd\ne";
+
+        assert_eq!(chunk_assistant(input, 1, 1).len(), 5);
+        assert_eq!(chunk_assistant(input, 1, 2).len(), 3);
+        assert_eq!(chunk_assistant(input, 1, 10).len(), 1);
+    }
+
+    #[test]
     fn line_numbers_beyond_i64_saturate_not_abort() {
-        // Python's unbounded int() keeps the line a grep chunk; we saturate
-        // the coordinate (documented deviation) but MUST keep the chunk.
         let got = parse_grep_candidate("a.py:12345678901234567890:huge").unwrap();
+
         assert_eq!(got, ("a.py".to_string(), Some(i64::MAX)));
+
         assert_eq!(
             sed_base("sed -n '99999999999999999999,99999999999999999999p' f.py"),
             i64::MAX
