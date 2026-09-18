@@ -201,3 +201,154 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
     }
     out
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // --- text extraction / arrays ---
+
+    #[test]
+    fn content_text_single_string_block() {
+        assert_eq!(content_text(&json!("hello world")), "hello world");
+    }
+
+    #[test]
+    fn content_text_array_of_text_blocks_joins_with_space() {
+        let c = json!([{"type": "text", "text": "hello"}, {"type": "text", "text": "world"}]);
+        assert_eq!(content_text(&c), "hello world");
+    }
+
+    #[test]
+    fn content_text_array_with_non_text_object_contributes_empty_segment() {
+        // The tool_use block has no "text" key -> unwrap_or("") -> still
+        // joined, producing a leading space (documents current behavior).
+        let c = json!([
+            {"type": "tool_use", "id": "1", "name": "bash", "input": {}},
+            {"type": "text", "text": "world"}
+        ]);
+        assert_eq!(content_text(&c), " world");
+    }
+
+    #[test]
+    fn content_text_array_skips_non_object_entries_entirely() {
+        let c = json!([123, null, {"type": "text", "text": "x"}]);
+        assert_eq!(content_text(&c), "x");
+    }
+
+    #[test]
+    fn content_text_empty_array_is_empty_string() {
+        assert_eq!(content_text(&json!([])), "");
+    }
+
+    #[test]
+    fn content_text_bare_object_is_empty_string() {
+        let c = json!({"type": "text", "text": "should not be read"});
+        assert_eq!(content_text(&c), "");
+    }
+
+    #[test]
+    fn content_text_unexpected_scalar_types_are_empty_string_not_panic() {
+        assert_eq!(content_text(&json!(42)), "");
+        assert_eq!(content_text(&json!(true)), "");
+        assert_eq!(content_text(&Value::Null), "");
+    }
+
+    // --- tool_use (assistant_chunks_of) ---
+
+    #[test]
+    fn assistant_chunks_of_skips_pure_tool_use_content() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "1", "name": "bash", "input": {"command": "ls"}}]
+            }),
+            json!({"role": "tool", "content": "file1\nfile2"}),
+        ];
+        assert!(assistant_chunks_of(&messages).is_empty());
+    }
+
+    #[test]
+    fn assistant_chunks_of_skips_message_when_any_part_is_non_text() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Let me check that."},
+                    {"type": "tool_use", "id": "1", "name": "bash", "input": {}}
+                ]
+            }),
+            json!({"role": "tool", "content": "ok"}),
+        ];
+        assert!(assistant_chunks_of(&messages).is_empty());
+    }
+
+    #[test]
+    fn assistant_chunks_of_treats_missing_type_as_text() {
+        let messages = vec![
+            json!({"role": "assistant", "content": [{"text": "no type field here"}]}),
+            json!({"role": "tool", "content": "ok"}),
+        ];
+        let chunks = assistant_chunks_of(&messages);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "no type field here");
+    }
+
+    // --- tool_result (steps_of) ---
+
+    #[test]
+    fn steps_of_tool_result_block_without_top_level_text_yields_empty_observation() {
+        // Real Anthropic tool_result blocks nest their payload under
+        // "content", not "text" -- content_text only looks for "text",
+        // so this currently yields an empty observation string.
+        let messages = vec![
+            json!({"role": "assistant", "extra": {"actions": [{"command": "cat file.py"}]}}),
+            json!({
+                "role": "tool",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "actual output"}]
+            }),
+        ];
+        assert_eq!(
+            steps_of(&messages),
+            vec![("cat file.py".to_string(), "".to_string())]
+        );
+    }
+
+    #[test]
+    fn steps_of_tool_result_block_with_text_key_is_extracted() {
+        let messages = vec![
+            json!({"role": "assistant", "extra": {"actions": [{"command": "grep foo"}]}}),
+            json!({
+                "role": "tool",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "text": "match found"}]
+            }),
+        ];
+        assert_eq!(
+            steps_of(&messages),
+            vec![("grep foo".to_string(), "match found".to_string())]
+        );
+    }
+
+    // --- malformed JSON, must not panic ---
+
+    #[test]
+    fn steps_of_handles_malformed_messages_without_panicking() {
+        let messages = vec![
+            json!("just a string, not an object"), // no "role" key -> ignored
+            json!(42),                             // no "role" key -> ignored
+            json!({"content": "no role field"}),   // missing "role" -> ignored
+            json!({"role": "assistant", "extra": {"actions": "not an array"}}), // wrong type
+            json!({"role": "user"}),               // no "content" key
+        ];
+        assert_eq!(steps_of(&messages), vec![("".to_string(), "".to_string())]);
+    }
+
+    #[test]
+    fn assistant_chunks_of_handles_missing_content_field_without_panicking() {
+        let messages = vec![
+            json!({"role": "assistant"}), // no "content" key at all
+            json!({"role": "tool", "content": "output"}),
+        ];
+        assert!(assistant_chunks_of(&messages).is_empty());
+    }
+}
