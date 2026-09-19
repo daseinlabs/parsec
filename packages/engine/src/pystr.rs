@@ -237,9 +237,124 @@ mod tests {
     }
 
     #[test]
+    fn splitlines_handles_all_python_line_breaks() {
+        let cases = [
+            ("a\nb", vec!["a", "b"]),
+            ("a\rb", vec!["a", "b"]),
+            ("a\r\nb", vec!["a", "b"]),
+            ("a\x0bb", vec!["a", "b"]),
+            ("a\x0cb", vec!["a", "b"]),
+            ("a\x1cb", vec!["a", "b"]),
+            ("a\x1db", vec!["a", "b"]),
+            ("a\x1eb", vec!["a", "b"]),
+            ("a\u{0085}b", vec!["a", "b"]),
+            ("a\u{2028}b", vec!["a", "b"]),
+            ("a\u{2029}b", vec!["a", "b"]),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(py_splitlines(input), expected);
+        }
+    }
+
+    #[test]
+    fn splitlines_handles_leading_and_consecutive_line_breaks() {
+        assert_eq!(py_splitlines("\nhello"), vec!["", "hello"]);
+
+        assert_eq!(py_splitlines("hello\n\nworld"), vec!["hello", "", "world"]);
+
+        assert_eq!(py_splitlines("\r\nhello"), vec!["", "hello"]);
+
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    #[test]
+    fn splitlines_treats_crlf_as_single_line_break() {
+        assert_eq!(py_splitlines("first\r\nsecond"), vec!["first", "second"]);
+
+        assert_eq!(
+            py_splitlines("first\r\n\r\nsecond"),
+            vec!["first", "", "second"]
+        );
+    }
+
+    #[test]
+    fn is_space_handles_python_ascii_whitespace() {
+        let whitespace_chars = [
+            ' ', '\t', '\n', '\r', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\x1f',
+        ];
+
+        for ch in whitespace_chars {
+            assert!(py_is_space(ch));
+        }
+    }
+
+    #[test]
+    fn is_space_handles_unicode_whitespace() {
+        let whitespace_chars = [
+            '\u{00A0}', '\u{1680}', '\u{2000}', '\u{2003}', '\u{2028}', '\u{2029}', '\u{202F}',
+            '\u{205F}', '\u{3000}',
+        ];
+
+        for ch in whitespace_chars {
+            assert!(py_is_space(ch));
+        }
+    }
+
+    #[test]
+    fn strip_handles_python_whitespace() {
+        assert_eq!(py_strip("   hello   "), "hello");
+        assert_eq!(py_strip("\t\nhello\r\n"), "hello");
+        assert_eq!(py_strip("\x1chello\x1f"), "hello");
+        assert_eq!(py_strip("\u{00A0}hello\u{3000}"), "hello");
+        assert_eq!(py_strip("hello world"), "hello world");
+    }
+
+    #[test]
+    fn strip_handles_empty_and_whitespace_only_strings() {
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("     "), "");
+        assert_eq!(py_strip("\t\n\r"), "");
+        assert_eq!(py_strip("\u{00A0}\u{3000}"), "");
+    }
+
+    #[test]
     fn char_prefix_is_chars_not_bytes() {
         assert_eq!(char_prefix("héllo", 2), "hé");
         assert_eq!(char_prefix("ab", 10), "ab");
+    }
+
+    #[test]
+    fn char_prefix_handles_multibyte_unicode_characters() {
+        assert_eq!(char_prefix("🚀hello", 1), "🚀");
+        assert_eq!(char_prefix("你好世界", 2), "你好");
+        assert_eq!(char_prefix("日本語", 2), "日本");
+        assert_eq!(char_prefix("😀😃😄😁", 3), "😀😃😄");
+    }
+
+    #[test]
+    fn char_len_counts_unicode_characters_not_bytes() {
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("héllo"), 5);
+        assert_eq!(char_len("你好"), 2);
+        assert_eq!(char_len("日本語"), 3);
+        assert_eq!(char_len("🚀"), 1);
+        assert_eq!(char_len("😀😃😄"), 3);
+    }
+
+    #[test]
+    fn json_dumps_opts_handles_sort_keys_and_unicode() {
+        let value: serde_json::Value = serde_json::from_str(r#"{"z":"é","a":"hello"}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&value, true, true),
+            "{\"a\": \"hello\", \"z\": \"\\u00e9\"}"
+        );
+
+        assert_eq!(
+            py_json_dumps_opts(&value, true, false),
+            "{\"a\": \"hello\", \"z\": \"é\"}"
+        );
     }
 
     #[test]
