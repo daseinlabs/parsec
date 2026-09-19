@@ -141,7 +141,7 @@ fn obs_rc(obs: &str) -> Option<i64> {
 
 /// labelers._is_path
 fn is_path(tok: &str) -> bool {
-    !tok.is_empty() && (tok.contains('/') || EXT.is_match(tok))
+    !tok.is_empty() && (tok.contains('/') || tok.contains('\\') || EXT.is_match(tok))
 }
 
 fn basename(tok: &str) -> &str {
@@ -382,16 +382,207 @@ pub fn accumulated_chunks(
     out
 }
 
+// #[cfg(test)]
+// mod tests {
+//     // use super::*;
+
+//     // #[test]
+//     // fn line_numbers_beyond_i64_saturate_not_abort() {
+//     //     // Python's unbounded int() keeps the line a grep chunk; we saturate
+//     //     // the coordinate (documented deviation) but MUST keep the chunk.
+//     //     let got = parse_grep_candidate("a.py:12345678901234567890:huge").unwrap();
+//     //     assert_eq!(got, ("a.py".to_string(), Some(i64::MAX)));
+//     //     assert_eq!(
+//     //         sed_base("sed -n '99999999999999999999,99999999999999999999p' f.py"),
+//     //         i64::MAX
+//     //     );
+//     // }
+
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn parse_grep_candidate_parses_file_and_line() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:fn main()"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_windows_paths() {
+        assert_eq!(
+            parse_grep_candidate(r"src\main.rs:42:fn main()"),
+            Some((r"src\main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_multiple_colons_in_text() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:42:let value = foo:bar"),
+            Some(("main.rs".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_returns_file_without_line_for_invalid_line() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:not-a-number:text"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_ignores_empty_and_reranked_lines() {
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("[reranked result]"), None);
+    }
+
+    #[test]
+    fn parse_grep_candidate_parses_file_only() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_whitespace() {
+        assert_eq!(
+            parse_grep_candidate("  src/main.rs:10:hello  "),
+            Some(("main.rs".to_string(), Some(10)))
+        );
+    }
+
+    #[test]
+    fn sed_base_parses_range_start() {
+        assert_eq!(sed_base("sed -n '10,20p' src/main.rs"), 10);
+    }
+
+    #[test]
+    fn sed_base_parses_single_line() {
+        assert_eq!(sed_base("sed -n 25p src/main.rs"), 25);
+    }
+
+    #[test]
+    fn sed_base_defaults_to_one() {
+        assert_eq!(sed_base("cat src/main.rs"), 1);
+    }
+
+    #[test]
+    fn sed_base_handles_inverted_range() {
+        assert_eq!(sed_base("sed -n '20,10p' src/main.rs"), 20);
+    }
+
+    #[test]
+    fn chunk_observation_windows_read_output() {
+        let obs = "line1\nline2\nline3\nline4\nline5";
+
+        let chunks = chunk_observation("cat src/main.rs", obs, 1, 2, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "line1\nline2");
+        assert_eq!(chunks[1].text, "line3\nline4");
+        assert_eq!(chunks[2].text, "line5");
+    }
+
+    #[test]
+    fn chunk_observation_preserves_read_metadata() {
+        let chunks = chunk_observation(
+            "sed -n '10,20p' src/main.rs",
+            "line1\nline2",
+            7,
+            2,
+            None,
+            ChunkMode::Fixed,
+        );
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].file, Some("main.rs".to_string()));
+        assert_eq!(chunks[0].lo, Some(10));
+        assert_eq!(chunks[0].hi, Some(11));
+        assert_eq!(chunks[0].step, 7);
+        assert_eq!(chunks[0].kind, "read");
+    }
+
+    #[test]
+    fn chunk_observation_handles_empty_observation() {
+        let chunks = chunk_observation("cat src/main.rs", "", 1, 40, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "");
+    }
+
+    #[test]
+    fn chunk_observation_handles_whitespace_only_observation() {
+        let chunks = chunk_observation("echo test", "   \n\t\n  ", 1, 40, None, ChunkMode::Fixed);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "   \n\t\n  ");
+    }
+
+    #[test]
+    fn chunk_assistant_windows_long_text() {
+        let text = "one\ntwo\nthree\nfour\nfive";
+
+        let chunks = chunk_assistant(text, 3, 2);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "one\ntwo");
+        assert_eq!(chunks[1].text, "three\nfour");
+        assert_eq!(chunks[2].text, "five");
+    }
+
+    #[test]
+    fn chunk_assistant_skips_whitespace_only_chunks() {
+        let chunks = chunk_assistant("   \n\t\n   ", 1, 2);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn chunk_assistant_handles_empty_text() {
+        let chunks = chunk_assistant("", 1, 40);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn chunk_assistant_preserves_step_and_kind() {
+        let chunks = chunk_assistant("hello\nworld", 9, 1);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].step, 9);
+        assert_eq!(chunks[0].kind, "asst");
+        assert_eq!(chunks[1].step, 9);
+        assert_eq!(chunks[1].kind, "asst");
+    }
+
+    #[test]
+    fn chunk_assistant_full_coverage_reconstructs_original() {
+        let original = "line1\nline2\nline3\nline4\nline5";
+
+        let chunks = chunk_assistant(original, 1, 2);
+
+        let reconstructed = chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, original);
+    }
+
+    #[test]
     fn line_numbers_beyond_i64_saturate_not_abort() {
-        // Python's unbounded int() keeps the line a grep chunk; we saturate
-        // the coordinate (documented deviation) but MUST keep the chunk.
         let got = parse_grep_candidate("a.py:12345678901234567890:huge").unwrap();
+
         assert_eq!(got, ("a.py".to_string(), Some(i64::MAX)));
+
         assert_eq!(
             sed_base("sed -n '99999999999999999999,99999999999999999999p' f.py"),
             i64::MAX

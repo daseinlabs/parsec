@@ -201,3 +201,373 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn actions_prefers_command_over_query() {
+        let message = json!({
+            "extra": {
+                "actions": [
+                    {
+                        "command": "cat src/main.rs",
+                        "query": "fallback query"
+                    }
+                ]
+            }
+        });
+
+        assert_eq!(actions(&message), vec!["cat src/main.rs"]);
+    }
+
+    #[test]
+    fn actions_uses_query_when_command_is_missing() {
+        let message = json!({
+            "extra": {
+                "actions": [
+                    {
+                        "query": "search main"
+                    }
+                ]
+            }
+        });
+
+        assert_eq!(actions(&message), vec!["search main"]);
+    }
+
+    #[test]
+    fn actions_handles_missing_or_malformed_actions() {
+        assert!(actions(&json!({})).is_empty());
+        assert!(actions(&json!({"extra": {}})).is_empty());
+        assert!(actions(&json!({"extra": {"actions": "not-an-array"}})).is_empty());
+    }
+
+    #[test]
+    fn actions_handles_action_with_no_command_or_query() {
+        let message = json!({
+            "extra": {
+                "actions": [{}]
+            }
+        });
+
+        assert_eq!(actions(&message), vec![""]);
+    }
+
+    #[test]
+    fn steps_of_pairs_assistant_action_with_following_user_content() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {
+                    "actions": [
+                        {"command": "cat file.txt"}
+                    ]
+                }
+            }),
+            json!({
+                "role": "user",
+                "content": "hello\nworld"
+            }),
+        ];
+
+        assert_eq!(
+            steps_of(&messages),
+            vec![("cat file.txt".to_string(), "hello\nworld".to_string())]
+        );
+    }
+
+    #[test]
+    fn steps_of_extracts_text_from_content_blocks() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {
+                    "actions": [
+                        {"command": "grep foo file.txt"}
+                    ]
+                }
+            }),
+            json!({
+                "role": "tool",
+                "content": [
+                    {"type": "text", "text": "first"},
+                    {"type": "text", "text": "second"}
+                ]
+            }),
+        ];
+
+        assert_eq!(
+            steps_of(&messages),
+            vec![("grep foo file.txt".to_string(), "first second".to_string())]
+        );
+    }
+
+    #[test]
+    fn steps_of_ignores_messages_without_pending_assistant_action() {
+        let messages = vec![
+            json!({"role": "user", "content": "orphan"}),
+            json!({"role": "system", "content": "system"}),
+            json!({"role": "tool", "content": "tool"}),
+        ];
+
+        assert!(steps_of(&messages).is_empty());
+    }
+
+    #[test]
+    fn steps_of_handles_malformed_content_without_panicking() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {
+                    "actions": [{"command": "test"}]
+                }
+            }),
+            json!({
+                "role": "tool",
+                "content": {
+                    "unexpected": "object"
+                }
+            }),
+        ];
+
+        assert_eq!(
+            steps_of(&messages),
+            vec![("test".to_string(), "".to_string())]
+        );
+    }
+
+    #[test]
+    fn truthy_matches_basic_json_truthiness() {
+        assert!(!truthy(&Value::Null));
+        assert!(!truthy(&json!(false)));
+        assert!(!truthy(&json!(0)));
+        assert!(!truthy(&json!("")));
+        assert!(!truthy(&json!([])));
+        assert!(!truthy(&json!({})));
+
+        assert!(truthy(&json!(true)));
+        assert!(truthy(&json!(1)));
+        assert!(truthy(&json!("text")));
+        assert!(truthy(&json!([1])));
+        assert!(truthy(&json!({"key": "value"})));
+    }
+
+    #[test]
+    fn blob_tokens_counts_reasoning_fields() {
+        let message = json!({
+            "reasoning_content": "abcdefgh"
+        });
+
+        assert_eq!(blob_tokens(&message), 2);
+    }
+
+    #[test]
+    fn blob_tokens_counts_provider_specific_tool_fields() {
+        let message = json!({
+            "tool_calls": [
+                {
+                    "provider_specific_fields": {
+                        "trace": "abcdefgh"
+                    }
+                }
+            ]
+        });
+
+        assert!(blob_tokens(&message) > 0);
+    }
+
+    #[test]
+    fn blob_tokens_ignores_empty_reasoning_values() {
+        let message = json!({
+            "reasoning_content": "",
+            "thinking_blocks": [],
+            "provider_specific_fields": {}
+        });
+
+        assert_eq!(blob_tokens(&message), 0);
+    }
+
+    #[test]
+    fn reasoning_text_prefers_reasoning_content() {
+        let message = json!({
+            "reasoning_content": "this is the reasoning",
+            "extra": {
+                "actions": [
+                    {"command": "ignored command"}
+                ]
+            }
+        });
+
+        assert_eq!(reasoning_text(&message), "this is the reasoning");
+    }
+
+    #[test]
+    fn reasoning_text_falls_back_to_actions() {
+        let message = json!({
+            "extra": {
+                "actions": [
+                    {"command": "cat file.txt"},
+                    {"query": "search foo"}
+                ]
+            }
+        });
+
+        assert_eq!(reasoning_text(&message), "cat file.txt ; search foo");
+    }
+
+    #[test]
+    fn reasoning_text_defaults_to_reasoning() {
+        assert_eq!(reasoning_text(&json!({})), "reasoning");
+    }
+
+    #[test]
+    fn reasoning_chunk_returns_none_without_reasoning_blob() {
+        let message = json!({
+            "reasoning_content": ""
+        });
+
+        assert!(reasoning_chunk(&message, 3).is_none());
+    }
+
+    #[test]
+    fn reasoning_chunk_sets_metadata_and_provider_eviction() {
+        let message = json!({
+            "reasoning_content": "some reasoning text"
+        });
+
+        let chunk = reasoning_chunk(&message, 7).unwrap();
+
+        assert_eq!(chunk.text, "some reasoning text");
+        assert_eq!(chunk.step, 7);
+        assert_eq!(chunk.kind, "reasoning");
+        assert_eq!(chunk.evict, "provider");
+        assert!(chunk.tokens > 0);
+    }
+
+    #[test]
+    fn reasoning_chunks_of_aligns_chunks_with_steps() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "reasoning_content": "first reasoning"
+            }),
+            json!({
+                "role": "user",
+                "content": "first response"
+            }),
+            json!({
+                "role": "assistant",
+                "reasoning_content": "second reasoning"
+            }),
+            json!({
+                "role": "tool",
+                "content": "second response"
+            }),
+        ];
+
+        let chunks = reasoning_chunks_of(&messages);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].step, 0);
+        assert_eq!(chunks[1].step, 1);
+    }
+
+    #[test]
+    fn assistant_chunks_accept_plain_string_content() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "hello\nworld"
+            }),
+            json!({
+                "role": "user",
+                "content": "next"
+            }),
+        ];
+
+        let chunks = assistant_chunks_of(&messages);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "hello\nworld");
+        assert_eq!(chunks[0].step, 0);
+        assert_eq!(chunks[0].kind, "asst");
+    }
+
+    #[test]
+    fn assistant_chunks_accepts_text_content_blocks() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "hello"},
+                    {"type": "text", "text": "world"}
+                ]
+            }),
+            json!({
+                "role": "tool",
+                "content": "done"
+            }),
+        ];
+
+        let chunks = assistant_chunks_of(&messages);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "hello world");
+    }
+
+    #[test]
+    fn assistant_chunks_skips_non_text_content_blocks() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "123"},
+                    {"type": "text", "text": "visible"}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": "done"
+            }),
+        ];
+
+        let chunks = assistant_chunks_of(&messages);
+
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn assistant_chunks_handles_malformed_content_without_panicking() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": 12345
+            }),
+            json!({
+                "role": "user",
+                "content": "done"
+            }),
+        ];
+
+        assert!(assistant_chunks_of(&messages).is_empty());
+    }
+
+    #[test]
+    fn assistant_chunks_skips_whitespace_only_text() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "   \n\t   "
+            }),
+            json!({
+                "role": "user",
+                "content": "done"
+            }),
+        ];
+
+        assert!(assistant_chunks_of(&messages).is_empty());
+    }
+}
