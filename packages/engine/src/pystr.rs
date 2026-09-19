@@ -268,4 +268,57 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
     }
+
+    #[test]
+    fn splitlines_handles_all_python_boundaries_and_consecutive_breaks() {
+        let text = "a\nb\rc\r\nd\x0be\x0cf\x1cg\x1dh\x1ei\u{85}j\u{2028}k\u{2029}l";
+
+        assert_eq!(
+            py_splitlines(text),
+            vec!["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
+        );
+        assert_eq!(py_splitlines("\n\nalpha\n\n"), vec!["", "", "alpha", ""]);
+    }
+
+    #[test]
+    fn strip_and_space_match_python_extra_control_whitespace() {
+        for c in ['\x1c', '\x1d', '\x1e', '\x1f', '\t', '\n', '\u{2003}'] {
+            assert!(py_is_space(c), "{c:?} should be whitespace");
+        }
+
+        assert_eq!(py_strip("\x1c \u{2003}hello\x1f"), "hello");
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("plain text"), "plain text");
+        assert!(py_has_content(" hello "));
+        assert!(!py_has_content("\x1c\t\u{2003}\x1f"));
+    }
+
+    #[test]
+    fn character_helpers_count_unicode_scalars_not_utf8_bytes() {
+        let text = "é猫😀";
+
+        assert_eq!(char_len(text), 3);
+        assert_eq!(char_prefix(text, 0), "");
+        assert_eq!(char_prefix(text, 1), "é");
+        assert_eq!(char_prefix(text, 2), "é猫");
+        assert_eq!(char_prefix(text, 20), text);
+    }
+
+    #[test]
+    fn json_dumps_options_sort_keys_and_control_ascii_escaping() {
+        let value: serde_json::Value = serde_json::from_str(r#"{"z":"é","a":"😀"}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&value, true, true),
+            r#"{"a": "\ud83d\ude00", "z": "\u00e9"}"#
+        );
+        assert_eq!(
+            py_json_dumps_opts(&value, true, false),
+            r#"{"a": "😀", "z": "é"}"#
+        );
+        assert_eq!(
+            py_json_dumps_opts(&value, false, true),
+            r#"{"z": "\u00e9", "a": "\ud83d\ude00"}"#
+        );
+    }
 }

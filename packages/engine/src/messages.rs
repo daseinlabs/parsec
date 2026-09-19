@@ -40,9 +40,16 @@ fn content_text(c: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Array(parts) => parts
             .iter()
-            .filter_map(|p| {
-                p.as_object()
-                    .map(|o| o.get("text").and_then(Value::as_str).unwrap_or(""))
+            .filter_map(|part| {
+                let object = part.as_object()?;
+
+                object.get("text").and_then(Value::as_str).or_else(|| {
+                    if object.get("type").and_then(Value::as_str) == Some("tool_result") {
+                        object.get("content").and_then(Value::as_str)
+                    } else {
+                        None
+                    }
+                })
             })
             .collect::<Vec<_>>()
             .join(" "),
@@ -200,4 +207,103 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn actions_extract_commands_queries_and_handle_bad_shapes() {
+        let message = json!({
+            "extra": {
+                "actions": [
+                    {"command": "pwd"},
+                    {"command": "", "query": "find src"},
+                    {"query": "status"},
+                    {}
+                ]
+            }
+        });
+
+        assert_eq!(
+            actions(&message),
+            vec![
+                "pwd".to_string(),
+                "find src".to_string(),
+                "status".to_string(),
+                String::new()
+            ]
+        );
+        assert!(actions(&json!({"extra": {"actions": {}}})).is_empty());
+        assert!(actions(&json!({"extra": "not an object"})).is_empty());
+    }
+
+    #[test]
+    fn steps_extract_text_and_tool_result_content() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "extra": {"actions": [{"command": "rg TODO"}]}
+            }),
+            json!({
+                "role": "tool",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call_1",
+                        "content": "src/lib.rs:10: TODO"
+                    }
+                ]
+            }),
+        ];
+
+        assert_eq!(
+            steps_of(&messages),
+            vec![("rg TODO".to_string(), "src/lib.rs:10: TODO".to_string())]
+        );
+    }
+
+    #[test]
+    fn assistant_chunks_accept_text_blocks_and_skip_tool_use_blocks() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "first"},
+                    {"type": "text", "text": "second"}
+                ]
+            }),
+            json!({"role": "user", "content": "ack"}),
+            json!({
+                "role": "assistant",
+                "content": [{"type": "tool_use", "name": "shell", "input": {}}]
+            }),
+            json!({"role": "tool", "content": "done"}),
+        ];
+
+        let chunks = assistant_chunks_of(&messages);
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].text, "first second");
+        assert_eq!(chunks[0].kind, "asst");
+        assert_eq!(chunks[0].step, 0);
+    }
+
+    #[test]
+    fn malformed_message_content_fails_closed_without_panicking() {
+        let messages = vec![
+            json!({"role": "assistant", "extra": {"actions": "wrong type"}}),
+            json!({"role": "tool", "content": {"unexpected": true}}),
+        ];
+
+        assert_eq!(steps_of(&messages), vec![(String::new(), String::new())]);
+        assert!(assistant_chunks_of(&messages).is_empty());
+        assert_eq!(content_text(&json!(42)), "");
+        assert_eq!(
+            content_text(&json!({"text": "not a content block array"})),
+            ""
+        );
+    }
 }
