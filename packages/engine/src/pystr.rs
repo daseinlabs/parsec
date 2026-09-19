@@ -237,9 +237,95 @@ mod tests {
     }
 
     #[test]
+    fn splitlines_handles_all_python_line_separators() {
+        let separators = [
+            '\n', '\r', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\u{85}', '\u{2028}', '\u{2029}',
+        ];
+
+        for separator in separators {
+            let input = format!("before{separator}after");
+            assert_eq!(
+                py_splitlines(&input),
+                vec!["before", "after"],
+                "separator {:?} was not handled",
+                separator
+            );
+        }
+    }
+
+    #[test]
+    fn splitlines_handles_leading_consecutive_and_trailing_breaks() {
+        assert_eq!(py_splitlines("\nhello"), vec!["", "hello"]);
+        assert_eq!(py_splitlines("a\n\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("hello\n"), vec!["hello"]);
+        assert_eq!(py_splitlines("\n"), vec![""]);
+    }
+
+    #[test]
+    fn whitespace_matches_python() {
+        for c in [
+            ' ', '\t', '\n', '\r', '\u{00a0}', '\x1c', '\x1d', '\x1e', '\x1f',
+        ] {
+            assert!(py_is_space(c), "expected {:?} to be whitespace", c);
+        }
+
+        assert!(!py_is_space('a'));
+        assert!(!py_is_space('0'));
+    }
+
+    #[test]
+    fn strip_handles_empty_whitespace_and_content() {
+        assert_eq!(py_strip("hello"), "hello");
+        assert_eq!(py_strip(" hello "), "hello");
+        assert_eq!(py_strip("\t hello\n"), "hello");
+        assert_eq!(py_strip("\x1c hello \x1f"), "hello");
+        assert_eq!(py_strip("   "), "");
+        assert_eq!(py_strip(""), "");
+    }
+
+    #[test]
+    fn has_content_distinguishes_whitespace_from_content() {
+        assert!(!py_has_content(""));
+        assert!(!py_has_content("   "));
+        assert!(!py_has_content("\x1c\x1d\x1e\x1f"));
+        assert!(py_has_content("hello"));
+        assert!(py_has_content(" hello "));
+    }
+
+    #[test]
+    fn split_ws_collapses_whitespace_runs() {
+        assert_eq!(py_split_ws("hello world"), vec!["hello", "world"]);
+        assert_eq!(
+            py_split_ws("  hello\tworld\nrust  "),
+            vec!["hello", "world", "rust"]
+        );
+        assert_eq!(py_split_ws("   "), Vec::<&str>::new());
+        assert_eq!(py_split_ws(""), Vec::<&str>::new());
+    }
+
+    #[test]
     fn char_prefix_is_chars_not_bytes() {
         assert_eq!(char_prefix("héllo", 2), "hé");
         assert_eq!(char_prefix("ab", 10), "ab");
+    }
+
+    #[test]
+    fn char_prefix_handles_unicode_and_boundaries() {
+        assert_eq!(char_prefix("", 0), "");
+        assert_eq!(char_prefix("😀abc", 0), "");
+        assert_eq!(char_prefix("😀abc", 1), "😀");
+        assert_eq!(char_prefix("😀abc", 2), "😀a");
+        assert_eq!(char_prefix("你好世界", 2), "你好");
+        assert_eq!(char_prefix("😀abc", 10), "😀abc");
+    }
+
+    #[test]
+    fn char_len_counts_unicode_characters() {
+        assert_eq!(char_len(""), 0);
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("héllo"), 5);
+        assert_eq!(char_len("你好世界"), 4);
+        assert_eq!(char_len("😀abc"), 4);
     }
 
     #[test]
@@ -267,5 +353,36 @@ mod tests {
     fn json_dumps_default_formatting() {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
+    }
+
+    #[test]
+    fn json_dumps_respects_ensure_ascii() {
+        let v: serde_json::Value = serde_json::json!("é😀");
+
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            "\"\\u00e9\\ud83d\\ude00\""
+        );
+        assert_eq!(py_json_dumps_opts(&v, false, false), "\"é😀\"");
+    }
+
+    #[test]
+    fn json_dumps_escapes_special_characters() {
+        let v: serde_json::Value = serde_json::json!("quote: \" slash: \\ newline:\n tab:\t");
+
+        assert_eq!(
+            py_json_dumps_opts(&v, false, false),
+            "\"quote: \\\" slash: \\\\ newline:\\n tab:\\t\""
+        );
+    }
+
+    #[test]
+    fn json_dumps_sorts_object_keys_when_requested() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 1, "a": 2, "c": 3}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&v, true, false),
+            "{\"a\": 2, \"b\": 1, \"c\": 3}"
+        );
     }
 }
