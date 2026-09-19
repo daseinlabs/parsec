@@ -397,4 +397,119 @@ mod tests {
             i64::MAX
         );
     }
+
+    #[test]
+    fn parse_grep_candidate_handles_standard_matches() {
+        assert_eq!(
+            parse_grep_candidate("src/main.py:42:print('hello')"),
+            Some(("main.py".to_string(), Some(42)))
+        );
+
+        assert_eq!(
+            parse_grep_candidate("src/utils/helpers.rs:7:fn helper()"),
+            Some(("helpers.rs".to_string(), Some(7)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_windows_style_paths() {
+        assert_eq!(
+            parse_grep_candidate(r"src\project\main.py:42:hello"),
+            Some((r"src\project\main.py".to_string(), Some(42)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_preserves_colons_in_match_text() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:12:let url = \"http://example.com\";"),
+            Some(("main.rs".to_string(), Some(12)))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_handles_file_without_line_number() {
+        assert_eq!(
+            parse_grep_candidate("src/main.rs:something"),
+            Some(("main.rs".to_string(), None))
+        );
+
+        assert_eq!(
+            parse_grep_candidate("src/main.rs"),
+            Some(("main.rs".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn parse_grep_candidate_rejects_invalid_candidates() {
+        assert_eq!(parse_grep_candidate(""), None);
+        assert_eq!(parse_grep_candidate("   "), None);
+        assert_eq!(parse_grep_candidate("[reranked result]"), None);
+        assert_eq!(parse_grep_candidate("not a file:abc:text"), None);
+    }
+
+    #[test]
+    fn sed_base_parses_range_and_single_line_forms() {
+        assert_eq!(sed_base("sed -n '10,20p' src/main.rs"), 10);
+        assert_eq!(sed_base("sed -n 25p src/main.rs"), 25);
+        assert_eq!(sed_base("sed -n 30p src/main.rs"), 30);
+    }
+
+    #[test]
+    fn sed_base_defaults_to_one_for_unrecognized_commands() {
+        assert_eq!(sed_base("cat src/main.rs"), 1);
+        assert_eq!(sed_base("sed -n 'abc,20p' src/main.rs"), 1);
+        assert_eq!(sed_base("sed -n 'abc p' src/main.rs"), 1);
+    }
+
+    #[test]
+    fn sed_base_handles_whitespace_variations() {
+        assert_eq!(sed_base("sed   -n   15p   src/main.rs"), 15);
+        assert_eq!(sed_base("sed\t-n\t25p\t src/main.rs"), 25);
+    }
+
+    #[test]
+    fn chunk_assistant_chunks_by_window() {
+        let chunks = chunk_assistant("one\ntwo\nthree\nfour\nfive", 3, 2);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "one\ntwo");
+        assert_eq!(chunks[1].text, "three\nfour");
+        assert_eq!(chunks[2].text, "five");
+
+        assert!(chunks.iter().all(|c| c.kind == "asst"));
+        assert!(chunks.iter().all(|c| c.step == 3));
+    }
+
+    #[test]
+    fn chunk_assistant_skips_empty_and_whitespace_only_chunks() {
+        assert!(chunk_assistant("", 0, 2).is_empty());
+        assert!(chunk_assistant("   \n\t\n  ", 0, 2).is_empty());
+    }
+
+    #[test]
+    fn chunk_assistant_handles_unicode_without_splitting_characters() {
+        let text = "你好\n世界\n🙂🚀";
+
+        let chunks = chunk_assistant(text, 1, 1);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].text, "你好");
+        assert_eq!(chunks[1].text, "世界");
+        assert_eq!(chunks[2].text, "🙂🚀");
+    }
+
+    #[test]
+    fn chunk_assistant_preserves_full_coverage() {
+        let text = "first line\nsecond line\nthird line\nfourth line";
+
+        let chunks = chunk_assistant(text, 0, 2);
+        let reconstructed = chunks
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(reconstructed, text);
+    }
 }

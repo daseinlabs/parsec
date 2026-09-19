@@ -268,4 +268,104 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
     }
+
+    #[test]
+    fn splitlines_covers_all_python_line_boundaries() {
+        let input = "a\nb\rc\rd\x0Be\x0Cf\x1cg\x1dh\x1ei\u{85}j\u{2028}k\u{2029}l";
+
+        assert_eq!(
+            py_splitlines(input),
+            vec!["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
+        );
+    }
+
+    #[test]
+    fn splitlines_handles_crlf_as_one_break() {
+        assert_eq!(py_splitlines("a\r\nb"), vec!["a", "b"]);
+        assert_eq!(py_splitlines("\r\n"), vec![""]);
+        assert_eq!(py_splitlines("a\r\n\r\nb"), vec!["a", "", "b"]);
+    }
+
+    #[test]
+    fn splitlines_handles_boundaries_at_start_and_end() {
+        assert_eq!(py_splitlines("\na"), vec!["", "a"]);
+        assert_eq!(py_splitlines("a\n"), vec!["a"]);
+        assert_eq!(py_splitlines("\na\n"), vec!["", "a"]);
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    #[test]
+    fn strip_handles_python_whitespace() {
+        assert_eq!(py_strip(" \t\nhello\r\n "), "hello");
+
+        // Python's str.strip() includes the C0 separators \x1c..\x1f.
+        assert_eq!(py_strip("\x1c\x1d\x1e\x1fhello\x1c\x1d\x1e\x1f"), "hello");
+    }
+
+    #[test]
+    fn strip_handles_empty_and_all_whitespace() {
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("   \t\n\r"), "");
+        assert_eq!(py_strip("\x1c\x1d\x1e\x1f"), "");
+    }
+
+    #[test]
+    fn is_space_matches_python_separator_characters() {
+        for c in ['\x1c', '\x1d', '\x1e', '\x1f'] {
+            assert!(py_is_space(c), "expected {c:?} to be whitespace");
+        }
+
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\n'));
+        assert!(py_is_space('\u{2003}'));
+
+        assert!(!py_is_space('a'));
+    }
+
+    #[test]
+    fn char_prefix_handles_utf8_and_character_boundaries() {
+        let s = "你好世界🙂";
+
+        assert_eq!(char_prefix(s, 0), "");
+        assert_eq!(char_prefix(s, 1), "你");
+        assert_eq!(char_prefix(s, 4), "你好世界");
+        assert_eq!(char_prefix(s, 5), s);
+        assert_eq!(char_prefix(s, 100), s);
+    }
+
+    #[test]
+    fn char_len_counts_unicode_characters_not_bytes() {
+        assert_eq!(char_len("hello"), 5);
+        assert_eq!(char_len("你好"), 2);
+        assert_eq!(char_len("🙂"), 1);
+        assert_eq!(char_len("你好🙂"), 3);
+        assert_eq!(char_len(""), 0);
+    }
+
+    #[test]
+    fn json_dumps_supports_sorted_keys() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"z": 1, "a": 2, "m": 3}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            r#"{"z": 1, "a": 2, "m": 3}"#
+        );
+
+        assert_eq!(
+            py_json_dumps_opts(&v, true, true),
+            r#"{"a": 2, "m": 3, "z": 1}"#
+        );
+    }
+
+    #[test]
+    fn json_dumps_ensure_ascii_controls_unicode_escaping() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"text":"é🙂"}"#).unwrap();
+
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            r#"{"text": "\u00e9\ud83d\ude42"}"#
+        );
+
+        assert_eq!(py_json_dumps_opts(&v, false, false), r#"{"text": "é🙂"}"#);
+    }
 }
