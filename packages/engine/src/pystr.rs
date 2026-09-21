@@ -268,4 +268,176 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
     }
+
+    // --- py_splitlines: additional coverage ------------------------------
+    // Expected values cross-checked against real CPython `str.splitlines()`.
+
+    #[test]
+    fn splitlines_leading_break_yields_empty_first_line() {
+        // "\n".splitlines() == [''] in Python: a break at position 0 still
+        // emits the (empty) segment before it.
+        assert_eq!(py_splitlines("\n"), vec![""]);
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    #[test]
+    fn splitlines_all_eleven_break_chars_individually() {
+        // Every character is_line_break() claims to treat as a boundary,
+        // exercised in isolation so a regression in any one of the eleven
+        // is caught rather than masked by the others.
+        for brk in [
+            '\n', '\r', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\u{85}', '\u{2028}', '\u{2029}',
+        ] {
+            let s = format!("a{brk}b");
+            assert_eq!(
+                py_splitlines(&s),
+                vec!["a", "b"],
+                "break char {:#x} did not split",
+                brk as u32
+            );
+        }
+        // \r\n is the eleventh boundary, consumed together (see next test).
+    }
+
+    #[test]
+    fn splitlines_crlf_consumed_as_single_break_never_double_split() {
+        assert_eq!(py_splitlines("a\r\nb"), vec!["a", "b"]);
+        // \r not followed by \n stays a lone break.
+        assert_eq!(py_splitlines("a\rb"), vec!["a", "b"]);
+        // \r at end of string: no following char to peek at, must not panic.
+        assert_eq!(py_splitlines("a\r"), vec!["a"]);
+        assert_eq!(py_splitlines("\r\n"), vec![""]);
+        // \r immediately followed by \r\n: only the matching \n merges.
+        assert_eq!(py_splitlines("a\r\rb\r\nc"), vec!["a", "", "b", "c"]);
+    }
+
+    #[test]
+    fn splitlines_consecutive_and_mixed_breaks() {
+        assert_eq!(py_splitlines("a\x1cb\x1db\x1ec"), vec!["a", "b", "b", "c"]);
+        assert_eq!(
+            py_splitlines("line1\r\nline2\rline3\nline4"),
+            vec!["line1", "line2", "line3", "line4"]
+        );
+        assert_eq!(py_splitlines("\x0b\x0c"), vec!["", ""]);
+    }
+
+    // --- py_is_space / py_strip -------------------------------------------
+
+    #[test]
+    fn is_space_covers_c0_separators_but_not_neighbors() {
+        for c in ['\x1c', '\x1d', '\x1e', '\x1f'] {
+            assert!(py_is_space(c), "{:#x} should be treated as space", c as u32);
+        }
+        // \x1b (ESC) is one below the documented \x1c..\x1f range and must
+        // stay non-space, guarding against an off-by-one in the match arm.
+        assert!(!py_is_space('\x1b'));
+        assert!(py_is_space(' '));
+        assert!(py_is_space('\t'));
+        assert!(!py_is_space('a'));
+    }
+
+    #[test]
+    fn strip_empty_and_all_whitespace_and_no_whitespace() {
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("   \t\x1c "), "");
+        assert_eq!(py_strip("nowhitespace"), "nowhitespace");
+        assert_eq!(py_strip("  \x1chello\x1f  "), "hello");
+    }
+
+    #[test]
+    fn has_content_matches_strip_truthiness() {
+        assert!(!py_has_content(""));
+        assert!(!py_has_content("   \x1c\x1d  "));
+        assert!(py_has_content("  x  "));
+    }
+
+    #[test]
+    fn split_ws_collapses_runs_and_drops_empties() {
+        assert_eq!(py_split_ws("  a   b\tc  "), vec!["a", "b", "c"]);
+        assert_eq!(py_split_ws(""), Vec::<&str>::new());
+        assert_eq!(py_split_ws("   "), Vec::<&str>::new());
+        assert_eq!(py_split_ws("single"), vec!["single"]);
+    }
+
+    // --- char_prefix / char_len: multi-byte + astral coverage --------------
+
+    #[test]
+    fn char_prefix_and_len_on_cjk_and_multibyte() {
+        let s = "日本語abc";
+        assert_eq!(char_len(s), 6);
+        assert_eq!(char_prefix(s, 3), "日本語");
+        assert_eq!(char_prefix(s, 0), "");
+    }
+
+    #[test]
+    fn char_prefix_and_len_treat_astral_emoji_as_one_char() {
+        // U+1F600 is outside the BMP and is UTF-16 surrogate-pair territory,
+        // but Python's `len()`/slicing count it as exactly one code point —
+        // char_indices() over Rust `char`s (Unicode scalar values) must too.
+        let s = "a\u{1F600}b";
+        assert_eq!(char_len(s), 3);
+        assert_eq!(char_prefix(s, 2), "a\u{1F600}");
+        assert_eq!(char_prefix(s, 1), "a");
+    }
+
+    #[test]
+    fn char_prefix_length_beyond_char_count_returns_whole_string() {
+        assert_eq!(char_prefix("ab", 10), "ab");
+        assert_eq!(char_prefix("", 5), "");
+    }
+
+    // --- py_json_dumps_opts: sort_keys / ensure_ascii combinations ---------
+
+    #[test]
+    fn json_dumps_sort_keys_orders_by_code_point() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"z":1,"a":2,"m":3}"#).unwrap();
+        assert_eq!(
+            py_json_dumps_opts(&v, true, true),
+            "{\"a\": 2, \"m\": 3, \"z\": 1}"
+        );
+        // Unsorted preserves serde_json's insertion order (preserve_order).
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            "{\"z\": 1, \"a\": 2, \"m\": 3}"
+        );
+    }
+
+    #[test]
+    fn json_dumps_empty_containers() {
+        let arr: serde_json::Value = serde_json::from_str("[]").unwrap();
+        let obj: serde_json::Value = serde_json::from_str("{}").unwrap();
+        assert_eq!(py_json_dumps_opts(&arr, true, true), "[]");
+        assert_eq!(py_json_dumps_opts(&obj, true, true), "{}");
+    }
+
+    #[test]
+    fn json_dumps_ensure_ascii_false_emits_raw_utf8() {
+        let v = serde_json::Value::String("héllo".to_string());
+        assert_eq!(py_json_dumps_opts(&v, false, true), "\"h\\u00e9llo\"");
+        assert_eq!(py_json_dumps_opts(&v, false, false), "\"héllo\"");
+    }
+
+    #[test]
+    fn json_dumps_astral_char_surrogate_pair_iff_ensure_ascii() {
+        // json.dumps("a\U0001F600b") -> "a\ud83d\ude00b" (ensure_ascii=True,
+        // the default): astral code points get UTF-16 surrogate-pair
+        // escapes. With ensure_ascii=False, json.dumps emits the raw
+        // character instead — the `!ensure_ascii` short-circuit in
+        // py_json_quote_opts must take priority over the `cp > 0xFFFF`
+        // branch, not the other way around.
+        let v = serde_json::Value::String("a\u{1F600}b".to_string());
+        assert_eq!(py_json_dumps_opts(&v, false, true), "\"a\\ud83d\\ude00b\"");
+        assert_eq!(py_json_dumps_opts(&v, false, false), "\"a\u{1F600}b\"");
+    }
+
+    #[test]
+    fn json_dumps_control_chars_use_named_escapes_where_defined() {
+        // json.dumps("control\x01\x08\x0cchar") ==
+        //   "\"control\\u0001\\b\\fchar\""
+        let v = serde_json::Value::String("control\u{1}\u{8}\u{c}char".to_string());
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            "\"control\\u0001\\b\\fchar\""
+        );
+    }
 }
