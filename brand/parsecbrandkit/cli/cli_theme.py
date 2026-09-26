@@ -9,8 +9,8 @@ Monochrome text, green progress graphic. Respects NO_COLOR, TERM=dumb and non-TT
 import json
 import math
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 _TOKENS = json.loads((Path(__file__).resolve().parent.parent / "tokens/tokens.json").read_text())
 _TERMINAL = _TOKENS["terminal"]

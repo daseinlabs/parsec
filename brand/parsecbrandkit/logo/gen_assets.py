@@ -6,10 +6,10 @@ No text is re-typeset and no symbol is redrawn. Legacy glow filenames are flat
 compatibility exports. All PNG dimensions are explicit and reproducible.
 """
 
-from copy import deepcopy
 import json
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from copy import deepcopy
+from pathlib import Path
 
 import pymupdf
 

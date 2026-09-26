@@ -1,8 +1,8 @@
 """Generate terminal presets from ../tokens/tokens.json, from any directory."""
 
 import json
-from pathlib import Path
 import plistlib
+from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ANSI_NAMES = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"]
