@@ -73,11 +73,27 @@ if [ "$SIGN" = 1 ]; then
     "$STAGE/core-root/usr/local/parsec/bin/parsec"
   codesign --verify --strict --verbose=2 "$STAGE/core-root/usr/local/parsec/bin/parsec"
 fi
+# The menu-bar app's bundle, shipped pre-signed. `parsec tray install` used
+# to assemble parsec.app on the user's machine around the (Developer ID,
+# hardened-runtime) binary above — and a signed binary inside a bundle with
+# no resource seal is what Gatekeeper calls "damaged". The bundle is
+# assembled here by the binary itself (one source of truth for its layout)
+# and signed as a whole; install copies it verbatim when versions match and
+# otherwise falls back to an ad-hoc seal of its own.
+PAYLOAD_BIN="$STAGE/core-root/usr/local/parsec/bin/parsec"
+APP="$STAGE/core-root/usr/local/parsec/parsec.app"
+"$PAYLOAD_BIN" tray bundle --out "$APP" --binary "$PAYLOAD_BIN" >/dev/null
+if [ "$SIGN" = 1 ]; then
+  codesign --force --deep --sign "$DEVELOPER_ID_APPLICATION" --options runtime --timestamp "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+fi
+codesign --verify --deep --strict --verbose=2 "$APP"
 install -m 755 "$HERE/payload/uninstall.sh" "$STAGE/core-root/usr/local/parsec/uninstall.sh"
 printf '%s\n' "$VERSION" > "$STAGE/core-root/usr/local/parsec/VERSION"
 
 # ── scripts: one dir per component, lib.sh beside each postinstall ──────────
-for c in core claude codex opencode desktop tray signin; do
+for c in core claude codex opencode pi desktop tray signin; do
   mkdir -p "$STAGE/scripts/$c"
   install -m 755 "$HERE/scripts/$c/postinstall" "$STAGE/scripts/$c/postinstall"
   install -m 644 "$HERE/scripts/lib.sh" "$STAGE/scripts/$c/lib.sh"
@@ -87,7 +103,7 @@ done
 pkgbuild --root "$STAGE/core-root" --install-location / --ownership recommended \
   --identifier rocks.dasein.parsec.core --version "$PKG_VERSION" \
   --scripts "$STAGE/scripts/core" "$PKGS/core.pkg" >/dev/null
-for c in claude codex opencode desktop tray signin; do
+for c in claude codex opencode pi desktop tray signin; do
   pkgbuild --nopayload --identifier "rocks.dasein.parsec.$c" --version "$PKG_VERSION" \
     --scripts "$STAGE/scripts/$c" "$PKGS/$c.pkg" >/dev/null
 done
@@ -142,7 +158,7 @@ fi
 rm -rf "$OUT/expanded"
 pkgutil --expand "$FINAL" "$OUT/expanded"
 grep -q 'choice id="desktop"' "$OUT/expanded/Distribution"
-for c in core claude codex opencode desktop tray signin; do
+for c in core claude codex opencode pi desktop tray signin; do
   [ -d "$OUT/expanded/$c.pkg" ] || { echo "component $c.pkg missing from the product" >&2; exit 1; }
 done
 # Proves the Distribution JavaScript parses and the choice defaults evaluate

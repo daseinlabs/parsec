@@ -115,6 +115,15 @@ Desktop traffic is tagged `x-parsec-tool: claude-desktop` so its savings are
 separable in the ledger; that tag is dropped before anything leaves the
 machine.
 
+**The Code tab inside Desktop is not curated.** Recent Desktop builds start
+Claude Code with their own `ANTHROPIC_BASE_URL=https://api.anthropic.com`,
+overriding `~/.claude/settings.json`, so that traffic never reaches the proxy
+by the normal route. Intercepting it does not help either: the Code tab runs
+on Node, which ignores the macOS keychain and rejects mitmproxy's CA (the
+`Client TLS handshake failed` lines in `~/.parsec/interceptor/mitmdump.log`).
+Tell users this plainly so they do not spend an hour chasing it; the terminal
+`claude` CLI is the curated path for Claude Code.
+
 One thing to be straight about if asked: mitmproxy decrypts *everything* the
 Claude process sends, because it cannot know a request's host until after the
 TLS handshake. The addon only acts on the two Anthropic paths above, but the

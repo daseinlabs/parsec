@@ -40,6 +40,11 @@ fn config_of(fx: &Value) -> (FreezeConfig, Option<i64>) {
         min_run_tokens: 10,
         // Reference behaviour: the Python freezer cuts assistant prose.
         cut_assistant: true,
+        // Reference behaviour: births are decided at their own step and the
+        // markers carry the terse "re-read" pointer (both frozen in the
+        // fixtures). Product defaults differ; see FreezeConfig.
+        protect_current: false,
+        product_markers: false,
     };
     (cfg, tau_q)
 }
@@ -233,6 +238,11 @@ fn malformed_input_fails_open() {
         min_run_tokens: 10,
         // Reference behaviour: the Python freezer cuts assistant prose.
         cut_assistant: true,
+        // Reference behaviour: births are decided at their own step and the
+        // markers carry the terse "re-read" pointer (both frozen in the
+        // fixtures). Product defaults differ; see FreezeConfig.
+        protect_current: false,
+        product_markers: false,
     };
     let mut fz = Freezer::new(cfg, StubScorer { tau_q: None });
     // Non-string text in a content part: the reference raises out of curate()

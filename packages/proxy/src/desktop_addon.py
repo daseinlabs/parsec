@@ -16,12 +16,22 @@
 #   1. Requests to api.anthropic.com — Desktop's own Cowork / Agent-mode
 #      inference. Rewrite host/port/scheme to the local parsec proxy.
 #   2. Requests already aimed at the parsec proxy — Claude Code running
-#      *inside* Desktop (Cowork), which reads ~/.claude/settings.json and so
-#      already goes to ANTHROPIC_BASE_URL. This addon passes those through
-#      UNTOUCHED, on purpose: there is nothing to rewrite, and tagging them
-#      as Desktop traffic would mis-attribute Claude Code's own savings.
-#      (CC-Router's addon does act on this case, but only to inject its proxy
-#      secret — a step parsec has no equivalent of.)
+#      *inside* Desktop (the Code tab / Cowork) when it honors
+#      ~/.claude/settings.json and so already goes to ANTHROPIC_BASE_URL.
+#      This addon passes those through UNTOUCHED, on purpose: there is
+#      nothing to rewrite, and tagging them as Desktop traffic would
+#      mis-attribute Claude Code's own savings. (CC-Router's addon does act
+#      on this case, but only to inject its proxy secret — a step parsec has
+#      no equivalent of.)
+#
+#      KNOWN GAP: recent Desktop builds inject their own
+#      ANTHROPIC_BASE_URL=https://api.anthropic.com into the Code tab's
+#      process, overriding the settings file. Those requests then look like
+#      case 1 and get rewritten here — but the Code tab runs on Node, which
+#      uses its own bundled root store rather than the macOS keychain, so it
+#      rejects mitmproxy's CA ("Client TLS handshake failed" in mitmdump.log)
+#      and the request fails rather than being curated. The Code tab inside
+#      Desktop is NOT curated today; see the desktop skill's scope note.
 #
 # WHAT THIS ADDON DOES NOT DO — deliberately:
 #

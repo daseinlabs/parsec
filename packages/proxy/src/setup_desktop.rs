@@ -315,20 +315,33 @@ pub fn mitmdump_path() -> Option<PathBuf> {
     } else {
         "which"
     };
-    let out = Command::new(probe)
-        .no_window()
-        .arg("mitmdump")
-        .output()
-        .ok()?;
-    if !out.status.success() {
+    if let Ok(out) = Command::new(probe).no_window().arg("mitmdump").output() {
+        if out.status.success() {
+            if let Some(first) = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+            {
+                return Some(PathBuf::from(first));
+            }
+        }
+    }
+    // Not on PATH — or there is no useful PATH. The menu-bar app is started
+    // by launchd with the bare system PATH, so from there `which` never
+    // finds a Homebrew or pipx mitmdump and the guided completion reported
+    // "mitmproxy is not installed" on machines where it plainly was. Probe
+    // the conventional install locations directly.
+    if cfg!(target_os = "windows") {
         return None;
     }
-    let first = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())?
-        .to_string();
-    Some(PathBuf::from(first))
+    let home = crate::setup::home_dir();
+    [
+        PathBuf::from("/opt/homebrew/bin/mitmdump"),
+        PathBuf::from("/usr/local/bin/mitmdump"),
+        home.join(".local").join("bin").join("mitmdump"),
+    ]
+    .into_iter()
+    .find(|p| p.is_file())
 }
 
 fn install_hint() -> &'static str {
@@ -1116,6 +1129,146 @@ fn spawn_interceptor(mitmdump: &Path, target: &str) -> anyhow::Result<u32> {
     Ok(pid)
 }
 
+/// PIDs of live `mitmdump` processes running OUR addon (unix only; Windows
+/// has no `pgrep`, and its service fires at the next login anyway). The
+/// addon path is the identity: it is unique to this install, so a user's own
+/// unrelated mitmdump is never mistaken for the interceptor.
+fn our_mitmdump_pids() -> Vec<u32> {
+    if cfg!(target_os = "windows") {
+        return Vec::new();
+    }
+    let Ok(out) = Command::new("pgrep")
+        .args(["-f", &addon_path().display().to_string()])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().parse::<u32>().ok())
+        .filter(|pid| pid_is_mitmdump(*pid))
+        .collect()
+}
+
+/// After `install_service` on macOS / Linux the service manager has already
+/// started an interceptor — one that never wrote our pidfile. Before this
+/// existed, `running()` looked at the empty pidfile, said "no", and
+/// `provision` hand-spawned a SECOND mitmdump: both then fought for the same
+/// local-mode hook, the loser died with "failed to establish connection to
+/// macOS system extension … deadline has elapsed", and `status` reported
+/// only the pidfile'd one as healthy. Wait briefly for the service's process
+/// and adopt its pid so every later `running()` / `stop()` sees it.
+fn adopt_service_interceptor() -> bool {
+    if cfg!(target_os = "windows") {
+        return false;
+    }
+    for _ in 0..30 {
+        if let Some(pid) = our_mitmdump_pids().into_iter().next() {
+            return std::fs::write(pid_path(), pid.to_string()).is_ok();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    false
+}
+
+/// What mitmdump's own log says about the local-mode hook. A live pid is a
+/// weak claim: the reporter of the macOS 26 saga watched `status` say
+/// "running" for an hour while the redirector had never attached. mitmproxy
+/// prints exactly one line when the hook is up and a recognisable one when
+/// it is not, and the log is the only place either appears.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Health {
+    /// "Local redirector started." was the last thing the redirector said.
+    Started,
+    /// A startup failure was the last thing it said; the payload is the
+    /// marker that matched.
+    Failed(&'static str),
+    /// Neither marker seen (yet).
+    Unknown,
+}
+
+const HEALTH_OK: &str = "Local redirector started";
+const HEALTH_FAILURES: [&str; 4] = [
+    "failed to establish connection",
+    "deadline has elapsed",
+    "Error logged during startup",
+    "Address already in use",
+];
+
+/// Latest marker wins. Pure, so the string shapes are pinned by tests.
+fn health_in(text: &str) -> Health {
+    let ok = text.rfind(HEALTH_OK);
+    let failed = HEALTH_FAILURES
+        .iter()
+        .filter_map(|m| text.rfind(m).map(|i| (i, *m)))
+        .max_by_key(|(i, _)| *i);
+    match (ok, failed) {
+        (Some(o), Some((f, m))) if f > o => Health::Failed(m),
+        (Some(_), _) => Health::Started,
+        (None, Some((_, m))) => Health::Failed(m),
+        (None, None) => Health::Unknown,
+    }
+}
+
+/// Current length of the interceptor log — a bookmark taken BEFORE a start,
+/// so an old "started" line from a previous run cannot vouch for this one.
+fn log_len() -> u64 {
+    std::fs::metadata(log_path()).map(|m| m.len()).unwrap_or(0)
+}
+
+/// Health from everything logged after `since`.
+fn health_since(since: u64) -> Health {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(log_path()) else {
+        return Health::Unknown;
+    };
+    if f.seek(SeekFrom::Start(since)).is_err() {
+        return Health::Unknown;
+    }
+    let mut buf = String::new();
+    // Bounded: a runaway log must not be read whole on every status call.
+    if f.take(1 << 20).read_to_string(&mut buf).is_err() {
+        return Health::Unknown;
+    }
+    health_in(&buf)
+}
+
+/// Health of the current interceptor, from the tail of the log. `status`
+/// has no start bookmark, so the last 64 KiB stand in for "recent".
+pub fn interceptor_health() -> Health {
+    let len = log_len();
+    health_since(len.saturating_sub(64 * 1024))
+}
+
+/// Give a just-started interceptor time to declare itself. Ten seconds:
+/// mitmdump loads Python and the addon before the redirector attaches, and
+/// a live run here took more than five to print its first line.
+fn wait_for_health(since: u64) -> Health {
+    for _ in 0..100 {
+        let h = health_since(since);
+        if h != Health::Unknown {
+            return h;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Health::Unknown
+}
+
+/// One line for the start paths and `status`.
+fn health_line(h: Health) -> String {
+    match h {
+        Health::Started => "redirector up (per mitmdump.log)".to_string(),
+        Health::Failed(m) => format!(
+            "redirector FAILED (\"{m}\" in {}) — capture is NOT working",
+            log_path().display()
+        ),
+        Health::Unknown => format!(
+            "redirector not confirmed yet — watch {} for \"{HEALTH_OK}\"",
+            log_path().display()
+        ),
+    }
+}
+
 /// What `stop()` achieved. The three-way distinction is load-bearing on
 /// Windows: the interceptor runs elevated (WinDivert needs its driver), so
 /// `taskkill` from an unelevated shell is DENIED. A stop that swallowed that
@@ -1171,6 +1324,44 @@ pub fn stop() -> StopOutcome {
         StopOutcome::Stopped
     } else {
         StopOutcome::Failed(pid)
+    }
+}
+
+/// Stop the service manager's interceptor for THIS session while leaving the
+/// login registration in place. Needed because the macOS service runs under
+/// `KeepAlive`: a plain SIGTERM to its pid is answered by launchd with a
+/// respawn seconds later, so `stop --keep-autostart` used to print
+/// "stopped" over an interceptor that was already coming back. `bootout`
+/// removes the job from the running session only — the plist stays on disk
+/// and `RunAtLoad` brings it back at the next login, which is the promise
+/// `--keep-autostart` makes. Linux mirrors it with `systemctl stop` (the
+/// unit stays enabled). Windows' task fires only at login, so a kill there
+/// is already final. Returns whether a service was told to stop.
+fn stop_service_now() -> bool {
+    if !service_installed() {
+        return false;
+    }
+    if cfg!(target_os = "macos") {
+        launchctl_unload()
+    } else if cfg!(target_os = "windows") {
+        false
+    } else {
+        Command::new("systemctl")
+            .args(["--user", "stop", SYSTEMD_UNIT])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
+/// `stop()` after the service manager has already been told to stand down.
+/// The manager kills the process itself, so `stop()` then finds a stale
+/// pidfile and says `NotRunning` — which would read as "nothing happened"
+/// to someone who just watched it stop. Fold that back into `Stopped`.
+fn stop_after_service(was_running: bool) -> StopOutcome {
+    match stop() {
+        StopOutcome::NotRunning if was_running => StopOutcome::Stopped,
+        other => other,
     }
 }
 
@@ -1500,16 +1691,24 @@ fn unsafe_uid() -> u32 {
         .unwrap_or(501)
 }
 
+/// Unregister, quietly. `launchctl bootout` prints "Boot-out failed: 3: No
+/// such process" and `unload` prints "Unload failed: 5: Input/output error"
+/// whenever nothing is registered — the NORMAL case on a first install — so
+/// both are muted; a real failure surfaces through the caller's own message.
 fn launchctl_unload() -> bool {
     let uid = unsafe_uid();
     Command::new("launchctl")
         .args(["bootout", &format!("gui/{uid}/{LAUNCHD_LABEL}")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
         || Command::new("launchctl")
             .arg("unload")
             .arg(launchd_plist())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
@@ -1746,16 +1945,21 @@ fn install_proxy_service(port: u16) -> anyhow::Result<()> {
     }
 }
 
+/// Same muting as `launchctl_unload`, for the same reason.
 fn proxy_launchctl_unload() -> bool {
     let uid = unsafe_uid();
     Command::new("launchctl")
         .args(["bootout", &format!("gui/{uid}/{PROXY_LAUNCHD_LABEL}")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
         || Command::new("launchctl")
             .arg("unload")
             .arg(proxy_launchd_plist())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
@@ -1917,6 +2121,26 @@ fn warn_if_proxy_predates_models_route(port: u16) {
 
 /// Refuse to start on macOS when the Network Extension is not usable:
 /// mitmdump would come up clean and capture nothing.
+/// What to do when the extension sits in "activated waiting for user" but
+/// System Settings shows no "Mitmproxy Redirector" row to approve. macOS only
+/// lists a pending Network Extension while the app that requested it is
+/// alive; the installer's registration run is deliberately short-lived, and
+/// if the menu-bar app that was meant to keep the request alive is dead,
+/// there is nothing to toggle. `systemextensionsctl uninstall` is no way out
+/// either — SIP refuses it. Trashing the redirector app from Finder is the
+/// one path that makes macOS drop the stale registration.
+pub fn approval_recovery_hint() -> String {
+    format!(
+        "If System Settings shows NO \"Mitmproxy Redirector\" row, the approval request has \
+         no live owner. Run mitmproxy by hand and LEAVE IT RUNNING while you approve:\n\n  \
+         mitmdump --mode local:{} --set connection_strategy=lazy\n\nIf the row still does not \
+         appear, drag \"/Applications/Mitmproxy Redirector.app\" to the Trash in Finder (this \
+         is what makes macOS forget the stuck extension; `systemextensionsctl uninstall` is \
+         blocked by SIP), run the command above again, approve the new request, then re-run.",
+        desktop_process_name()
+    )
+}
+
 fn gate_extension() -> anyhow::Result<()> {
     match extension_status() {
         ExtensionStatus::AwaitingApproval => {
@@ -1924,7 +2148,8 @@ fn gate_extension() -> anyhow::Result<()> {
             open_extension_settings();
             anyhow::bail!(
                 "mitmproxy's Network Extension is installed but not approved — approve it \
-                 (System Settings was opened for you), then re-run"
+                 (System Settings was opened for you), then re-run.\n\n{}",
+                approval_recovery_hint()
             );
         }
         ExtensionStatus::NotInstalled if cfg!(target_os = "macos") => {
@@ -1976,6 +2201,7 @@ fn provision(
     st.enabled = true;
     st.target = target.clone();
 
+    let log_mark = log_len();
     if autostart {
         install_service(mitmdump, &target)?;
         st.autostart = true;
@@ -2006,11 +2232,14 @@ fn provision(
         // users needing a manual `parsec desktop start` that macOS never
         // did. If the service manager did not already bring it up, start it
         // now in this (elevated) session.
-        if running() {
+        if running() || adopt_service_interceptor() {
             println!(
                 "interceptor installed as a boot service and is running (pid {})",
                 read_pid().unwrap_or(0)
             );
+            // A service the manager keeps alive is reported, not aborted:
+            // it retries on its own, and the state above is still right.
+            println!("  {}", health_line(wait_for_health(log_mark)));
         } else {
             let pid = spawn_interceptor(mitmdump, &target)?;
             std::thread::sleep(std::time::Duration::from_millis(1500));
@@ -2026,6 +2255,7 @@ fn provision(
                  redirecting {}'s /v1/messages + /v1/models → {target}",
                 desktop_process_name()
             );
+            println!("  {}", health_line(wait_for_health(log_mark)));
         }
     } else {
         // No `running()` guard: stop() reports NotRunning on its own, and
@@ -2046,6 +2276,20 @@ fn provision(
             "interceptor running (pid {pid}), redirecting {}'s /v1/messages + /v1/models → {target}",
             desktop_process_name()
         );
+        let health = wait_for_health(log_mark);
+        println!("  {}", health_line(health));
+        if let Health::Failed(_) = health {
+            // The one clear error line. State is saved first so `status`
+            // still shows Desktop as configured; only the start failed.
+            let _ = save_desktop_state(&st);
+            anyhow::bail!(
+                "the interceptor is alive but its redirector did not attach — nothing is \
+                 being captured. Usual causes: another mitmdump holding the local-mode hook \
+                 (`parsec desktop status` lists strays), or the Network Extension needs \
+                 re-approval. See {}",
+                log_path().display()
+            );
+        }
     }
     let _ = save_desktop_state(&st);
     print_relaunch_reminder();
@@ -2056,7 +2300,9 @@ fn provision(
 /// removes the boot service — otherwise "stopped" would silently un-stop
 /// itself at the next login, which is CC-Router's reason for the same flag.
 pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
-    let outcome = stop();
+    // Service first, process second: the other order lets a KeepAlive
+    // service respawn the interceptor between the kill and the teardown.
+    let was_running = running();
     let mut st = load_desktop_state().unwrap_or_default();
     if !keep_autostart {
         if uninstall_service() {
@@ -2070,8 +2316,10 @@ pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
         }
         st.autostart = false;
     } else if st.autostart {
+        stop_service_now();
         println!("boot service kept — the interceptor returns at next login");
     }
+    let outcome = stop_after_service(was_running);
     let _ = save_desktop_state(&st);
     match outcome {
         StopOutcome::Stopped => println!("interceptor stopped"),
@@ -2090,9 +2338,19 @@ pub fn stop_cmd(keep_autostart: bool) -> anyhow::Result<()> {
 /// addon without re-running setup.
 pub fn restart() -> anyhow::Result<()> {
     let autostart = load_desktop_state().map(|s| s.autostart).unwrap_or(false);
-    if let StopOutcome::Failed(pid) = stop() {
+    let was_running = running();
+    stop_service_now(); // otherwise KeepAlive respawns what stop() just killed
+    if let StopOutcome::Failed(pid) = stop_after_service(was_running) {
         anyhow::bail!("{}", stop_failure_hint(pid));
     }
+    // Strays the pidfile never knew about (the pre-adoption double spawn)
+    // would otherwise keep the hook and make the new interceptor the loser.
+    for pid in our_mitmdump_pids() {
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status();
+    }
+    let _ = wait_for(|| our_mitmdump_pids().is_empty());
     start(autostart)
 }
 
@@ -2212,13 +2470,31 @@ pub fn setup(opts: Options) -> anyhow::Result<()> {
         install_ca_now()?;
         println!("CA trusted.");
     } else {
-        println!(
-            "\nNOT trusted yet — this is the one machine-wide change parsec makes, so it is \
-             yours to run:\n\n  {}\n\nOr re-run with `parsec setup desktop --install-ca` to have \
-             parsec run it for you.\nWithout it, Claude Desktop will reject the intercepted TLS \
-             connection.",
-            ca_install_command()
-        );
+        // Ask the store before saying anything. This used to print "NOT
+        // trusted yet" unconditionally, contradicting `parsec desktop status`
+        // on the same machine and pushing users to add a root CA a second
+        // time — the one machine-wide change parsec makes, made twice.
+        match ca_trust_state() {
+            CaTrust::Trusted => println!("CA already trusted (system trust store)"),
+            CaTrust::Stale => println!(
+                "\nSTALE trust — a DIFFERENT mitmproxy CA is in the trust store, not this one \
+                 (the CA was regenerated). Remove the old one, then trust this one:\n\n  {}\n  {}",
+                ca_remove_command(),
+                ca_install_command()
+            ),
+            CaTrust::NotTrusted => println!(
+                "\nNOT trusted yet — this is the one machine-wide change parsec makes, so it \
+                 is yours to run:\n\n  {}\n\nOr re-run with `parsec setup desktop --install-ca` \
+                 to have parsec run it for you.\nWithout it, Claude Desktop will reject the \
+                 intercepted TLS connection.",
+                ca_install_command()
+            ),
+            CaTrust::Unknown => println!(
+                "\ncould not query the trust store — if Claude Desktop rejects the intercepted \
+                 connection, trust the CA with:\n\n  {}",
+                ca_install_command()
+            ),
+        }
     }
 
     // 2–5: provision the addon, clear the platform gates, warm the proxy and
@@ -2395,6 +2671,27 @@ pub fn status() -> anyhow::Result<()> {
             "not running".to_string()
         }
     );
+    // Two interceptors compete for one local-mode hook and the loser
+    // captures nothing; the pidfile only ever names one of them.
+    let extra: Vec<u32> = our_mitmdump_pids()
+        .into_iter()
+        .filter(|p| Some(*p) != read_pid())
+        .collect();
+    if !extra.is_empty() {
+        println!(
+            "  WARNING:           {} other interceptor process(es) running our addon (pid {}) — \
+             they fight for the same hook; run `parsec desktop restart` to converge on one",
+            extra.len(),
+            extra
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if running() {
+        println!("  redirector:        {}", health_line(interceptor_health()));
+    }
     println!("  auto-start:        {}", autostart_status_line());
     println!(
         "  proxy auto-start:  {}",
@@ -2456,10 +2753,12 @@ pub fn status() -> anyhow::Result<()> {
     if cfg!(target_os = "macos") {
         let line = match extension_status() {
             ExtensionStatus::Ready => "approved".to_string(),
-            ExtensionStatus::AwaitingApproval => "NOT APPROVED — the interceptor will capture \
-                 NOTHING until you turn on \"Mitmproxy Redirector\" in System Settings → \
-                 General → Login Items & Extensions"
-                .to_string(),
+            ExtensionStatus::AwaitingApproval => format!(
+                "NOT APPROVED — the interceptor will capture NOTHING until you turn on \
+                 \"Mitmproxy Redirector\" in System Settings → General → Login Items & \
+                 Extensions\n    {}",
+                approval_recovery_hint().replace('\n', "\n    ")
+            ),
             ExtensionStatus::NotInstalled => {
                 "not installed — installed on the first interceptor start".to_string()
             }
@@ -2484,8 +2783,9 @@ pub fn status() -> anyhow::Result<()> {
 /// did except the trust-store entry, which it never made silently and will
 /// not remove silently either.
 pub fn disable() -> anyhow::Result<()> {
-    let outcome = stop();
-    let had_service = uninstall_service();
+    let was_running = running();
+    let had_service = uninstall_service(); // before the kill: see stop_cmd
+    let outcome = stop_after_service(was_running);
     let had_proxy_service = uninstall_proxy_service();
     let addon_removed = remove_addon_if_managed();
     let mcp_removed = unregister_mcp();
@@ -2569,6 +2869,27 @@ pub fn remove_if_managed() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn health_takes_the_latest_marker() {
+        assert_eq!(health_in(""), Health::Unknown);
+        assert_eq!(health_in("Local redirector started.\n"), Health::Started);
+        // The reporter's log: started, then the extension timed out.
+        let contention = "Local redirector started.\n\
+             failed to establish connection to macOS system extension\n\
+             Caused by:\n    deadline has elapsed\n";
+        assert_eq!(
+            health_in(contention),
+            Health::Failed("deadline has elapsed")
+        );
+        // …and a restart after the failure is healthy again.
+        let recovered = format!("{contention}[03:08:27] Local redirector started.\n");
+        assert_eq!(health_in(&recovered), Health::Started);
+        assert_eq!(
+            health_in("Error logged during startup, exiting...\n"),
+            Health::Failed("Error logged during startup")
+        );
+    }
 
     /// The installer's postinstall greps this line by prefix and field name;
     /// a rename here silently breaks the macOS install flow.

@@ -4,9 +4,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/daseinlabs/parsec/main/scripts/install.sh | bash
 #
 # Auto-detects the coding agents on this machine (Claude Code, Codex CLI,
-# opencode) and activates parsec for each. Claude Code gets the plugin
+# opencode, pi) and activates parsec for each. Claude Code gets the plugin
 # (`claude plugin install parsec@parsec-marketplace` — the same binary plus
-# status line, hooks, and skills); codex/opencode get this platform's parsec
+# status line, hooks, and skills); codex/opencode/pi get this platform's parsec
 # binary downloaded into ~/.parsec/bin/parsec — the stable path the shims,
 # skills, and hooks probe — followed by `parsec setup <tool>`. Also puts
 # ~/.parsec/bin on PATH (one guarded line appended to your shell rc) so
@@ -23,12 +23,13 @@
 # mitmproxy behind a Network Extension approval that CANNOT be scripted, so
 # Desktop is a two-pass install: this script stops with instructions, you
 # approve in System Settings, then re-run `parsec setup desktop`.
-# Undo: `parsec disable codex|opencode|desktop`, `claude plugin uninstall parsec`.
+# Undo: `parsec disable codex|opencode|pi|desktop`, `claude plugin uninstall parsec`.
 #
 # Explicit selection instead of auto-detect, and Codex API-key mode:
 #
 #   … | bash -s -- codex            # just codex
 #   … | bash -s -- opencode         # just opencode
+#   … | bash -s -- pi               # just pi
 #   … | bash -s -- claude           # just the Claude Code plugin
 #   … | bash -s -- codex --byok     # codex with OPENAI_API_KEY instead of
 #                                   # ChatGPT-subscription routing
@@ -81,7 +82,7 @@ for a in "$@"; do
     continue
   fi
   case "$a" in
-    codex | opencode | claude | desktop) tools="$tools $a" ;;
+    codex | opencode | pi | claude | desktop) tools="$tools $a" ;;
     claude-code) tools="$tools claude" ;;
     --byok) byok=1 ;;
     --no-desktop) no_desktop=1 ;;
@@ -91,7 +92,7 @@ for a in "$@"; do
     --key) want_key=1 ;;
     --key=*) api_key="${a#--key=}" ;;
     *)
-      echo "unknown argument: $a (expected: claude, codex, opencode, desktop, --byok, --no-desktop, --no-ca, --no-autostart, --no-login, --key <psc_…>)" >&2
+      echo "unknown argument: $a (expected: claude, codex, opencode, pi, desktop, --byok, --no-desktop, --no-ca, --no-autostart, --no-login, --key <psc_…>)" >&2
       exit 1
       ;;
   esac
@@ -150,6 +151,11 @@ if [ -z "$tools" ]; then
   if command -v opencode >/dev/null 2>&1 || [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ]; then
     tools="$tools opencode"
   fi
+  # pi keeps models.json and extensions/ under its agent dir; PI_CODING_AGENT_DIR
+  # is pi's own override for that dir (setup_pi.rs honours the same variable).
+  if command -v pi >/dev/null 2>&1 || [ -d "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" ]; then
+    tools="$tools pi"
+  fi
   # Claude Desktop. macOS only in auto-detect: the Linux redirector needs root
   # and is untested. --no-desktop opts out, because this is the one tool whose
   # setup installs mitmproxy and trusts a CA.
@@ -168,7 +174,7 @@ if [ -z "$tools" ]; then
     fi
   fi
   if [ -z "$tools" ]; then
-    echo "no supported Claude client found (looked for: claude, codex, opencode, Claude Desktop)." >&2
+    echo "no supported Claude client found (looked for: claude, codex, opencode, pi, Claude Desktop)." >&2
     echo "install one first, or pick explicitly: … | bash -s -- codex" >&2
     exit 1
   fi
@@ -197,8 +203,8 @@ fi
 dest="$HOME/.parsec/bin/parsec"
 path_hint=""
 if [ -z "$plat" ]; then
-  # codex/opencode/desktop all run THROUGH the binary; claude does not.
-  if printf '%s' "$tools" | grep -qwE 'codex|opencode|desktop'; then
+  # codex/opencode/pi/desktop all run THROUGH the binary; claude does not.
+  if printf '%s' "$tools" | grep -qwE 'codex|opencode|pi|desktop'; then
     echo "unsupported platform: $(uname -s) $(uname -m)" >&2
     echo "(Windows / other: install the Claude Code plugin instead, or build from source)" >&2
     exit 1
@@ -403,6 +409,9 @@ for t in $tools; do
     opencode)
       "$dest" setup opencode
       ;;
+    pi)
+      "$dest" setup pi
+      ;;
     desktop)
       install_parsec_desktop
       ;;
@@ -414,6 +423,8 @@ echo
 case "$tools" in *claude*) echo "claude: restart Claude Code (or start a new session) — setup runs automatically." ;; esac
 case "$tools" in *codex*) echo "codex: start (or restart) codex — every session routes through parsec; type \$ and pick parsec-savings." ;; esac
 case "$tools" in *opencode*) echo "opencode: restart opencode to activate (Anthropic API-key providers only); /parsec-savings shows the ledger." ;; esac
+# Word-bounded: no other tool name contains "pi", but a glob on it would be fragile.
+case " $tools " in *" pi "*) echo "pi: restart pi to activate — its anthropic provider routes through parsec; other providers go direct." ;; esac
 case "$tools" in
   *desktop*)
     echo "desktop: quit Claude Desktop completely (⌘Q, not just the window) and reopen it — mitmproxy hooks the process at launch."
@@ -422,7 +433,7 @@ case "$tools" in
     ;;
 esac
 [ -n "$path_hint" ] && echo "$path_hint"
-echo "undo: parsec disable codex|opencode|desktop · claude plugin uninstall parsec"
+echo "undo: parsec disable codex|opencode|pi|desktop · claude plugin uninstall parsec"
 
 # ── sign in: the one step left ───────────────────────────────────────────────
 # Green only when stdout is a terminal — `curl | bash` into a log stays clean.

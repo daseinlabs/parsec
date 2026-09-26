@@ -141,6 +141,11 @@ pub struct AppState {
     /// this fails open to passthrough instead. `PARSEC_CACHE_GUARD_TOKENS`;
     /// 0 disables.
     pub cache_guard_tokens: i64,
+    /// Serve the current turn's observations in full and curate them only
+    /// once they are history (`FreezeConfig::protect_current`).
+    /// `PARSEC_PROTECT_CURRENT`; unset → on, `off`/`0`/`false` → the
+    /// reference cut-at-birth policy.
+    pub protect_current: bool,
     /// Guardrail fires — counted separately from generic fail-opens so the
     /// incident signature (repeated large warm-lane rewrites) is alertable
     /// on its own.
@@ -188,6 +193,20 @@ fn cache_guard_tokens_from_env() -> i64 {
     }
 }
 
+/// `PARSEC_PROTECT_CURRENT` — whether the freezer defers the current turn's
+/// birth decisions (`FreezeConfig::protect_current`). Unset/junk → on;
+/// `off`/`0`/`false` → off (the reference policy, used by the single-request
+/// integration suites that assert a cut on the very turn it was born).
+fn protect_current_from_env() -> bool {
+    match std::env::var("PARSEC_PROTECT_CURRENT") {
+        Ok(v) => !matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false" | "no"
+        ),
+        Err(_) => true,
+    }
+}
+
 /// Get-or-create the async mutex serializing one conversation lane. The map
 /// lock is only held for the lookup; the caller awaits the lane lock outside
 /// it, so different lanes never contend.
@@ -231,6 +250,7 @@ impl AppState {
             convs: Mutex::new(HashMap::new()),
             lane_locks: Mutex::new(HashMap::new()),
             cache_guard_tokens: cache_guard_tokens_from_env(),
+            protect_current: protect_current_from_env(),
             cache_guard_count: AtomicU64::new(0),
             fail_open_count: AtomicU64::new(0),
             ledger_path,
@@ -971,10 +991,15 @@ async fn curate(
         let attach_gf = st.governor.mode != GovMode::Off;
         // Freezer (and its blocking HTTP scorer) is built AND driven on a
         // blocking thread — reqwest::blocking panics on async runtime threads.
+        let protect_current = st.protect_current;
         let (fz, served, fails_before, resets_before, calls_before, cut_delta) =
             tokio::task::spawn_blocking(move || {
                 let mut fz = taken.unwrap_or_else(|| {
-                    Freezer::new(FreezeConfig::default(), BrainScorer::new(bcfg2, conv2))
+                    let cfg = FreezeConfig {
+                        protect_current,
+                        ..FreezeConfig::default()
+                    };
+                    Freezer::new(cfg, BrainScorer::new(bcfg2, conv2))
                 });
                 // Governor doom input rides the same trace calls; the latest
                 // doom is harvested per request, so reset before the serve.
@@ -1051,7 +1076,11 @@ async fn curate(
                     for (f, r) in fz.served_ranges() {
                         vis.entry(f.to_lowercase()).or_default().served = r.clone();
                     }
-                    crate::visibility::record(sid, &conv_for_vis, vis);
+                    // Sorted: the export is rewritten whole per serve and
+                    // must not churn bytes on a HashSet's iteration order.
+                    let mut cmds: Vec<String> = fz.dropped_cmds().iter().cloned().collect();
+                    cmds.sort();
+                    crate::visibility::record(sid, &conv_for_vis, vis, cmds);
                 }
                 (
                     fz,
@@ -1151,6 +1180,13 @@ async fn curate(
     };
     let folds_before = folds.len();
     let mut curated = splice::apply_curation(body, &curated_internal, Some(&mut folds));
+    // The current turn is served full (FreezeConfig::protect_current) and
+    // must be folded again once it is history — keep it out of the memo.
+    if st.protect_current {
+        splice::unfreeze_current_turn(body.get("messages"), &mut folds, |m| {
+            m.get("role").and_then(Value::as_str) == Some("assistant")
+        });
+    }
     stats.folds_total = folds.len();
     stats.folds_new = folds.len().saturating_sub(folds_before);
     // Folds MAY commit before the send: they memoize served bytes and replay

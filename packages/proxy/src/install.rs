@@ -129,6 +129,9 @@ pub fn configured_harnesses() -> Vec<String> {
     if crate::setup_opencode::plugin_path().exists() {
         h.push("opencode".to_string());
     }
+    if crate::setup_pi::is_configured() {
+        h.push("pi".to_string());
+    }
     h
 }
 

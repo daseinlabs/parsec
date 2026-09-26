@@ -1,0 +1,12 @@
+#!/bin/bash
+# pi component: baseUrl on pi's anthropic provider + the parsec extension.
+set -uo pipefail
+cd "$(dirname "$0")" || exit 0
+. ./lib.sh
+init_user || exit 0
+if run_as_user "$PARSEC" setup pi; then
+  log "pi: configured"
+else
+  write_summary pi "setup failed — run: parsec setup pi"
+fi
+exit 0

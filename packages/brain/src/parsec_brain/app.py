@@ -11,7 +11,7 @@
 
 The bundle loads (and self-validates) at app construction: a bad checkpoint refuses to start.
 
-Run: uvicorn --factory parsec_brain.app:create_app --port 8080
+Run: hypercorn --bind 127.0.0.1:8080 'parsec_brain.app:create_app()'
 """
 from __future__ import annotations
 

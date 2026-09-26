@@ -33,7 +33,7 @@ curl -s http://127.0.0.1:8090/v1/bundle                         # checkpoint id,
 cd packages/brain
 python -m venv .venv && .venv/bin/pip install -e ".[embed]"
 PARSEC_CKPT=hf://parsecai/curator/curator_v7-9_10nn_prod.pt \
-  .venv/bin/uvicorn --factory parsec_brain.app:create_app --port 8090
+  .venv/bin/hypercorn --bind 127.0.0.1:8090 'parsec_brain.app:create_app()'
 ```
 
 Then tell the proxy where it is: `PARSEC_BRAIN_URL=http://127.0.0.1:8090`
@@ -127,7 +127,7 @@ Hermetic, no model download (deterministic hash embeddings — wiring only):
 ```sh
 cd packages/brain
 PARSEC_EMBED_BACKEND=hash PYTHONPATH=src \
-  .venv/bin/uvicorn --factory parsec_brain.app:create_app --port 8080
+  .venv/bin/hypercorn --bind 127.0.0.1:8080 'parsec_brain.app:create_app()'
 ```
 
 Env: `PARSEC_CKPT`, `PARSEC_RULES_JSON`, `PARSEC_EMBED_BACKEND`

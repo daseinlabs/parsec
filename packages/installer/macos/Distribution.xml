@@ -61,6 +61,16 @@
     function hasOpencode() {
       return anyPath([home() + '/.config/opencode', home() + '/.opencode']);
     }
+    function hasPi() {
+      // pi's agent dir (models.json, extensions/); the npm-installed CLI
+      // lands in one of the usual bin dirs.
+      return anyPath([
+        home() + '/.pi/agent',
+        home() + '/.local/bin/pi',
+        '/opt/homebrew/bin/pi',
+        '/usr/local/bin/pi'
+      ]);
+    }
     function hasDesktop() {
       return anyPath(['/Applications/Claude.app', home() + '/Applications/Claude.app']);
     }
@@ -82,6 +92,7 @@
     <line choice="claude"/>
     <line choice="codex"/>
     <line choice="opencode"/>
+    <line choice="pi"/>
     <line choice="desktop"/>
     <line choice="tray"/>
     <line choice="signin"/>
@@ -111,6 +122,12 @@
     <pkg-ref id="rocks.dasein.parsec.opencode"/>
   </choice>
 
+  <choice id="pi" title="pi"
+          description="Points pi's built-in anthropic provider at the local proxy (your existing OAuth or API-key auth keeps working; other providers go direct) and installs the parsec extension in pi's agent directory. Undo: parsec disable pi."
+          start_selected="hasPi()">
+    <pkg-ref id="rocks.dasein.parsec.pi"/>
+  </choice>
+
   <choice id="desktop" title="Claude Desktop"
           description="Process-scoped TLS interception of Cowork / Agent mode. Installs mitmproxy (Homebrew), trusts its CA in the System keychain (done with the password you already entered), and registers the interceptor to start at login. macOS then needs one toggle from you, which the menu-bar app waits for. Undo: parsec disable desktop."
           start_selected="hasDesktop()">
@@ -127,7 +144,7 @@
 
   <!-- Not a choice: the install ends with the browser sign-in handoff
        (scripts/signin/postinstall), which skips itself on an upgrade or
-       under PARSEC_NO_LOGIN=1. Hidden so the choices pane stays the five
+       under PARSEC_NO_LOGIN=1. Hidden so the choices pane stays the six
        real decisions; last so the tab opens with the conclusion pane. -->
   <choice id="signin" title="Sign in"
           description="Opens https://app.getparsec.ai in your browser to hand this machine its dashboard key."
@@ -139,6 +156,7 @@
   <pkg-ref id="rocks.dasein.parsec.claude" version="@VERSION@" onConclusion="none">claude.pkg</pkg-ref>
   <pkg-ref id="rocks.dasein.parsec.codex" version="@VERSION@" onConclusion="none">codex.pkg</pkg-ref>
   <pkg-ref id="rocks.dasein.parsec.opencode" version="@VERSION@" onConclusion="none">opencode.pkg</pkg-ref>
+  <pkg-ref id="rocks.dasein.parsec.pi" version="@VERSION@" onConclusion="none">pi.pkg</pkg-ref>
   <pkg-ref id="rocks.dasein.parsec.desktop" version="@VERSION@" onConclusion="none">desktop.pkg</pkg-ref>
   <pkg-ref id="rocks.dasein.parsec.tray" version="@VERSION@" onConclusion="none">tray.pkg</pkg-ref>
   <pkg-ref id="rocks.dasein.parsec.signin" version="@VERSION@" onConclusion="none">signin.pkg</pkg-ref>

@@ -48,6 +48,17 @@ enum TrayAction {
     /// item rather than by hand.
     #[command(hide = true)]
     Run,
+    /// Assemble an unsigned parsec.app for the release build to sign
+    /// (packages/installer/macos/build.sh). Not for hand use.
+    #[command(hide = true)]
+    Bundle {
+        /// Where to create the bundle (must not exist).
+        #[arg(long)]
+        out: std::path::PathBuf,
+        /// The parsec binary to place inside it.
+        #[arg(long)]
+        binary: std::path::PathBuf,
+    },
 }
 
 /// `parsec desktop …` — run the Claude Desktop interceptor that `parsec setup
@@ -343,6 +354,9 @@ fn main() -> anyhow::Result<()> {
             TrayAction::Uninstall => parsec_proxy::tray::Action::Uninstall,
             TrayAction::Status => parsec_proxy::tray::Action::Status,
             TrayAction::Run => parsec_proxy::tray::Action::Run,
+            TrayAction::Bundle { out, binary } => {
+                parsec_proxy::tray::Action::Bundle { out, binary }
+            }
         }),
         Command::Uninstall => parsec_proxy::setup::uninstall(),
         Command::Up {

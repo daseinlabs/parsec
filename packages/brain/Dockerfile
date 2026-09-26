@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir \
       "torch>=2.2,<2.3" \
  && pip install --no-cache-dir \
       "torch-geometric>=2.5" "numpy>=1.26,<2" \
-      fastapi "uvicorn[standard]" "pydantic>=2" httpx "huggingface_hub>=0.23" \
+      fastapi hypercorn "pydantic>=2" httpx "huggingface_hub>=0.23" \
       tree-sitter-language-pack "tree-sitter-python==0.23.6" \
  && if [ -n "${EMBED_EXTRAS}" ]; then pip install --no-cache-dir ${EMBED_EXTRAS}; fi
 
@@ -54,6 +54,12 @@ EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=90s --retries=5 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).status==200 else 1)"
 # Shell form so ${PORT} expands: container platforms inject PORT (8080 by
-# default); compose leaves it unset -> 8080. `exec` keeps uvicorn as PID 1 so
+# default); compose leaves it unset -> 8080. `exec` keeps hypercorn as PID 1 so
 # the platform's SIGTERM reaches it for a graceful drain.
-CMD exec uvicorn --factory parsec_brain.app:create_app --host 0.0.0.0 --port ${PORT:-8080}
+# hypercorn, not uvicorn: Cloud Run is deployed with --use-http2 (cloudbuild.yaml)
+# so the Google Frontend forwards HTTP/2 end-to-end, which lifts its 32 MiB
+# HTTP/1 request-body cap (large score/neighbors bodies were 413'd at the edge,
+# before the container — invisible in the service logs). That requires the
+# container to speak cleartext HTTP/2 (h2c, prior knowledge); uvicorn cannot,
+# hypercorn does, and still serves HTTP/1.1 for docker/compose and the healthcheck.
+CMD exec hypercorn --bind 0.0.0.0:${PORT:-8080} 'parsec_brain.app:create_app()'
