@@ -4,7 +4,7 @@
 ;
 ; Per-user install, no administrator for the install itself. The binary and
 ; its app-local VC++ CRT DLLs land at %USERPROFILE%\.parsec\bin — a path
-; contract, not a choice: bin_alias_path(), the codex/opencode shims, the
+; contract, not a choice: bin_alias_path(), the codex/opencode/pi shims, the
 ; interceptor addon, the tray's Run entry and install.ps1 all hardcode it.
 ;
 ; [Files] land in {app}\staging; SwapIn (ssPostInstall) renames them into
@@ -110,6 +110,7 @@ Name: "codex";      Description: "Codex CLI — route through the local proxy"; 
 Name: "codex\sub";  Description: "Sign in with the ChatGPT subscription (default)"; Flags: exclusive unchecked
 Name: "codex\byok"; Description: "Use an OPENAI_API_KEY provider (--byok)"; Flags: exclusive unchecked
 Name: "opencode";   Description: "opencode — install the parsec plugin shim"; Flags: unchecked
+Name: "pi";         Description: "pi — route its anthropic provider through the local proxy"; Flags: unchecked
 Name: "desktop";    Description: "Claude Desktop — intercept Cowork / Agent traffic (installs mitmproxy, trusts a root CA, asks for administrator ONCE)"; Flags: unchecked; Check: not NativeArm64
 Name: "tray";       Description: "Show parsec in the notification area and start it at sign-in"
 
@@ -262,6 +263,17 @@ begin
     or DirExists(x + '\opencode') or DirExists(ExpandConstant('{userappdata}\opencode'));
 end;
 
+// pi keeps models.json and extensions\ under its agent dir; PI_CODING_AGENT_DIR
+// is pi's own override for that dir (setup_pi.rs honours the same variable).
+function HasPi(): Boolean;
+var
+  d: String;
+begin
+  d := GetEnv('PI_CODING_AGENT_DIR');
+  if d = '' then d := AddBackslash(GetEnv('USERPROFILE')) + '.pi\agent';
+  Result := OnPath('pi.cmd') or OnPath('pi.exe') or DirExists(d);
+end;
+
 // Presence only: mitmproxy matches the process by NAME, so a path we cannot
 // find never stops interception — which is why the task can be ticked anyway.
 function HasClaudeDesktop(): Boolean;
@@ -309,6 +321,7 @@ begin
     if HasClaudeCode() then sel := sel + ',claude';
     if HasCodex() then sel := sel + ',codex';
     if HasOpencode() then sel := sel + ',opencode';
+    if HasPi() then sel := sel + ',pi';
     if HasClaudeDesktop() and (not NativeArm64()) then sel := sel + ',desktop';
     WizardSelectTasks(sel);
   end;
@@ -339,6 +352,8 @@ begin
   end;
   if WizardIsTaskSelected('opencode') then
     s := s + '  opencode      plugin shim in opencode''s config directory' + #13#10;
+  if WizardIsTaskSelected('pi') then
+    s := s + '  pi            baseUrl on the anthropic provider in ~\.pi\agent\models.json + extension' + #13#10;
   if WizardIsTaskSelected('tray') then
     s := s + '  tray          HKCU Run\ParsecTray (wscript, no console window)' + #13#10;
   s := s + #13#10;
@@ -668,7 +683,7 @@ begin
     // The previous version is intact and gets restarted below; only the
     // registry now claims the new one. Say so loudly, in silent mode too.
     why := 'parsec {#Version} was NOT installed: ' + why + '. The previous version is still in place. ' +
-      'Close Claude Code / Codex / opencode sessions that use parsec and run this installer again.';
+      'Close Claude Code / Codex / opencode / pi sessions that use parsec and run this installer again.';
     Warnings.Add(why);
     SuppressibleMsgBox(why, mbError, MB_OK, IDOK);
   end;
@@ -705,6 +720,8 @@ begin
   end;
   if WizardIsTaskSelected('opencode') then
     Run(exe, 'setup opencode', 'opencode', 60, code);
+  if WizardIsTaskSelected('pi') then
+    Run(exe, 'setup pi', 'pi', 60, code);
 
   // 3. The elevated step, LAST among the tools: a declined prompt costs
   //    nothing that came before it.
@@ -754,6 +771,7 @@ begin
     Exec(exe, 'disable desktop', '', SW_HIDE, ewWaitUntilTerminated, code);
     Exec(exe, 'disable codex', '', SW_HIDE, ewWaitUntilTerminated, code);
     Exec(exe, 'disable opencode', '', SW_HIDE, ewWaitUntilTerminated, code);
+    Exec(exe, 'disable pi', '', SW_HIDE, ewWaitUntilTerminated, code);
     Exec(exe, 'disable claude', '', SW_HIDE, ewWaitUntilTerminated, code);
     Exec(exe, 'tray uninstall', '', SW_HIDE, ewWaitUntilTerminated, code);
     StopParsec(ExpandConstant('{tmp}\stop-parsec.out'));

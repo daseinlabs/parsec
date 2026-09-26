@@ -191,6 +191,14 @@ pub struct SessionState {
     /// and the hook must always read the freshest view.
     #[serde(skip)]
     pub elided: crate::visibility::Elided,
+    /// Curator override registry (visibility export `cmds`): commands whose
+    /// direct result is currently elided upstream. The override protocol —
+    /// "repeat the identical call and it is served in full" — is the ONE
+    /// repeat the loop-breaker must never deny; a command in this set is a
+    /// recovery, not a habit, and neither counts toward nor trips LOOP_N.
+    /// Hook-side only: loaded per call, never persisted.
+    #[serde(skip)]
+    pub elided_cmds: std::collections::BTreeSet<String>,
 }
 
 /// What the gate decides for one tool call.
@@ -694,7 +702,11 @@ impl SessionState {
     /// Gate a Bash command: loop-breaker plus shell re-read detection.
     pub fn gate_bash(&mut self, cmd: &str, cwd: &str) -> Gate {
         let key = norm_cmd(cmd);
-        if !key.is_empty() {
+        // Override exemption: the curator elided this command's result and
+        // asked the model to repeat it. Denying that repeat would leave the
+        // model with neither the content nor a way to get it.
+        let overriding = self.is_override_repeat(cmd);
+        if !key.is_empty() && !overriding {
             let n = self.cmd_counts.get(&key).copied().unwrap_or(0);
             if n >= LOOP_N {
                 // Insist valve applies here too: deny, then let one through.
@@ -755,10 +767,23 @@ impl SessionState {
         gate
     }
 
+    /// True when `cmd` is a repeat the curator's override protocol asked
+    /// for: its earlier result is currently elided upstream. Matched on the
+    /// whitespace-normalized command (the freezer keys its registry on the
+    /// action text exactly as issued; the model repeats it verbatim).
+    fn is_override_repeat(&self, cmd: &str) -> bool {
+        if self.elided_cmds.is_empty() {
+            return false;
+        }
+        let key = norm_cmd(cmd);
+        !key.is_empty() && self.elided_cmds.iter().any(|c| norm_cmd(c) == key)
+    }
+
     /// Record the effects of a completed Bash command.
     pub fn record_bash(&mut self, cmd: &str, cwd: &str) {
         let key = norm_cmd(cmd);
-        if !key.is_empty() {
+        // An override repeat is recovery, not a loop iteration.
+        if !key.is_empty() && !self.is_override_repeat(cmd) {
             *self.cmd_counts.entry(key).or_insert(0) += 1;
         }
         // Reads first, then edits — a command that both reads and writes a
@@ -955,6 +980,33 @@ mod tests {
         // an edit lands — the "no new result" premise is void, counts reset
         st.record_bash("sed -i 's/x/y/' src/app.py", "/repo");
         assert_eq!(st.gate_bash(test_cmd, "/repo"), Gate::Allow);
+    }
+
+    /// The curator's override protocol asks for ONE identical repeat of a
+    /// command whose result it elided. That repeat is recovery: it neither
+    /// trips the loop-breaker nor counts toward it, however many times the
+    /// command has already run. A command NOT in the registry is still a
+    /// habit and still denied at LOOP_N.
+    #[test]
+    fn override_repeat_is_exempt_from_the_loop_breaker() {
+        let mut st = SessionState::default();
+        let elided = "cargo  test -p parsec-engine";
+        let habit = "python -m pytest tests/x.py -q";
+        for _ in 0..3 {
+            st.record_bash(elided, "/repo");
+            st.record_bash(habit, "/repo");
+        }
+        assert!(matches!(st.gate_bash(elided, "/repo"), Gate::Deny { .. }));
+        // The proxy reports the command's result as elided (whitespace
+        // differs from what the model typed; matching is normalized).
+        st.elided_cmds.insert("cargo test -p parsec-engine".into());
+        assert_eq!(st.gate_bash(elided, "/repo"), Gate::Allow);
+        assert!(matches!(st.gate_bash(habit, "/repo"), Gate::Deny { .. }));
+        // and the override run does not accrue as a loop iteration
+        let key = "cargo test -p parsec-engine";
+        let before = st.cmd_counts.get(key).copied().unwrap_or(0);
+        st.record_bash(elided, "/repo");
+        assert_eq!(st.cmd_counts.get(key).copied().unwrap_or(0), before);
     }
 
     #[test]

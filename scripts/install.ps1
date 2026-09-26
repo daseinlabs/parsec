@@ -3,8 +3,8 @@
 #   powershell -c "irm https://raw.githubusercontent.com/daseinlabs/parsec/main/scripts/install.ps1 | iex"
 #
 # Auto-detects the coding agents on this machine (Claude Code, Codex CLI,
-# opencode) and activates parsec for each. Claude Code gets the plugin
-# (`claude plugin install parsec@parsec-marketplace`); codex/opencode get
+# opencode, pi) and activates parsec for each. Claude Code gets the plugin
+# (`claude plugin install parsec@parsec-marketplace`); codex/opencode/pi get
 # the win-x64 parsec binary downloaded to %USERPROFILE%\.parsec\bin\
 # parsec.exe (added to the user PATH) followed by `parsec setup <tool>`.
 # ARM64 Windows 11 gets the same win-x64 binary (runs under the OS's x64
@@ -24,7 +24,7 @@
 # Nothing is written outside ~\.parsec and the tools' own config dirs; no
 # admin rights needed -- except the Claude Desktop CA, which is machine-wide
 # and prompts for administrator approval. Undo:
-# `parsec disable codex|opencode|desktop` (which prints the CA removal
+# `parsec disable codex|opencode|pi|desktop` (which prints the CA removal
 # command), `claude plugin uninstall parsec`.
 #
 # Explicit selection instead of auto-detect, and Codex API-key mode:
@@ -32,6 +32,7 @@
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools codex
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools codex -Byok
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools claude,opencode
+#   & ([scriptblock]::Create((irm .../install.ps1))) -Tools pi
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools desktop
 #   & ([scriptblock]::Create((irm .../install.ps1))) -NoDesktop
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Tools desktop -NoCa
@@ -108,8 +109,8 @@ $Key = "$Key".Trim()
 Remove-Item Env:PARSEC_API_KEY -ErrorAction SilentlyContinue
 $Tools = @($Tools | ForEach-Object { if ($_ -eq "claude-code") { "claude" } else { $_ } })
 foreach ($t in $Tools) {
-    if ($t -notin @("claude", "codex", "opencode", "desktop")) {
-        Write-Error "unknown tool: $t (expected: claude, codex, opencode, desktop)"
+    if ($t -notin @("claude", "codex", "opencode", "pi", "desktop")) {
+        Write-Error "unknown tool: $t (expected: claude, codex, opencode, pi, desktop)"
     }
 }
 
@@ -322,13 +323,17 @@ if (-not $Tools) {
     # opencode uses XDG-style paths on every platform.
     $ocCfg = if ($env:XDG_CONFIG_HOME) { Join-Path $env:XDG_CONFIG_HOME "opencode" } else { Join-Path $env:USERPROFILE ".config\opencode" }
     if ((Test-Cmd opencode) -or (Test-Path $ocCfg)) { $Tools += "opencode" }
+    # pi keeps models.json and extensions\ under its agent dir; PI_CODING_AGENT_DIR
+    # is pi's own override for that dir (setup_pi.rs honours the same variable).
+    $piDir = if ($env:PI_CODING_AGENT_DIR) { $env:PI_CODING_AGENT_DIR } else { Join-Path $env:USERPROFILE ".pi\agent" }
+    if ((Test-Cmd pi) -or (Test-Path $piDir)) { $Tools += "pi" }
     # Claude Desktop. -NoDesktop opts out, because this is the one tool whose
     # setup installs mitmproxy and trusts a root CA. A miss here is not final:
     # -Tools desktop forces it, since interception keys off the process name.
     $desktopExe = Find-ClaudeDesktop
     if ($desktopExe -and -not $NoDesktop) { $Tools += "desktop"; $desktopAuto = $true }
     if (-not $Tools) {
-        Write-Error "no supported Claude client found (looked for: claude, codex, opencode, Claude Desktop). Install one first, or pick explicitly: -Tools codex"
+        Write-Error "no supported Claude client found (looked for: claude, codex, opencode, pi, Claude Desktop). Install one first, or pick explicitly: -Tools codex"
     }
     Write-Host "detected: $($Tools -join ' ')"
     if ($Tools -contains "desktop") {
@@ -432,7 +437,7 @@ function Get-ParsecAsset([string]$ReleaseName, [string]$OutFile) {
 # install. The Claude Code plugin still ships its own copy -- this is the one
 # on PATH.
 $dest = Join-Path $env:USERPROFILE ".parsec\bin\parsec.exe"
-$binaryRequired = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or ($Tools -contains "desktop") -or $Tray
+$binaryRequired = ($Tools -contains "codex") -or ($Tools -contains "opencode") -or ($Tools -contains "pi") -or ($Tools -contains "desktop") -or $Tray
 $needsBinary = $isX64 -or $isArm64Emu
 if (-not $needsBinary) {
     if ($binaryRequired) {
@@ -672,6 +677,9 @@ foreach ($t in $Tools) {
         "opencode" {
             & $dest setup opencode
         }
+        "pi" {
+            & $dest setup pi
+        }
         "desktop" {
             Install-ParsecDesktop -Exe $dest -TrustCa (-not $NoCa) -Autostart (-not $NoAutostart)
         }
@@ -703,6 +711,7 @@ if (-not $Tray) {
 if ($Tools -contains "claude") { Write-Host "claude: restart Claude Code (or start a new session) - setup runs automatically." }
 if ($Tools -contains "codex") { Write-Host "codex: start (or restart) codex - every session routes through parsec; type `$ and pick parsec-savings." }
 if ($Tools -contains "opencode") { Write-Host "opencode: restart opencode to activate (Anthropic API-key providers only); /parsec-savings shows the ledger." }
+if ($Tools -contains "pi") { Write-Host "pi: restart pi to activate - its anthropic provider routes through parsec; other providers go direct." }
 if ($Tools -contains "desktop") {
     Write-Host "desktop: quit Claude Desktop COMPLETELY (tray icon -> Quit, not just the window) and reopen it - mitmproxy hooks the process at launch."
     Write-Host "         only Cowork / Agent mode is routed; the normal chat sidebar is not. Check with: parsec desktop status"
@@ -711,7 +720,7 @@ if ($Tools -contains "desktop") {
         Write-Host "         -NoAutostart: interception stops at reboot - bring it back with: parsec desktop start"
     }
 }
-Write-Host "undo: parsec disable codex|opencode|desktop - parsec tray uninstall - claude plugin uninstall parsec"
+Write-Host "undo: parsec disable codex|opencode|pi|desktop - parsec tray uninstall - claude plugin uninstall parsec"
 
 # -- sign in: the one step left -------------------------------------------------
 Write-Host ""

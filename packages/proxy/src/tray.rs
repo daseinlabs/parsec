@@ -28,7 +28,7 @@
 use std::path::PathBuf;
 
 /// What `parsec tray …` was asked to do.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     /// Run the menu-bar app in the foreground (what the LaunchAgent invokes).
     Run,
@@ -38,6 +38,9 @@ pub enum Action {
     Uninstall,
     /// Report what is installed; change nothing.
     Status,
+    /// Assemble an unsigned `.app` at `out` around `binary` for the release
+    /// build to sign (macOS only; the installer ships the result).
+    Bundle { out: PathBuf, binary: PathBuf },
 }
 
 /// Bundle / login-item identity. Only the platform install paths use it.
@@ -53,12 +56,16 @@ const LABEL: &str = "rocks.dasein.parsec.tray";
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{install, installed, status, uninstall};
+pub use macos::{bundle, install, installed, status, uninstall};
 
 #[cfg(windows)]
 pub(crate) mod windows;
 #[cfg(windows)]
 pub use windows::{install, installed, status, uninstall};
+#[cfg(windows)]
+pub fn bundle(_out: &std::path::Path, _binary: &std::path::Path) -> anyhow::Result<()> {
+    anyhow::bail!("`parsec tray bundle` builds a macOS .app; there is no Windows equivalent")
+}
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod unsupported {
@@ -75,9 +82,12 @@ mod unsupported {
         println!("tray app: unsupported on this platform");
         Ok(())
     }
+    pub fn bundle(_out: &std::path::Path, _binary: &std::path::Path) -> anyhow::Result<()> {
+        anyhow::bail!("`parsec tray bundle` builds a macOS .app")
+    }
 }
 #[cfg(not(any(target_os = "macos", windows)))]
-pub use unsupported::{install, installed, status, uninstall};
+pub use unsupported::{bundle, install, installed, status, uninstall};
 
 /// Where the tray writes its own log, on every platform.
 pub fn log_path() -> PathBuf {
@@ -96,6 +106,7 @@ pub fn run(action: Action) -> anyhow::Result<()> {
         Action::Install => install(),
         Action::Uninstall => uninstall(),
         Action::Status => status(),
+        Action::Bundle { out, binary } => bundle(&out, &binary),
         Action::Run => run_app(),
     }
 }

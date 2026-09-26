@@ -5,7 +5,7 @@ description = "parsec scoring service: GNN inference, self-validating checkpoint
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",
-    "uvicorn",
+    "hypercorn",
     "pydantic>=2",
     "httpx",
     # `PARSEC_CKPT=hf://<repo>/<file>` pulls the checkpoint from the Hugging Face Hub

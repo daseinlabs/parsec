@@ -60,7 +60,7 @@ deliberately builds unsigned and warns.
 
 | secret | what it is | used for |
 |---|---|---|
-| `APPLE_DEVELOPER_ID_APPLICATION_P12` (base64) + `APPLE_DEVELOPER_ID_APPLICATION_P12_PASSWORD` | "Developer ID Application: Dasein Labs (TEAMID)" cert + private key | `codesign --options runtime --timestamp` on the `parsec` binary |
+| `APPLE_DEVELOPER_ID_APPLICATION_P12` (base64) + `APPLE_DEVELOPER_ID_APPLICATION_P12_PASSWORD` | "Developer ID Application: Dasein Labs (TEAMID)" cert + private key | `codesign --options runtime --timestamp` on the `parsec` binary and `--deep` on the shipped `parsec.app` |
 | `APPLE_DEVELOPER_ID_INSTALLER_P12` (base64) + `APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD` | "Developer ID Installer: Dasein Labs (TEAMID)" cert + private key | `productsign` on the .pkg |
 | `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER_ID`, `APPLE_NOTARY_KEY_P8` | App Store Connect API key (Team key, Developer role), its issuer UUID, and the `.p8` contents | `notarytool submit --wait` + `stapler` |
 
@@ -132,7 +132,7 @@ download reputation; that is per signer identity and only time fixes it.
 
 **macOS.** Welcome (mark, tagline, what will be asked) → Read Me (per-choice
 table) → License → choices (auto-ticked from what is installed: Claude Code,
-Codex, opencode, Claude Desktop, menu-bar app) → one password dialog →
+Codex, opencode, pi, Claude Desktop, menu-bar app) → one password dialog →
 scripts → Conclusion. If Claude Desktop was chosen and the Network Extension
 is not yet approved, System Settings opens during the install and the
 menu-bar mark waits for the toggle, then starts interception. Everything that

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- installer -applyChoiceChangesXML fixture for the CI smoke install: the
-     choices whose postinstalls only write files (core, codex, opencode) on;
+     choices whose postinstalls only write files (core, codex, opencode, pi) on;
      the ones that need a CLI, Homebrew, or a click (claude, desktop, tray)
      off. A runner has no Claude clients and no one to approve an extension. -->
 <plist version="1.0">
@@ -20,6 +20,11 @@
     <key>attributeSetting</key><true/>
     <key>choiceAttribute</key><string>selected</string>
     <key>choiceIdentifier</key><string>opencode</string>
+  </dict>
+  <dict>
+    <key>attributeSetting</key><true/>
+    <key>choiceAttribute</key><string>selected</string>
+    <key>choiceIdentifier</key><string>pi</string>
   </dict>
   <dict>
     <key>attributeSetting</key><false/>

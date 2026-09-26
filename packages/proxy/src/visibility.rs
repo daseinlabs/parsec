@@ -54,6 +54,14 @@ pub type Elided = BTreeMap<String, FileVis>;
 struct ElidedExport {
     version: u32,
     files: BTreeMap<String, FileVis>,
+    /// The freezer's override registry: action texts (Bash command strings
+    /// as the model issued them, Read tool calls in their `sed -n` internal
+    /// rendering) whose direct result currently has elided chunks. The
+    /// override protocol asks the model to repeat exactly such a call once;
+    /// the hook's loop-breaker must not count that repeat. Absent in v1
+    /// exports (older proxy) — deserializes empty, which only over-counts.
+    #[serde(default)]
+    cmds: Vec<String>,
     /// Unix seconds, lifecycle metadata only — never a decision input.
     updated_unix: u64,
 }
@@ -89,9 +97,14 @@ pub fn conv_path(session_id: &str, conv_id: &str) -> PathBuf {
 /// registries, basenames lowercased). Sole-writer file + atomic rename;
 /// every error path returns silently (the export is an optimization for the
 /// hook, never worth failing a serve over).
-pub fn record(session_id: &str, conv_id: &str, snapshot: BTreeMap<String, FileVis>) {
+pub fn record(
+    session_id: &str,
+    conv_id: &str,
+    snapshot: BTreeMap<String, FileVis>,
+    cmds: Vec<String>,
+) {
     let path = conv_path(session_id, conv_id);
-    if snapshot.is_empty() {
+    if snapshot.is_empty() && cmds.is_empty() {
         // Registry reset (client edit / fresh run): drop the stale export.
         let _ = std::fs::remove_file(&path);
         return;
@@ -99,6 +112,7 @@ pub fn record(session_id: &str, conv_id: &str, snapshot: BTreeMap<String, FileVi
     let export = ElidedExport {
         version: EXPORT_VERSION,
         files: snapshot,
+        cmds,
         updated_unix: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -147,6 +161,32 @@ pub fn load(session_id: &str) -> Elided {
         vis.dropped.dedup();
         vis.served.sort_unstable();
         vis.served.dedup();
+    }
+    out
+}
+
+/// Hook side: the merged override registry across a session's conversation
+/// exports — every action text whose direct result is currently elided.
+/// Empty on any error (fail toward counting, which at worst denies a
+/// third identical run, never the override's single repeat).
+pub fn load_cmds(session_id: &str) -> std::collections::BTreeSet<String> {
+    let prefix = session_prefix(session_id);
+    let mut out = std::collections::BTreeSet::new();
+    let Ok(entries) = std::fs::read_dir(sessions_dir()) else {
+        return out;
+    };
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with(&prefix) || !name.ends_with(".json") {
+            continue;
+        }
+        if let Some(export) = std::fs::read_to_string(e.path())
+            .ok()
+            .and_then(|s| serde_json::from_str::<ElidedExport>(&s).ok())
+        {
+            out.extend(export.cmds);
+        }
     }
     out
 }
@@ -224,7 +264,7 @@ mod tests {
                 served: vec![],
             },
         );
-        record(sid, "conv-a", a);
+        record(sid, "conv-a", a, Vec::new());
         let mut b = BTreeMap::new();
         b.insert(
             "app.py".to_string(),
@@ -233,13 +273,13 @@ mod tests {
                 served: vec![(20, 30)],
             },
         );
-        record(sid, "conv-b", b);
+        record(sid, "conv-b", b, Vec::new());
         let merged = load(sid);
         let vis = merged.get("app.py").unwrap();
         assert_eq!(vis.dropped, vec![(1, 9), (20, 30)]);
         assert_eq!(vis.served, vec![(20, 30)]);
         // an empty snapshot removes the conv's stale export file
-        record(sid, "conv-a", BTreeMap::new());
+        record(sid, "conv-a", BTreeMap::new(), Vec::new());
         assert!(!conv_path(sid, "conv-a").exists());
         assert_eq!(load(sid).get("app.py").unwrap().dropped, vec![(20, 30)]);
         let _ = std::fs::remove_file(conv_path(sid, "conv-b"));

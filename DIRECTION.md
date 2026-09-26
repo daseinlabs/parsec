@@ -116,6 +116,7 @@ parsec/
                           GitHub Release assets, never committed; the shims fetch them).
                           The marketplace is this repo: .claude-plugin/marketplace.json
     opencode-plugin/      OpenCode plugin shim
+    pi-extension/         pi extension (single TS file, embedded into the binary by setup_pi)
     installer/            native macOS .pkg and Windows Inno Setup sources
     brain/                the scoring service (Python): GNN inference over a curator
                           checkpoint, self-validating bundle, calibrated tau. Self-hostable;
@@ -161,7 +162,10 @@ client's only coupling is the savings-ledger and install-report schemas in
 
 1. **Cache-stability golden test** (§8.1): replay a recorded multi-turn
    conversation; every previously served turn is byte-identical to what was
-   served before. `packages/proxy/tests/golden_conversation.rs`.
+   served before, with one sanctioned exception: the observations of the
+   previous call's current turn are served in full while the model acts on
+   them and take their curated form exactly once, on the next call
+   (`FreezeConfig::protect_current`). `packages/proxy/tests/golden_conversation.rs`.
 2. **Curator parity**: the score the proxy computes for a chunk equals the
    reference implementation's score on identical input, at the pinned
    threshold. Fixtures under `packages/engine/parity` and `packages/proxy/parity`.
@@ -173,3 +177,7 @@ client's only coupling is the savings-ledger and install-report schemas in
 §8.1 is what "cache-stable" means throughout the code: an already-served
 prefix must be re-emitted byte-for-byte on the next turn, or the provider's
 prompt cache is invalidated and the user pays for the whole context again.
+The current turn's re-fold is the deliberate exception: it invalidates the
+cache only from the second-to-last message onward — the tail the next turn
+appends to anyway — and buys the model a full view of the result it is
+about to act on. Curation folds history, never the answer just returned.

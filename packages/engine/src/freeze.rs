@@ -95,6 +95,26 @@ pub struct FreezeConfig {
     /// leans on it — and that prose is where a Codex turn's plan lives.
     /// Tool output stays cut-eligible either way.
     pub cut_assistant: bool,
+    /// Defer the birth decision of the CURRENT turn's observations — every
+    /// user/tool message after the last assistant turn — until the next
+    /// assistant turn has landed. The agent then always sees the full answer
+    /// to the call it just made; the curator folds history, never the
+    /// result the model is about to act on. Measured failure mode without
+    /// this: a fresh read cut on first serving, the agent (which cannot know
+    /// the override protocol from a bare marker) re-asks with a DIFFERENT
+    /// narrower call, that is a new birth, cut again — a read spiral that
+    /// burns turns and rate limit. False = reference parity (births decided
+    /// at their own step; the parity fixtures were generated that way).
+    pub protect_current: bool,
+    /// Product marker wording: say who elided the chunk and how to get it
+    /// back ("omitted by parsec · repeat the identical call to restore"),
+    /// and name a line range only when the chunk's coordinates are real
+    /// file lines (`chunking::coords_trusted`). False = the reference's
+    /// terse "· re-read FILE:Llo-hi" pointer, which was rendered for chunks
+    /// the model had NEVER seen and with output-relative line numbers for
+    /// `awk`/`tail`-style reads — a marker the agent cannot trust. The
+    /// parity fixtures encode the reference wording.
+    pub product_markers: bool,
 }
 
 impl Default for FreezeConfig {
@@ -105,6 +125,8 @@ impl Default for FreezeConfig {
             tau_fixed_q: None,
             min_run_tokens: 10,
             cut_assistant: true,
+            protect_current: true,
+            product_markers: true,
         }
     }
 }
@@ -254,6 +276,11 @@ struct Parsed {
     direct_obs: HashSet<usize>,
     first_obs: Option<usize>,
     cur_step: i64,
+    /// Step of the first observation after the LAST assistant turn — the
+    /// start of the current turn's trailing observation run (== cur_step+1
+    /// when the history ends on an assistant turn, i.e. nothing is current).
+    /// `protect_current` leaves steps >= this undecided.
+    tail_lo: i64,
     /// Chunker drift guard (contracts brain-api-dev/v0): sha256 over
     /// "\n".join("{step}:{kind}:{tokens}") of the parsed chunk array, in the
     /// decision order `live_gi` indexes into. The brain re-parses the
@@ -268,6 +295,7 @@ fn parse(messages: &[Value], cfg: &FreezeConfig) -> Parsed {
     let mut obs_items: Vec<(usize, String, String, i64)> = Vec::new();
     let mut direct_obs: HashSet<usize> = HashSet::new();
     let mut fresh = false;
+    let mut tail_lo: i64 = 0;
     let mut reason_items: Vec<(usize, Chunk)> = Vec::new();
     let mut asst_items: Vec<(usize, String, i64)> = Vec::new();
     for (i, m) in messages.iter().enumerate() {
@@ -275,6 +303,7 @@ fn parse(messages: &[Value], cfg: &FreezeConfig) -> Parsed {
             Some("assistant") => {
                 last_cmd = actions(m).join(" ; ");
                 fresh = true;
+                tail_lo = step;
                 if let Some(rc) = reasoning_chunk(m, step) {
                     reason_items.push((i, rc));
                 }
@@ -357,6 +386,7 @@ fn parse(messages: &[Value], cfg: &FreezeConfig) -> Parsed {
         direct_obs,
         first_obs,
         cur_step,
+        tail_lo,
         chunk_checksum,
     }
 }
@@ -463,6 +493,13 @@ impl<S: ChunkScorer> Freezer<S> {
 
     pub fn dropped_count(&self) -> usize {
         self.dropped.len()
+    }
+
+    /// The override registry: action texts whose direct result currently
+    /// has elided chunks. Exported to the no-reread hook so its loop-breaker
+    /// never counts the one repeat the override protocol asks for.
+    pub fn dropped_cmds(&self) -> &HashSet<String> {
+        &self.dropped_cmds
     }
 
     /// Registries snapshot for parity assertions (sorted, deterministic).
@@ -710,6 +747,40 @@ impl<S: ChunkScorer> Freezer<S> {
         }
     }
 
+    /// The omission marker for one elided run. `counts` is the measured
+    /// mass ("23 lines (~574 tokens)" or "~1200 tokens"). Reference style:
+    /// `[... {counts}{ptr} omitted ...]`. Product style names the elider
+    /// and the recovery protocol, and a line range only when `trusted`
+    /// (see `FreezeConfig::product_markers`):
+    /// `[... {counts} omitted by parsec · was F:L1-9 · repeat the identical call to restore ...]`.
+    fn marker(
+        &self,
+        counts: &str,
+        file: Option<&str>,
+        lo: Option<i64>,
+        hi: Option<i64>,
+        trusted: bool,
+    ) -> String {
+        if !self.cfg.product_markers {
+            return format!("[... {}{} omitted ...]", counts, Self::ptr(file, lo, hi));
+        }
+        let range = match (trusted, file, lo, hi) {
+            (true, Some(f), Some(lo), Some(hi)) => format!(" · was {}:L{}-{}", f, lo, hi),
+            _ => String::new(),
+        };
+        format!(
+            "[... {} omitted by parsec{} · repeat the identical call to restore ...]",
+            counts, range
+        )
+    }
+
+    /// Whether every read chunk in `gis` carries real file coordinates.
+    fn coords_trusted(p: &Parsed, gis: &[usize]) -> bool {
+        gis.iter()
+            .filter(|&&g| live_file(&p.chunks[g]).is_some())
+            .all(|&g| crate::chunking::coords_trusted(&p.chunks[g].cmd))
+    }
+
     /// curator._digest: informative truncation; returncode line survives.
     ///
     /// Renders head(<=2 lines) + an omission marker + tail(1 line). The tail
@@ -729,7 +800,7 @@ impl<S: ChunkScorer> Freezer<S> {
     /// curator exists to avoid. Blank lines are excluded from the LINE count
     /// (they carry nothing) but are reflected in the token figure, as is any
     /// 300-char clipping of a kept line.
-    fn digest(m: &Value, file: Option<&str>, lo: Option<i64>, hi: Option<i64>) -> Value {
+    fn digest(m: &Value, mark: &dyn Fn(&str) -> String) -> Value {
         let txt = m_text(m);
         let lines = py_splitlines(&txt);
         let rc_idx = lines
@@ -766,20 +837,14 @@ impl<S: ChunkScorer> Freezer<S> {
         };
         let omitted_tok = (char_len(&txt) as i64 / 4 - kept_mass).max(0);
         let marker = if omitted_lines > 0 {
-            format!(
-                "[... {} lines (~{} tokens){} omitted ...]",
-                omitted_lines,
-                omitted_tok,
-                Self::ptr(file, lo, hi)
-            )
+            mark(&format!(
+                "{} lines (~{} tokens)",
+                omitted_lines, omitted_tok
+            ))
         } else if omitted_tok > 0 {
             // Nothing whole was dropped, only clipped: same shape as the
             // partial-run marker, which is already tokens-only.
-            format!(
-                "[... ~{} tokens{} omitted ...]",
-                omitted_tok,
-                Self::ptr(file, lo, hi)
-            )
+            mark(&format!("~{} tokens", omitted_tok))
         } else {
             // Head + tail already cover the whole observation. Nothing to
             // announce, so the message is served exactly as it arrived.
@@ -867,7 +932,10 @@ impl<S: ChunkScorer> Freezer<S> {
                 .collect();
             if flags.iter().all(|&f| f) {
                 let (f, lo, hi) = Self::span(p, &cont);
-                r = Self::digest(&r, f.as_deref(), lo, hi);
+                let trusted = Self::coords_trusted(p, &cont);
+                r = Self::digest(&r, &|counts| {
+                    self.marker(counts, f.as_deref(), lo, hi, trusted)
+                });
             } else if flags.iter().any(|&f| f) {
                 let mut parts: Vec<String> = Vec::new();
                 let mut run: i64 = 0;
@@ -879,10 +947,13 @@ impl<S: ChunkScorer> Freezer<S> {
                     } else {
                         if run > 0 {
                             let (f, lo, hi) = Self::span(p, &runset);
-                            parts.push(format!(
-                                "[... ~{} tokens{} omitted ...]",
-                                run,
-                                Self::ptr(f.as_deref(), lo, hi)
+                            let trusted = Self::coords_trusted(p, &runset);
+                            parts.push(self.marker(
+                                &format!("~{} tokens", run),
+                                f.as_deref(),
+                                lo,
+                                hi,
+                                trusted,
                             ));
                             run = 0;
                             runset.clear();
@@ -892,10 +963,13 @@ impl<S: ChunkScorer> Freezer<S> {
                 }
                 if run > 0 {
                     let (f, lo, hi) = Self::span(p, &runset);
-                    parts.push(format!(
-                        "[... ~{} tokens{} omitted ...]",
-                        run,
-                        Self::ptr(f.as_deref(), lo, hi)
+                    let trusted = Self::coords_trusted(p, &runset);
+                    parts.push(self.marker(
+                        &format!("~{} tokens", run),
+                        f.as_deref(),
+                        lo,
+                        hi,
+                        trusted,
                     ));
                 }
                 let mut body = parts.join("\n");
@@ -948,7 +1022,18 @@ impl<S: ChunkScorer> Freezer<S> {
         }
         // From 0: an assistant message before the first user/tool message
         // births step-0 chunks (0..=-1 is empty when there are no steps).
-        for s in 0..=p.cur_step {
+        // `protect_current`: the current turn's observations (steps >=
+        // tail_lo) stay undecided — rendered in full — until the next
+        // assistant turn makes them history. Deferral keeps warm == cold:
+        // a cold replay of the same prefix stops at the same bound, and a
+        // deferred step is decided later by the same pure fold over the
+        // same chunks (<= s) it would have seen at its own step.
+        let replay_end = if self.cfg.protect_current {
+            p.tail_lo.min(p.cur_step + 1)
+        } else {
+            p.cur_step + 1
+        };
+        for s in 0..replay_end {
             if !self.replayed_steps.contains(&s) && self.replay_birth(s, &p, messages).is_err() {
                 // Per-step fail-open: later steps' decisions fold over this
                 // step's registries, so stop replaying — every affected step
@@ -1035,13 +1120,18 @@ mod tests {
 
     /// Render `n` non-blank body lines (L0..L{n-1}) through `digest` with no
     /// re-read pointer and return the served content text.
+    /// Reference-style marker builder for the digest unit tests.
+    fn ref_mark(ptr: &'static str) -> impl Fn(&str) -> String {
+        move |counts| format!("[... {counts}{ptr} omitted ...]")
+    }
+
     fn digest_text(n: usize) -> String {
         let body = (0..n)
             .map(|i| format!("L{i}"))
             .collect::<Vec<_>>()
             .join("\n");
         let m = json!({ "role": "user", "content": body });
-        Freezer::<PassthroughScorer>::digest(&m, None, None, None)
+        Freezer::<PassthroughScorer>::digest(&m, &ref_mark(""))
             .get("content")
             .and_then(Value::as_str)
             .unwrap()
@@ -1090,7 +1180,7 @@ mod tests {
     #[test]
     fn digest_announces_clipped_lines_without_claiming_whole_lines() {
         let m = json!({ "role": "user", "content": format!("{}\nshort", "x".repeat(1000)) });
-        let out = Freezer::<PassthroughScorer>::digest(&m, None, None, None);
+        let out = Freezer::<PassthroughScorer>::digest(&m, &ref_mark(""));
         let txt = out.get("content").and_then(Value::as_str).unwrap();
         assert!(
             txt.contains("[... ~175 tokens omitted ...]"),
@@ -1108,7 +1198,7 @@ mod tests {
     #[test]
     fn digest_does_not_count_blank_lines_as_omitted_content() {
         let m = json!({ "role": "user", "content": "L0\n\n\nL1" });
-        let out = Freezer::<PassthroughScorer>::digest(&m, None, None, None);
+        let out = Freezer::<PassthroughScorer>::digest(&m, &ref_mark(""));
         assert_eq!(
             out.get("content").and_then(Value::as_str).unwrap(),
             "L0\n\n\nL1"
@@ -1182,7 +1272,7 @@ mod tests {
         // message rides through whole — pointer and all, because there is
         // nothing to point AT.
         let m = json!({ "role": "user", "content": "returncode: 0\nL0\nL1\nL2" });
-        let out = Freezer::<PassthroughScorer>::digest(&m, Some("f.py"), Some(5), Some(9));
+        let out = Freezer::<PassthroughScorer>::digest(&m, &ref_mark(" · re-read f.py:L5-9"));
         assert_eq!(
             out.get("content").and_then(Value::as_str).unwrap(),
             "returncode: 0\nL0\nL1\nL2"
@@ -1194,7 +1284,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let m = json!({ "role": "user", "content": format!("returncode: 0\n{body}") });
-        let out = Freezer::<PassthroughScorer>::digest(&m, Some("f.py"), Some(5), Some(9));
+        let out = Freezer::<PassthroughScorer>::digest(&m, &ref_mark(" · re-read f.py:L5-9"));
         assert_eq!(
             out.get("content").and_then(Value::as_str).unwrap(),
             "returncode: 0\nL0\nL1\n[... 5 lines (~4 tokens) · re-read f.py:L5-9 omitted ...]\nL7"
@@ -1221,6 +1311,16 @@ mod tests {
             .join("\n")
     }
 
+    /// Reference-parity policy: births decided at their own step, terse
+    /// markers — what the parity fixtures encode.
+    fn reference_cfg() -> FreezeConfig {
+        FreezeConfig {
+            protect_current: false,
+            product_markers: false,
+            ..FreezeConfig::default()
+        }
+    }
+
     /// The override valve is the agent prompt's contract: an elided result is
     /// served in full when the EXACT same call is made again — and only then.
     /// A trailing user turn that merely inherits the action's cmd is not that
@@ -1245,7 +1345,7 @@ mod tests {
             act("cat a.py"),
             json!({ "role": "user", "content": obs.clone() }), // 9: served full at 5 -> curated
         ];
-        let mut fz = Freezer::new(FreezeConfig::default(), CutAllScorer);
+        let mut fz = Freezer::new(reference_cfg(), CutAllScorer);
         let out = fz.serve(&msgs).unwrap();
         let served = |i: usize| out[i].get("content").and_then(Value::as_str).unwrap();
         assert_ne!(served(2), obs, "first delivery is cut");
@@ -1277,7 +1377,7 @@ mod tests {
 
         let cfg = FreezeConfig {
             cut_assistant: false,
-            ..FreezeConfig::default()
+            ..reference_cfg()
         };
         let mut fz = Freezer::new(cfg, CutAllScorer);
         let out = fz.serve(&msgs).unwrap();
@@ -1292,11 +1392,142 @@ mod tests {
             "tool output must still be cut-eligible: {served_obs}"
         );
 
-        let mut fz = Freezer::new(FreezeConfig::default(), CutAllScorer);
+        let mut fz = Freezer::new(reference_cfg(), CutAllScorer);
         let out = fz.serve(&msgs).unwrap();
         assert!(
             out[1].get("content").and_then(Value::as_str).unwrap() != asst,
             "default config still cuts assistant prose (Anthropic parity)"
         );
+    }
+
+    /// `protect_current` (product default): the result the agent is about to
+    /// act on is never score-cut. Once the next assistant turn lands it is
+    /// history and goes through birth admission like any other chunk — and a
+    /// cold freezer over the same prefix serves the same bytes.
+    #[test]
+    fn current_turn_result_is_served_full_then_curated_as_history() {
+        let obs = format!("returncode: 0\n{}", prose("out", 60));
+        let act = |cmd: &str| {
+            json!({ "role": "assistant", "content": "ok",
+                    "extra": { "actions": [{ "command": cmd }] } })
+        };
+        let turn1 = vec![
+            json!({ "role": "user", "content": "do the thing" }),
+            act("cat a.py"),
+            json!({ "role": "user", "content": obs.clone() }), // 2: current -> full
+        ];
+        let mut warm = Freezer::new(FreezeConfig::default(), CutAllScorer);
+        let out = warm.serve(&turn1).unwrap();
+        assert_eq!(
+            out[2].get("content").and_then(Value::as_str).unwrap(),
+            obs,
+            "the current turn's direct result is served verbatim"
+        );
+        assert_eq!(warm.dropped_count(), 0, "nothing decided while current");
+
+        let mut turn2 = turn1.clone();
+        turn2.push(act("cat b.py"));
+        turn2.push(json!({ "role": "user", "content": obs.clone() })); // 4: current
+        let out = warm.serve(&turn2).unwrap();
+        let served = |o: &[Value], i: usize| {
+            o[i].get("content")
+                .and_then(Value::as_str)
+                .unwrap()
+                .to_string()
+        };
+        assert_ne!(
+            served(&out, 2),
+            obs,
+            "yesterday's result is history: curated"
+        );
+        assert_eq!(served(&out, 4), obs, "today's result is current: full");
+
+        let mut cold = Freezer::new(FreezeConfig::default(), CutAllScorer);
+        let cold_out = cold.serve(&turn2).unwrap();
+        assert_eq!(
+            serde_json::to_value(&cold_out).unwrap(),
+            serde_json::to_value(&out).unwrap(),
+            "cold == warm under deferral"
+        );
+        // Idempotent re-serve of the same prefix.
+        let again = warm.serve(&turn2).unwrap();
+        assert_eq!(
+            serde_json::to_value(&again).unwrap(),
+            serde_json::to_value(&out).unwrap()
+        );
+    }
+
+    /// Parallel results of one turn — several user/tool observations after a
+    /// single assistant turn (the Responses shape, and the Anthropic shape
+    /// once its tool_results are split) — are ALL current, not just the
+    /// first one.
+    #[test]
+    fn every_observation_of_the_current_turn_is_protected() {
+        let obs = |t: &str| format!("returncode: 0\n{}", prose(t, 40));
+        let msgs = vec![
+            json!({ "role": "user", "content": "do the thing" }),
+            json!({ "role": "assistant", "content": "ok",
+                    "extra": { "actions": [{ "command": "cat a.py" }, { "command": "cat b.py" }] } }),
+            json!({ "role": "user", "content": obs("a") }),
+            json!({ "role": "user", "content": obs("b") }),
+            json!({ "role": "user", "content": obs("c") }),
+        ];
+        let mut fz = Freezer::new(FreezeConfig::default(), CutAllScorer);
+        let out = fz.serve(&msgs).unwrap();
+        for (i, tag) in [(2, "a"), (3, "b"), (4, "c")] {
+            assert_eq!(
+                out[i].get("content").and_then(Value::as_str).unwrap(),
+                obs(tag),
+                "sibling {i} of the current turn is served full"
+            );
+        }
+    }
+
+    /// Product markers name the elider and the recovery protocol, and only
+    /// point at a line range when the coordinates are real file lines.
+    #[test]
+    fn product_markers_say_who_and_how_and_only_trusted_ranges() {
+        let obs = format!("returncode: 0\n{}", prose("out", 60));
+        let history = |cmd: &str| {
+            vec![
+                json!({ "role": "user", "content": "do the thing" }),
+                json!({ "role": "assistant", "content": "ok",
+                        "extra": { "actions": [{ "command": cmd }] } }),
+                json!({ "role": "user", "content": obs.clone() }),
+                json!({ "role": "assistant", "content": "next" }),
+                json!({ "role": "user", "content": "go on" }),
+            ]
+        };
+        let serve = |cmd: &str| {
+            let mut fz = Freezer::new(FreezeConfig::default(), CutAllScorer);
+            let out = fz.serve(&history(cmd)).unwrap();
+            out[2]
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap()
+                .to_string()
+        };
+        // The Read tool renders as an explicit sed window: coordinates are real.
+        let m = serve("sed -n '10,69p' a.py");
+        assert!(m.contains(" omitted by parsec"), "names the elider: {m}");
+        assert!(
+            m.contains("repeat the identical call to restore"),
+            "states the recovery protocol: {m}"
+        );
+        assert!(m.contains("· was a.py:L10-"), "trusted range is named: {m}");
+        assert!(!m.contains("re-read"), "no false 're-read' claim: {m}");
+        // `tail` renumbers its output: the range would be a lie, so none.
+        let m = serve("tail -n 60 a.py");
+        assert!(m.contains("by parsec"), "{m}");
+        assert!(
+            !m.contains(":L"),
+            "untrusted coordinates are not named: {m}"
+        );
+        // Reference wording stays byte-identical under the parity policy.
+        let mut fz = Freezer::new(reference_cfg(), CutAllScorer);
+        let out = fz.serve(&history("sed -n '10,69p' a.py")).unwrap();
+        let m = out[2].get("content").and_then(Value::as_str).unwrap();
+        assert!(m.contains(" · re-read a.py:L10-"), "{m}");
+        assert!(!m.contains("parsec"), "{m}");
     }
 }
