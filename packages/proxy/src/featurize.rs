@@ -42,7 +42,8 @@ use parsec_engine::features::{node_struct_with_type, supersession_edges};
 use parsec_engine::freeze::BirthQuery;
 use parsec_engine::messages::{actions, assistant_chunks_of, reasoning_chunks_of, steps_of};
 use parsec_engine::pystr::{char_len, char_prefix, py_json_dumps_opts, py_strip};
-use parsec_engine::readout::{decided_struct, Changeprone, ReadoutCtx};
+use parsec_engine::readout::{decided_struct, Changeprone, ReadoutCtx, READ_STRUCT};
+use parsec_engine::v3::{decided_row, ext_class};
 
 /// AC_CHANGEPRONE sidecar, compiled in from the committed engine parity
 /// fixture (scripts/changeprone_to_json.py over models/changeprone.pkl —
@@ -346,6 +347,61 @@ pub fn build_v2_trace_payload(
         payload["sys_text"] = json!(sys_text);
     }
     payload
+}
+
+// ── brain-api/v3: the HS curator ────────────────────────────────────────────
+// v2 plus the HS inputs (contracts/schemas/brain-api-v3.schema.json): each
+// node's struct gains the six re-request columns and an extension class, the
+// decided row widens to 104, and the reply carries per-kind taus. The
+// re-request columns come from the Freezer (`BirthQuery::rereq`), which holds
+// every chunk and the dropped registry — no cut history crosses the wire.
+
+/// POST /v1/score/trace body on v3. `None` when the query carries no
+/// re-request columns (the Freezer was not configured for v3): scoring
+/// without them would feed the checkpoint zeros it never trained on.
+pub fn build_v3_trace_payload(
+    q: &BirthQuery,
+    changeprone: Option<&Changeprone>,
+    conv_salt: &str,
+    conv_id: &str,
+    checkpoint_id: &str,
+    target_cov: &str,
+) -> Option<Value> {
+    if q.rereq.len() != q.live.len() {
+        return None;
+    }
+    let mut payload = build_v2_trace_payload(
+        q,
+        changeprone,
+        conv_salt,
+        conv_id,
+        checkpoint_id,
+        target_cov,
+    );
+    payload["contract"] = json!("brain-api/v3");
+    if let Some(nodes) = payload["nodes"].as_array_mut() {
+        for (node, (c, rr)) in nodes.iter_mut().zip(q.live.iter().zip(&q.rereq)) {
+            if let Some(st) = node["struct"].as_array_mut() {
+                // f64, like the 21 before them: the brain casts to float32
+                // once, the reference's single rounding.
+                st.extend(rr.iter().map(|&v| json!(v)));
+            }
+            node["ext"] = json!(ext_class(c.file.as_deref()));
+        }
+    }
+    // The v2 builder computed the 49-col rows (dupcos zeroed); remap each to
+    // the 104-col layout with the decided chunk's re-request columns.
+    let v2_rows: Vec<Vec<f32>> = serde_json::from_value(payload["decided_struct"].take()).ok()?;
+    let rows: Vec<Vec<f32>> = v2_rows
+        .iter()
+        .zip(&q.mask)
+        .map(|(r, &j)| {
+            let v2: [f32; READ_STRUCT] = r.as_slice().try_into().ok()?;
+            Some(decided_row(&v2, &q.rereq[j]).to_vec())
+        })
+        .collect::<Option<_>>()?;
+    payload["decided_struct"] = json!(rows);
+    Some(payload)
 }
 
 /// POST /v1/score/tools body on v2. `None` = ineligible -> serve the FULL
