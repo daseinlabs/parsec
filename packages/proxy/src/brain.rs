@@ -582,6 +582,7 @@ impl ChunkScorer for BrainScorer {
             .map(|(_, _, scores, tau)| ScoreResult {
                 scores_q: scores.clone(),
                 tau_q: *tau,
+                tau_by_kind: None,
             });
         if let Some(hit) = hit {
             self.stats.cache_hits += 1;
@@ -735,6 +736,7 @@ impl ChunkScorer for BrainScorer {
         Ok(ScoreResult {
             scores_q: r.scores_q,
             tau_q: r.tau_q,
+            tau_by_kind: None,
         })
     }
 }
