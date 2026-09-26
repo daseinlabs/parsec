@@ -18,3 +18,5 @@ pub mod messages;
 pub mod needed;
 pub mod pystr;
 pub mod readout;
+pub mod rereq;
+pub mod v3;
