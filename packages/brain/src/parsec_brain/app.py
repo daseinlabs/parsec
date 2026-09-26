@@ -349,6 +349,9 @@ NeighborsBody = Annotated[Union[NeighborsRequest, NeighborsV1Request, NeighborsV
 
 
 def create_app() -> FastAPI:
+    if os.environ.get("PARSEC_HS_CKPT"):   # HS curator (brain-api/v3): a separate app, see app_hs
+        from .app_hs import create_hs_app
+        return create_hs_app()
     bundle = load_bundle()           # self-validating: any mismatch raises, the app never starts
     scorer = TraceScorer(bundle)
     # PARSEC_TORCH_THREADS: pin torch's intra-op pool to the container CPU
