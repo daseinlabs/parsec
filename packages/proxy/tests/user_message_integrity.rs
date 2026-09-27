@@ -20,6 +20,16 @@ use parsec_proxy::{internal, protect, responses, splice};
 use serde_json::{json, Value};
 
 /// Scores every live chunk 0 against a maximal tau: cut everything cuttable.
+/// Reference cut-at-birth policy: these tests assert that a cut-everything
+/// curator still cannot touch human-authored content on the very request
+/// that births it, so the current turn must be cut-eligible here.
+fn cut_at_birth() -> FreezeConfig {
+    FreezeConfig {
+        protect_current: false,
+        ..FreezeConfig::default()
+    }
+}
+
 struct CutAll;
 impl ChunkScorer for CutAll {
     fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
@@ -39,7 +49,7 @@ fn serve_responses(body: &Value) -> (Value, i64) {
         internal.len(),
         "responses mask must align with the internal view"
     );
-    let mut fz = Freezer::new(FreezeConfig::default(), CutAll);
+    let mut fz = Freezer::new(cut_at_birth(), CutAll);
     let mut served = fz.serve(&internal).expect("freezer rejected the view");
     let refused = protect::restore_protected(&internal, &mut served, &mask);
     (responses::apply_curation(body, &served, None), refused)
@@ -54,7 +64,7 @@ fn serve_anthropic(body: &Value) -> (Value, i64) {
         internal.len(),
         "anthropic mask must align with the internal view"
     );
-    let mut fz = Freezer::new(FreezeConfig::default(), CutAll);
+    let mut fz = Freezer::new(cut_at_birth(), CutAll);
     let mut served = fz.serve(&internal).expect("freezer rejected the view");
     let refused = protect::restore_protected(&internal, &mut served, &mask);
     (splice::apply_curation(body, &served, None), refused)
@@ -187,7 +197,7 @@ fn assistant_prose_survives_a_cut_everything_curator() {
     );
     let obs = serde_json::to_string(&out["messages"][2]["content"]).unwrap();
     assert!(
-        obs.contains("omitted ...]"),
+        obs.contains(" omitted"),
         "tool output no longer curated: {obs}"
     );
     assert!(refused > 0, "the curator did try to cut the prose");
@@ -220,7 +230,7 @@ fn tool_output_is_still_curated_on_both_wires() {
     let (out, _) = serve_responses(&codex_body("go on"));
     let obs = out["input"][3]["output"].as_str().unwrap();
     assert!(
-        obs.contains("omitted ...]"),
+        obs.contains(" omitted"),
         "codex tool output not curated: {obs}"
     );
     assert!(obs.len() < 1000, "codex tool output not actually shrunk");
@@ -243,7 +253,7 @@ fn tool_output_is_still_curated_on_both_wires() {
     let (out, refused) = serve_anthropic(&body);
     let obs = serde_json::to_string(&out["messages"][4]["content"]).unwrap();
     assert!(
-        obs.contains("omitted ...]"),
+        obs.contains(" omitted"),
         "anthropic tool_result not curated: {obs}"
     );
     assert_eq!(refused, 0, "no human content was in play here");
@@ -413,7 +423,7 @@ fn refused_cuts_are_countable_and_roles_are_broken_out() {
     let body = codex_body(&sentinel_prompt(12));
     let internal = responses::to_internal(&body);
     let mask = responses::protected_mask(&body);
-    let mut fz = Freezer::new(FreezeConfig::default(), CutAll);
+    let mut fz = Freezer::new(cut_at_birth(), CutAll);
     let mut served = fz.serve(&internal).unwrap();
     let refused = protect::restore_protected(&internal, &mut served, &mask);
     let by_role = protect::cut_by_role(&internal, &served);
@@ -472,7 +482,7 @@ fn codex_custom_tool_output_is_curatable_and_the_prompt_still_is_not() {
     // The tool output IS digested…
     let served_out = serde_json::to_string(&out["input"][3]["output"]).unwrap();
     assert!(
-        served_out.contains("omitted ...]"),
+        served_out.contains(" omitted"),
         "tool output not curated: {served_out}"
     );
     assert!(

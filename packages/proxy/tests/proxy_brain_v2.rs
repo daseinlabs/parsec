@@ -197,6 +197,11 @@ async fn setup() -> Ctx {
         // the payload assertions below would still pass — but the embedder
         // would be dead weight, which is what needs_embedder() pins.
     };
+    // These suites assert a cut on the very request that births the
+    // observation — the reference cut-at-birth policy. The product default
+    // (FreezeConfig::protect_current) serves the current turn in full and
+    // is covered end-to-end by tests/golden_conversation.rs.
+    std::env::set_var("PARSEC_PROTECT_CURRENT", "off");
     let state = Arc::new(AppState::with_brain(
         format!("http://{up_addr}"),
         ledger.clone(),

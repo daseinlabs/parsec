@@ -304,6 +304,39 @@ pub fn apply_curation(
     Value::Object(out)
 }
 
+/// Un-freeze the CURRENT turn's fold entries — every item after the last
+/// assistant-authored item — so the next request folds them afresh.
+///
+/// The fold map memoizes a message's served bytes at its first serve and
+/// replays them forever (cache stability). Under
+/// `FreezeConfig::protect_current` a tool result's first serve is always
+/// its FULL form; its curated form only exists once the next assistant turn
+/// has landed. Left frozen, the full bytes would replay forever and no cut
+/// of that message would ever reach the wire. Dropping the current turn's
+/// entries costs one re-fold of the trailing messages at the next request
+/// — the prefix before them keeps its bytes and its cache hits.
+///
+/// `is_assistant` decides authorship per wire shape (Anthropic: `role ==
+/// "assistant"`; Responses: assistant messages, `function_call`,
+/// `reasoning`). No assistant item at all ⇒ nothing is history yet ⇒ every
+/// entry is dropped.
+pub fn unfreeze_current_turn(
+    items: Option<&Value>,
+    folds: &mut FoldMap,
+    is_assistant: impl Fn(&Value) -> bool,
+) {
+    let Some(items) = items.and_then(Value::as_array) else {
+        return;
+    };
+    let last_asst = items.iter().rposition(is_assistant);
+    let first_current = last_asst.map(|i| i + 1).unwrap_or(0);
+    folds.retain(|key, _| {
+        key.split_once(':')
+            .and_then(|(j, _)| j.parse::<usize>().ok())
+            .is_none_or(|j| j < first_current)
+    });
+}
+
 // ── breakpoint placement (anthropic_shapes.place_cache_breakpoint) ──────────
 
 /// anthropic_shapes.append_user_text: a governor/no-reread directive as a
@@ -616,5 +649,37 @@ mod tests {
         });
         assert_eq!(client_cache_ttl(&body).as_deref(), Some("1h"));
         assert_eq!(client_cache_ttl(&json!({"messages": []})), None);
+    }
+
+    #[test]
+    fn unfreeze_current_turn_drops_only_trailing_entries() {
+        let body = serde_json::json!({ "messages": [
+            {"role": "user", "content": "task"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "r1"},
+            {"role": "assistant", "content": "a2"},
+            {"role": "user", "content": "r2a"},
+            {"role": "user", "content": "r2b"},
+        ]});
+        let mut folds: FoldMap = FoldMap::new();
+        for j in 0..6 {
+            folds.insert(format!("{j}:fp"), Value::Null);
+        }
+        folds.insert("__system__".into(), Value::Null);
+        unfreeze_current_turn(body.get("messages"), &mut folds, |m| {
+            m.get("role").and_then(Value::as_str) == Some("assistant")
+        });
+        let mut keys: Vec<&String> = folds.keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["0:fp", "1:fp", "2:fp", "3:fp", "__system__"]);
+
+        // No assistant turn yet: nothing is history.
+        let body = serde_json::json!({ "messages": [{"role": "user", "content": "task"}] });
+        let mut folds: FoldMap = FoldMap::new();
+        folds.insert("0:fp".into(), Value::Null);
+        unfreeze_current_turn(body.get("messages"), &mut folds, |m| {
+            m.get("role").and_then(Value::as_str) == Some("assistant")
+        });
+        assert!(folds.is_empty());
     }
 }

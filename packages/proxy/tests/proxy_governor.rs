@@ -428,6 +428,11 @@ async fn setup_with(gov: GovernorConfig, serve_rules_route: bool, contract: Brai
         contract,
         score_memo_dir: None,
     };
+    // These suites assert a cut on the very request that births the
+    // observation — the reference cut-at-birth policy. The product default
+    // (FreezeConfig::protect_current) serves the current turn in full and
+    // is covered end-to-end by tests/golden_conversation.rs.
+    std::env::set_var("PARSEC_PROTECT_CURRENT", "off");
     let state = Arc::new(AppState::with_brain_governor(
         format!("http://{up_addr}"),
         ledger.clone(),
@@ -919,7 +924,7 @@ async fn utf8_brain_error_body_fails_open_without_panic() {
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     assert!(!serde_json::to_string(&sent[0])
         .unwrap()
-        .contains("omitted ...]"));
+        .contains(" omitted"));
 
     // Heal: the same conversation's freezer survived — the birth step is
     // retried and the resident turns replay byte-identically.

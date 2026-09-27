@@ -135,6 +135,10 @@ steps:
           --region "$_REGION"
           --platform managed
           --port 8080
+          # HTTP/2 end-to-end: without it the Google Frontend speaks HTTP/1 to
+          # the container and rejects request bodies over 32 MiB with a 413
+          # before they reach the service. The image runs hypercorn (h2c-capable).
+          --use-http2
           --concurrency "$_CONCURRENCY"
           --min-instances "$_MIN_INSTANCES"
           --max-instances "$_MAX_INSTANCES"

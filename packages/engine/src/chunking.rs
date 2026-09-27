@@ -195,6 +195,27 @@ fn sed_base(cmd: &str) -> i64 {
     1
 }
 
+/// Whether a read chunk's `lo..hi` are real coordinates of the named file.
+/// `read_atom_lines` numbers output lines from `sed_base`, which is only the
+/// truth when the command is an explicit `sed -n 'a,bp'` window (the Read
+/// tool renders as one) or a from-the-top `cat`/`head`. Anything that
+/// reorders or re-numbers output — `tail`, `awk`, `nl`, a pipeline — makes
+/// the range output-relative, and a marker pointing at those lines would
+/// send the agent to the wrong place. Used by the freezer to decide whether
+/// an omission marker may name a line range at all.
+pub fn coords_trusted(cmd: &str) -> bool {
+    if SED_RANGE.is_match(cmd) || SED_ONE.is_match(cmd) {
+        return true;
+    }
+    if !READ.is_match(cmd) || cmd.contains('|') {
+        return false;
+    }
+    !UNTRUSTED_COORDS.is_match(cmd)
+}
+
+static UNTRUSTED_COORDS: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\b(tail|awk|nl|sed|less|more|view|open)\b").unwrap());
+
 /// (file, [(orig_line_no, text)]) for a CODE-READ observation: fully-blank
 /// lines dropped, comments kept, true original-file coordinates preserved.
 fn read_atom_lines<'a>(cmd: &str, obs: &'a str) -> (Option<String>, Vec<(i64, &'a str)>) {

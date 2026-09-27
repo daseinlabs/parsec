@@ -205,6 +205,11 @@ async fn setup_opts(guard_tokens: Option<i64>, memo_dir: Option<PathBuf>) -> Ctx
         contract: BrainContract::Dev,
         score_memo_dir: memo_dir,
     };
+    // These suites assert a cut on the very request that births the
+    // observation — the reference cut-at-birth policy. The product default
+    // (FreezeConfig::protect_current) serves the current turn in full and
+    // is covered end-to-end by tests/golden_conversation.rs.
+    std::env::set_var("PARSEC_PROTECT_CURRENT", "off");
     let mut state = AppState::with_brain(format!("http://{up_addr}"), ledger.clone(), Some(cfg));
     if let Some(g) = guard_tokens {
         state.cache_guard_tokens = g;
@@ -295,13 +300,16 @@ async fn brain_scores_trim_the_observation() {
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     let fwd = sent.last().unwrap();
     let obs = serde_json::to_string(&fwd["messages"][2]).unwrap();
+    assert!(obs.contains(" omitted"), "observation not trimmed: {obs}");
+    // Product marker: names the elider, the trusted file range (the Read
+    // tool renders as an explicit sed window), and the recovery protocol.
     assert!(
-        obs.contains("omitted ...]"),
-        "observation not trimmed: {obs}"
+        obs.contains("omitted by parsec · was parser.py:L"),
+        "no recovery pointer: {obs}"
     );
     assert!(
-        obs.contains("read parser.py:L"),
-        "no recovery pointer: {obs}"
+        obs.contains("repeat the identical call to restore"),
+        "no recovery protocol: {obs}"
     );
     // Small assistant text (< 10-token run floor) survives marker economics.
     let asst = serde_json::to_string(&fwd["messages"][1]).unwrap();
@@ -351,7 +359,7 @@ async fn brain_down_fails_open_per_step_and_retries() {
     // Request succeeded; the observation was served FULL (no digest).
     let sent = ctx.upstream.reqs.lock().unwrap().clone();
     let obs = serde_json::to_string(&sent[0]["messages"][2]).unwrap();
-    assert!(!obs.contains("omitted ...]"), "trimmed despite brain down");
+    assert!(!obs.contains(" omitted"), "trimmed despite brain down");
     let rows = ledger_rows(&ctx);
     assert_eq!(
         rows[0]["fail_open"], false,

@@ -4,7 +4,7 @@
 #   sudo /usr/local/parsec/uninstall.sh [--user NAME] [--remove-ca] [--yes]
 #
 # Reverses, as the user: the menu-bar app, Claude Desktop interception, the
-# Claude Code routing + status line, the codex/opencode shims, the proxy, and
+# Claude Code routing + status line, the codex/opencode/pi shims, the proxy, and
 # ~/.parsec data (`parsec uninstall`); then, as root, the payload and the
 # package receipts. mitmproxy's root CA is left in the System keychain unless
 # --remove-ca is given — a trust-store change is never silent, in either
@@ -62,7 +62,7 @@ as_user() {
 }
 
 echo "This removes parsec for $USER_NAME:"
-echo "  • menu-bar app, Claude Desktop interception, Claude Code routing, codex/opencode shims"
+echo "  • menu-bar app, Claude Desktop interception, Claude Code routing, codex/opencode/pi shims"
 echo "  • the proxy and ~/.parsec data"
 echo "  • /usr/local/parsec and the package receipts"
 [ "$REMOVE_CA" = 1 ] && echo "  • mitmproxy's CA from the System keychain (--remove-ca)"
@@ -96,7 +96,7 @@ else
 fi
 
 rm -rf /usr/local/parsec
-for c in core claude codex opencode desktop tray signin; do
+for c in core claude codex opencode pi desktop tray signin; do
   pkgutil --forget "rocks.dasein.parsec.$c" >/dev/null 2>&1 || true
 done
 echo

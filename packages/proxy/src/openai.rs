@@ -275,6 +275,7 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
     // passthrough curation: internal text unchanged, the wire freeze (fold
     // map) still records and replays served bytes.
     let curated_internal: Vec<Value> = if let Some(bcfg) = &st.brain {
+        let protect_current = st.protect_current;
         let taken = lock(&st.convs)
             .entry(conv_id.clone())
             .or_default()
@@ -292,6 +293,7 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
                     // and the plan for the turn lives in it.
                     let cfg = FreezeConfig {
                         cut_assistant: false,
+                        protect_current,
                         ..FreezeConfig::default()
                     };
                     Freezer::new(cfg, BrainScorer::new(bcfg2, conv2))
@@ -354,6 +356,18 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
     };
     let folds_before = folds.len();
     let curated = crate::responses::apply_curation(body, &curated_internal, Some(&mut folds));
+    // Same as the Anthropic path: the current turn (everything after the
+    // last assistant-authored item) is served full under
+    // FreezeConfig::protect_current and re-folds once it is history.
+    if st.protect_current {
+        crate::splice::unfreeze_current_turn(body.get("input"), &mut folds, |it| {
+            it.get("role").and_then(Value::as_str) == Some("assistant")
+                || matches!(
+                    it.get("type").and_then(Value::as_str),
+                    Some("function_call") | Some("reasoning")
+                )
+        });
+    }
     stats.folds_total = folds.len();
     stats.folds_new = folds.len().saturating_sub(folds_before);
     lock(&st.convs).entry(conv_id.clone()).or_default().folds = folds;

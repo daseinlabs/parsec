@@ -108,21 +108,213 @@ fn info_plist() -> String {
 /// old copy still drives the current parsec. Only the menu UI itself ages,
 /// and `parsec tray install` re-copies.
 fn install_bundle_binary(binary: &std::path::Path, dest: &std::path::Path) -> anyhow::Result<()> {
-    // Temp + rename: a running tray holds its image open, and replacing the
-    // file under it must not produce a half-written binary.
-    let tmp = dest.with_extension("parsec-tmp");
-    let _ = std::fs::remove_file(&tmp);
-    std::fs::copy(binary, &tmp)?;
+    std::fs::copy(binary, dest)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
-    }
-    if let Err(e) = std::fs::rename(&tmp, dest) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e.into());
+        std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o755))?;
     }
     Ok(())
+}
+
+/// Seal the assembled bundle with an ad-hoc signature.
+///
+/// Load-bearing since release builds became Developer ID signed. The binary
+/// copied into `Contents/MacOS` carries a Developer ID + hardened-runtime
+/// signature, and macOS treats such a binary inside a bundle that has no
+/// `_CodeSignature/CodeResources` as tampered: `codesign --verify` says
+/// "code has no resources but signature indicates they must be present",
+/// Gatekeeper shows "parsec is damaged and can't be opened", and the login
+/// item is SIGKILLed on its first launch. An ad-hoc linker signature (the
+/// pre-signing state of the world) was tolerated, which is why this never
+/// showed up before.
+///
+/// `--force --deep --sign -` replaces the binary's Developer ID signature
+/// with an ad-hoc one and writes the resource seal. Ad-hoc is enough here:
+/// the bundle never leaves this machine, carries no quarantine flag, and the
+/// tray needs no entitlement. This must run on a FRESHLY assembled tree —
+/// once Gatekeeper has evaluated a bundle it tags it with
+/// `com.apple.provenance`, after which re-signing in place fails with
+/// "Operation not permitted". That is why `install` builds into a staging
+/// directory and swaps it in, rather than patching the live bundle.
+fn seal_bundle(root: &std::path::Path) -> anyhow::Result<()> {
+    let out = std::process::Command::new("codesign")
+        .args(["--force", "--deep", "--sign", "-"])
+        .arg(root)
+        .output()?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "codesign refused to seal the bundle: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let verify = std::process::Command::new("codesign")
+        .args(["--verify", "--deep", "--strict"])
+        .arg(root)
+        .output()?;
+    if !verify.status.success() {
+        anyhow::bail!(
+            "the sealed bundle does not verify: {}",
+            String::from_utf8_lossy(&verify.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// Assemble an UNSIGNED bundle under `root` from scratch: Info.plist, the
+/// Dock icon, the copied binary. `root` must not exist yet. Shared by the
+/// install path (which then ad-hoc seals it) and `parsec tray bundle`
+/// (which hands it to the release build for a Developer ID signature), so
+/// the two can never disagree about what a parsec.app contains.
+fn assemble_unsealed(root: &std::path::Path, binary: &std::path::Path) -> anyhow::Result<()> {
+    let contents = root.join("Contents");
+    std::fs::create_dir_all(contents.join("MacOS"))?;
+    std::fs::write(contents.join("Info.plist"), info_plist())?;
+    write_dock_icon(root);
+    install_bundle_binary(binary, &contents.join("MacOS").join("parsec-tray"))
+}
+
+/// `parsec tray bundle --out DIR --binary BIN`: the build-time half.
+/// `packages/installer/macos/build.sh` calls this on the payload binary and
+/// then signs the result with the Developer ID identity, so the pkg ships a
+/// sealed, notarized `parsec.app` that `install` can copy verbatim.
+pub fn bundle(out: &std::path::Path, binary: &std::path::Path) -> anyhow::Result<()> {
+    if out.exists() {
+        anyhow::bail!("{} already exists — refusing to overwrite", out.display());
+    }
+    if !binary.is_file() {
+        anyhow::bail!("no binary at {}", binary.display());
+    }
+    assemble_unsealed(out, binary)?;
+    println!(
+        "assembled {} (unsigned — sign it before shipping)",
+        out.display()
+    );
+    Ok(())
+}
+
+/// Where the macOS installer leaves the release-signed bundle.
+fn prebuilt_bundle() -> PathBuf {
+    PathBuf::from("/usr/local/parsec/parsec.app")
+}
+
+/// `codesign --verify --deep --strict`, as a bool.
+fn bundle_verifies(root: &std::path::Path) -> bool {
+    std::process::Command::new("codesign")
+        .args(["--verify", "--deep", "--strict"])
+        .arg(root)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// The installer's bundle, if it is the one for THIS version and still
+/// verifies. The version gate matters: a plugin update moves
+/// `~/.parsec/bin/parsec` to a newer build while the pkg's bundle stays
+/// behind, and a tray from an older release must not be re-installed over
+/// a newer parsec. Its Info.plist is our own XML, so a substring check on
+/// the version string is exact.
+fn usable_prebuilt() -> Option<PathBuf> {
+    let root = prebuilt_bundle();
+    let plist = std::fs::read_to_string(root.join("Contents").join("Info.plist")).ok()?;
+    let want = format!("<string>{}</string>", env!("CARGO_PKG_VERSION"));
+    if !plist.contains(&want) {
+        return None;
+    }
+    bundle_verifies(&root).then_some(root)
+}
+
+/// How the installed bundle came to be, for the install report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BundleSource {
+    /// Copied verbatim from the pkg: Developer ID signed and notarized.
+    Prebuilt,
+    /// Assembled here and ad-hoc sealed (plugin / curl installs, or a
+    /// version mismatch with the pkg's bundle).
+    Sealed,
+}
+
+/// Fill `staging` with a bundle, preferring the release-signed one. `ditto`
+/// rather than a file-by-file copy: it preserves the signature's extended
+/// attributes and resource forks, which `cp -R` can drop.
+fn fill_staging(
+    staging: &std::path::Path,
+    binary: &std::path::Path,
+) -> anyhow::Result<BundleSource> {
+    if let Some(prebuilt) = usable_prebuilt() {
+        let ok = std::process::Command::new("ditto")
+            .arg(&prebuilt)
+            .arg(staging)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok && bundle_verifies(staging) {
+            return Ok(BundleSource::Prebuilt);
+        }
+        // A copy that does not verify is worse than no copy: fall through
+        // and build one that does.
+        let _ = std::fs::remove_dir_all(staging);
+    }
+    assemble_unsealed(staging, binary)?;
+    seal_bundle(staging)?;
+    Ok(BundleSource::Sealed)
+}
+
+/// Replace the live bundle with a freshly assembled and sealed one. It is
+/// staged and renamed rather than edited in place: a running tray holds its
+/// image open, and a half-written bundle must never be what launchd finds.
+/// The old tree is moved aside and deleted afterwards; a tray still running
+/// from it keeps its inode and simply exits on its own schedule.
+fn swap_in_bundle(binary: &std::path::Path) -> anyhow::Result<BundleSource> {
+    let live = bundle_dir();
+    let staging = support_dir().join("parsec.app.staging");
+    let old = support_dir().join("parsec.app.old");
+    let _ = std::fs::remove_dir_all(&staging);
+    let _ = std::fs::remove_dir_all(&old);
+    std::fs::create_dir_all(support_dir())?;
+    let source = match fill_staging(&staging, binary) {
+        Ok(src) => src,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e);
+        }
+    };
+    if live.exists() {
+        std::fs::rename(&live, &old)?;
+    }
+    if let Err(e) = std::fs::rename(&staging, &live) {
+        // Put the previous bundle back rather than leave nothing.
+        if old.exists() {
+            let _ = std::fs::rename(&old, &live);
+        }
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(e.into());
+    }
+    let _ = std::fs::remove_dir_all(&old);
+    Ok(source)
+}
+
+/// PATH for the login item. launchd hands GUI agents the bare system PATH,
+/// under which the tray's shell-outs could not find a Homebrew `mitmdump`
+/// and its guided Desktop completion said "mitmproxy is not installed" on
+/// machines where it was. Capture the installing shell's PATH — the one the
+/// user actually has tools on — and fall back to the usual prefixes.
+fn agent_path_env() -> String {
+    let base = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+    match std::env::var("PATH") {
+        Ok(p) if !p.trim().is_empty() => format!("{p}:{base}"),
+        _ => base.to_string(),
+    }
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn agent_plist() -> String {
@@ -145,6 +337,11 @@ fn agent_plist() -> String {
     <false/>
     <key>ProcessType</key>
     <string>Interactive</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{}</string>
+    </dict>
     <key>StandardOutPath</key>
     <string>{}</string>
     <key>StandardErrorPath</key>
@@ -153,6 +350,7 @@ fn agent_plist() -> String {
 </plist>
 "#,
         bundle_exec().display(),
+        xml_escape(&agent_path_env()),
         log_path().display(),
         log_path().display(),
     )
@@ -194,14 +392,7 @@ pub fn install() -> anyhow::Result<()> {
             binary.display()
         );
     }
-    let exec = bundle_exec();
-    std::fs::create_dir_all(exec.parent().unwrap())?;
-    std::fs::write(
-        bundle_dir().join("Contents").join("Info.plist"),
-        info_plist(),
-    )?;
-    write_dock_icon();
-    install_bundle_binary(&binary, &exec)?;
+    let source = swap_in_bundle(&binary)?;
     let plist = launch_agent();
     std::fs::create_dir_all(plist.parent().unwrap())?;
     bootout(); // replace any previous registration
@@ -218,13 +409,21 @@ pub fn install() -> anyhow::Result<()> {
         "registered — it starts at your next login"
     };
     register_bundle();
+    let bundle_line = match source {
+        BundleSource::Prebuilt => {
+            "~bundle: ~/Library/Application Support/parsec/parsec.app (release-signed)"
+        }
+        BundleSource::Sealed => {
+            "~bundle: ~/Library/Application Support/parsec/parsec.app (sealed here)"
+        }
+    };
     println!(
         "{}",
         crate::brand::panel(
             "menu bar",
             &[
                 started,
-                "~bundle: ~/Library/Application Support/parsec/parsec.app",
+                bundle_line,
                 "~login item: ~/Library/LaunchAgents/rocks.dasein.parsec.tray.plist",
                 "~listed in System Settings → General → Login Items & Extensions",
                 "~remove anytime: parsec tray uninstall",
@@ -246,8 +445,8 @@ pub fn install() -> anyhow::Result<()> {
 ///
 /// Best-effort by design: a missing Dock icon is cosmetic, and failing the
 /// whole install over it would be the wrong trade.
-fn write_dock_icon() {
-    let res = bundle_dir().join("Contents").join("Resources");
+fn write_dock_icon(root: &std::path::Path) {
+    let res = root.join("Contents").join("Resources");
     if std::fs::create_dir_all(&res).is_err() {
         return;
     }
@@ -386,6 +585,16 @@ mod tests {
         assert_eq!(bundle_exec().file_name().unwrap(), "parsec-tray");
         // …and CFBundleExecutable must name that same file.
         assert!(info_plist().contains("<string>parsec-tray</string>"));
+    }
+
+    #[test]
+    fn login_item_carries_a_path_with_the_homebrew_prefix() {
+        // launchd's default PATH has no /opt/homebrew/bin, and without it
+        // the tray could not find mitmdump for the guided Desktop setup.
+        let p = agent_plist();
+        assert!(p.contains("<key>EnvironmentVariables</key>"));
+        assert!(p.contains("/opt/homebrew/bin"));
+        assert!(p.contains("/usr/local/bin"));
     }
 
     #[test]

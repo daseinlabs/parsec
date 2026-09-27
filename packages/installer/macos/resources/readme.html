@@ -24,6 +24,9 @@
 <tr><td>opencode</td>
     <td>the parsec plugin shim in opencode's config directory</td>
     <td><code>parsec disable opencode</code></td></tr>
+<tr><td>pi</td>
+    <td>a <code>baseUrl</code> on the built-in anthropic provider in <code>~/.pi/agent/models.json</code> · the parsec extension in <code>~/.pi/agent/extensions/</code></td>
+    <td><code>parsec disable pi</code></td></tr>
 <tr><td>Claude Desktop</td>
     <td>mitmproxy via Homebrew · its CA in the System keychain · <code>~/.parsec/interceptor/</code> · an <code>mcpServers.parsec</code> entry in Claude Desktop's config · two LaunchAgents (interceptor + proxy)</td>
     <td><code>parsec disable desktop</code> (prints the CA removal command)</td></tr>
@@ -40,7 +43,7 @@
 <h2>requirements</h2>
 <ul>
   <li>Apple silicon, macOS 13 or later</li>
-  <li>Claude Code, Codex, or opencode already installed for their choices (a missing tool is skipped and noted, never an error)</li>
+  <li>Claude Code, Codex, opencode, or pi already installed for their choices (a missing tool is skipped and noted, never an error)</li>
   <li>Homebrew, for the Claude Desktop choice</li>
 </ul>
 </body>

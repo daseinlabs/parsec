@@ -257,12 +257,25 @@ async fn golden_conversation_replay() {
     assert_eq!(sent.len(), turns.len(), "not every turn reached upstream");
 
     // (a) BYTE STABILITY — the cache law: for every turn k, every message
-    // the previous call served is byte-identical (anchors move; bytes don't).
+    // the previous call served as HISTORY is byte-identical (anchors move;
+    // bytes don't). The one sanctioned exception is the previous call's
+    // current turn — the observations after its last assistant message —
+    // which is served in full while the model acts on it
+    // (FreezeConfig::protect_current) and takes its curated form exactly
+    // once, on the next call. From then on it is history and frozen.
     for k in 1..sent.len() {
         let prev = sent[k - 1]["messages"].as_array().unwrap();
         let cur = sent[k]["messages"].as_array().unwrap();
         assert!(prev.len() <= cur.len(), "turn {k} lost messages");
+        let prev_history_end = prev
+            .iter()
+            .rposition(|m| m["role"] == "assistant")
+            .map(|i| i + 1)
+            .unwrap_or(0);
         for j in 0..prev.len() {
+            if j >= prev_history_end {
+                continue; // turn k's current run: allowed to re-fold once
+            }
             assert_eq!(
                 strip_cache_control(&prev[j]),
                 strip_cache_control(&cur[j]),
@@ -298,7 +311,35 @@ async fn golden_conversation_replay() {
     }
     let ratio = frozen_tot as f64 / new_tot.max(1) as f64;
     println!("aggregate frozen:new = {frozen_tot}:{new_tot} ≈ {ratio:.1}:1");
-    assert!(ratio >= 10.0, "simulated cache ratio {ratio:.2}:1 < 10:1");
+    // 10:1 under cut-at-birth. Under FreezeConfig::protect_current each
+    // tool result crosses the wire in full once (the turn the model acts
+    // on it) before its curated form replaces it, so this recording
+    // measures 8.0:1 — the price of never folding the answer the model is
+    // about to read. Guard against regression from there, not from the
+    // old policy's number.
+    assert!(ratio >= 7.5, "simulated cache ratio {ratio:.2}:1 < 7.5:1");
+
+    // (b') PROTECTED CURRENT TURN — every message after the last assistant
+    // turn of each request reaches upstream exactly as the client sent it
+    // (modulo cache_control): the model always sees the full answer to the
+    // call it just made (FreezeConfig::protect_current).
+    for (k, (inbound, served)) in turns.iter().zip(sent.iter()).enumerate() {
+        let src = inbound["messages"].as_array().unwrap();
+        let out = served["messages"].as_array().unwrap();
+        let first_current = src
+            .iter()
+            .rposition(|m| m["role"] == "assistant")
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        for j in first_current..src.len() {
+            assert_eq!(
+                strip_cache_control(&src[j]),
+                strip_cache_control(&out[j]),
+                "turn {} message {j} is current and must be served in full",
+                k + 1,
+            );
+        }
+    }
 
     // (c) the brain was consulted and the freezer actually trimmed content.
     assert!(
@@ -320,7 +361,7 @@ async fn golden_conversation_replay() {
     let trimmed = sent.iter().any(|s| {
         serde_json::to_string(&s["messages"])
             .unwrap()
-            .contains(" omitted ...]")
+            .contains(" omitted by parsec")
     });
     assert!(trimmed, "no omission marker in any served turn");
 

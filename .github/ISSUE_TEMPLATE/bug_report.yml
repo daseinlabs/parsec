@@ -6,9 +6,10 @@ body:
     id: version
     attributes:
       label: parsec version
-      description: Output of `parsec --version`
-    validations:
-      required: true
+      description: >
+        If you know it, e.g. from the plugin version in Claude Code's `/plugin`
+        menu or `curl -s http://127.0.0.1:8082/health` while the proxy runs.
+        Leave blank if unsure.
   - type: dropdown
     id: platform
     attributes:
@@ -29,6 +30,7 @@ body:
         - OpenCode
         - Codex CLI
         - Claude Desktop
+        - pi
         - Other
   - type: textarea
     id: what

@@ -229,6 +229,11 @@ async fn setup_full(entitled: bool, with_brain: bool) -> Ctx {
         score_memo_dir: None,
     });
     // Anthropic upstream is irrelevant here; only the OpenAI one is hit.
+    // These suites assert a cut on the very request that births the
+    // observation — the reference cut-at-birth policy. The product default
+    // (FreezeConfig::protect_current) serves the current turn in full and
+    // is covered end-to-end by tests/golden_conversation.rs.
+    std::env::set_var("PARSEC_PROTECT_CURRENT", "off");
     let mut st = AppState::with_brain("http://127.0.0.1:9".to_string(), ledger.clone(), bcfg);
     st.openai_upstream = format!("http://{mock_addr}");
     st.chatgpt_upstream = format!("http://{mock_addr}");
@@ -513,10 +518,7 @@ async fn brain_scores_trim_codex_tool_output() {
     let fwd: Value = serde_json::from_slice(&reqs[0].raw).unwrap();
     // The observation was digested (low scores → cut)…
     let obs = serde_json::to_string(&fwd["input"][3]).unwrap();
-    assert!(
-        obs.contains("omitted ...]"),
-        "observation not trimmed: {obs}"
-    );
+    assert!(obs.contains(" omitted"), "observation not trimmed: {obs}");
     assert!(
         obs.len() < serde_json::to_string(&sent["input"][3]).unwrap().len(),
         "trimmed output should be smaller"
@@ -619,7 +621,7 @@ async fn brain_down_fails_open_and_serves_full() {
     let reqs = ctx.mock.all();
     let fwd: Value = serde_json::from_slice(&reqs[0].raw).unwrap();
     let obs = serde_json::to_string(&fwd["input"][3]).unwrap();
-    assert!(!obs.contains("omitted ...]"), "trimmed despite brain down");
+    assert!(!obs.contains(" omitted"), "trimmed despite brain down");
 
     let rows = wait_rows(&ctx, 1).await;
     assert_eq!(
@@ -699,10 +701,7 @@ async fn chatgpt_route_curates_identically() {
     let reqs = ctx.mock.all();
     let fwd: Value = serde_json::from_slice(&reqs[0].raw).unwrap();
     let obs = serde_json::to_string(&fwd["input"][3]).unwrap();
-    assert!(
-        obs.contains("omitted ...]"),
-        "observation not trimmed: {obs}"
-    );
+    assert!(obs.contains(" omitted"), "observation not trimmed: {obs}");
     assert_eq!(fwd["input"][1], sent["input"][1], "reasoning item changed");
     assert_eq!(fwd["prompt_cache_key"], "sess-brain");
 
@@ -742,10 +741,7 @@ async fn zstd_body_is_decoded_curated_and_forwarded_identity() {
     let fwd: Value = serde_json::from_slice(&r.raw).expect("forwarded body must be plain JSON");
     // Curation ran on the decoded body: observation trimmed, hazards intact.
     let obs = serde_json::to_string(&fwd["input"][3]).unwrap();
-    assert!(
-        obs.contains("omitted ...]"),
-        "observation not trimmed: {obs}"
-    );
+    assert!(obs.contains(" omitted"), "observation not trimmed: {obs}");
     assert_eq!(fwd["input"][1], sent["input"][1], "reasoning item changed");
     assert_eq!(fwd["prompt_cache_key"], "sess-brain");
 

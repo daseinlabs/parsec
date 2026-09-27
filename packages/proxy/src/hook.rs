@@ -14,6 +14,20 @@ use crate::noreread::{
     load_session, prune_sessions, read_tool_range, save_session, Gate, SessionState,
 };
 
+/// SessionStart additionalContext: the curation contract the model needs to
+/// read a fold marker correctly. Kept in lockstep with the wording in
+/// `packages/plugin/agents/code.md` and the engine's product markers
+/// (`FreezeConfig::product_markers`).
+const CURATION_NOTE: &str =
+    "Parsec context curation is active on this session. Your requests pass \
+through the local parsec proxy, which may replace tool results you have already acted on with an \
+in-place marker such as `[... 23 lines (~574 tokens) omitted by parsec · was FILE:L55-85 · repeat \
+the identical call to restore ...]` or `[result consolidated into the first result of this turn \
+above]`. That is the curator folding history, not a tool truncation and not an error. The result \
+of the call you just made is always served in full. To get a folded result back, make the exact \
+same call again — identical tool, identical arguments. A different or narrower call is a new call \
+and is curated like any other.";
+
 pub fn run(event: &str) -> anyhow::Result<()> {
     let mut input = String::new();
     // A stdin read error must not become a non-zero exit (hooks NEVER fail
@@ -56,6 +70,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // served context this session — the gate never denies a re-read
             // of content the model cannot actually see above.
             st.elided = crate::visibility::load(&session_id);
+            st.elided_cmds = crate::visibility::load_cmds(&session_id);
             let gate = match tool {
                 "Read" => match read_tool_range(&tool_input, &cwd) {
                     Some((path, rng)) => st.gate_read(&path, rng),
@@ -90,6 +105,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
                 return Ok(());
             }
             let mut st = load_session(&session_id);
+            st.elided_cmds = crate::visibility::load_cmds(&session_id);
             record_post(&mut st, tool, &tool_input, &cwd);
             let _ = save_session(&session_id, &st);
         }
@@ -134,6 +150,21 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // the lifetime note both advertise a product the user switched
             // off, and either one still renders the full branded panel.
             let off = crate::setup::switched_off();
+            // Curation contract (every session, not only the parsec:code
+            // agent): what a fold marker means and how to recover the
+            // content. Without it the model reads a marker as a tool
+            // truncation and re-asks with DIFFERENT narrower calls — each a
+            // new birth, curated again — a read spiral. Injected when the
+            // curator can actually run (entitled and not switched off), on
+            // startup/clear/compact; never on resume, where the live
+            // context already carries it.
+            if !off && crate::apikey::enabled() && matches!(source, "startup" | "clear" | "compact")
+            {
+                additional_context = Some(match additional_context.take() {
+                    Some(ctx) => format!("{ctx}\n\n{CURATION_NOTE}"),
+                    None => CURATION_NOTE.to_string(),
+                });
+            }
             // Top of the session (and the install flow — first run is a
             // startup): if there is no API key, parsec saves nothing — show the
             // prominent get-a-key banner. Fresh startups only (resume/clear/

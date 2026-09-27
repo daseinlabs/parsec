@@ -25,8 +25,8 @@ unless you prefer otherwise.
 In scope:
 
 - the `parsec` binary (`packages/proxy`, `packages/engine`, `packages/mapgen`)
-- the Claude Code plugin and OpenCode plugin (`packages/plugin`,
-  `packages/opencode-plugin`)
+- the Claude Code plugin, OpenCode plugin, and pi extension (`packages/plugin`,
+  `packages/opencode-plugin`, `packages/pi-extension`)
 - the native installers and install scripts (`packages/installer`, `scripts/`)
 - CI and release workflows in this repository
 
