@@ -1,0 +1,405 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://daseinlabs.dev/contracts/brain-api/v3",
+ "title": "Brain scoring API v3 — HS curator (hidden-states encoder)",
+ "description": "brain-api/v2 plus what the HS curator (curator_hs_t3_cand, spec v6828t3) needs: a 27-wide node struct carrying the six re-request columns, an `ext` extension class per node, a 104-col decided row, and per-kind taus in place of the global tau. Text slots are unchanged from v2 (the brain live-encodes the same strings). No cut history crosses the wire: the re-request columns and the fought flag are computed client-side from the freezer's own registry, by chunk identity. score/tools, score/rules and neighbors keep their brain-api/v2 shapes (brain-api-v2.schema.json). The HS brain also accepts brain-api/v2 score/trace bodies through its v2->v3 adapter (docs/brain-api-v3.md). Scores ride the 1e-6 fixed-point grid (engine SCORE_SCALE).",
+ "oneOf": [
+  {
+   "$ref": "#/$defs/score_trace_request"
+  },
+  {
+   "$ref": "#/$defs/score_trace_response"
+  },
+  {
+   "$ref": "#/$defs/bundle_response"
+  }
+ ],
+ "$defs": {
+  "grid_q": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 1000000,
+   "description": "fixed-point score on the 1e-6 grid (engine SCORE_SCALE): q = round(sigmoid * 1_000_000)"
+  },
+  "gf": {
+   "type": "array",
+   "items": {
+    "type": "number",
+    "minimum": -1,
+    "maximum": 1
+   },
+   "minItems": 4,
+   "maxItems": 4,
+   "description": "doom-head run-state input, CLIENT-computed loop_feats over the conversation's ACTION stream: [current loop fraction, trailing-3 mean, slope over 3 steps, trailing-6 fraction >= 0.34]. Slope can be negative. Omitted = doom not scored."
+  },
+  "checkpoint_id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{64}$",
+   "description": "sha256 of the checkpoint .pt the client featurized against; the brain 409s on mismatch with its loaded bundle (§8.2 matched-pair trap: features and weights must move together). Retained verbatim from v1 — this guard is the reason v2 is not a promotion of brain-api-dev/v0."
+  },
+  "ident": {
+   "type": "string",
+   "pattern": "^[A-Za-z0-9:._-]{1,128}$",
+   "description": "bounded identifier charset (conv_id, tool name — harness identifiers)"
+  },
+  "hex16_id": {
+   "type": [
+    "string",
+    "null"
+   ],
+   "pattern": "^[0-9a-f]{16}$",
+   "description": "salted 16-hex identity hash. Retained from v1 unchanged: these are the graph's identity/hub keys (equality and truthiness are what ride), and keeping them client-computed keeps graph construction byte-identical to v1. On v2 they are no longer a privacy mechanism — the text they name rides alongside — but they remain the join keys, so do NOT derive them server-side."
+  },
+  "text2000": {
+   "type": "string",
+   "maxLength": 2000,
+   "description": "chunk/task/system text, CLIENT-truncated to 2000 characters before send. The client truncates (not the server) so the wire stays small and the truncation point is identical to v1's pre-embedding clip — the vectors the server produces must match what v1's client-side embedder would have produced from the same clip."
+  },
+  "text240": {
+   "type": "string",
+   "maxLength": 240,
+   "description": "observation head, CLIENT-truncated to 240 characters — the same clip v1 applied before embedding, and the same string head_id salts."
+  },
+  "kind": {
+   "enum": [
+    "read",
+    "grep",
+    "other",
+    "reasoning",
+    "asst"
+   ]
+  },
+  "ext_class": {
+   "enum": [
+    "gml",
+    "ps1",
+    "md",
+    "txt",
+    "json",
+    "py",
+    "png",
+    "log",
+    "yy",
+    "jsonl",
+    "sh",
+    "diff",
+    "html",
+    "yyp",
+    "patch",
+    "js",
+    "ts",
+    "tsx",
+    "rs",
+    "go",
+    "java",
+    "c",
+    "h",
+    "cpp",
+    "yaml",
+    "yml",
+    "toml",
+    "rb",
+    "cs",
+    "css",
+    "other",
+    "none"
+   ],
+   "description": "the chunk file's extension CLASS for the read columns' extension one-hot: one of the 30 extensions the checkpoint knows, 'other' for any other extension, 'none' for no file or no extension (torch_curator.read_columns / _path_v9_ext: lowercase text after the basename's last dot; a leading-dot dotfile has none). A class, not the extension or the name: the file identity stays the salted file_id."
+  },
+  "node": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "text",
+    "cmd",
+    "head",
+    "struct",
+    "step",
+    "kind",
+    "tokens",
+    "ext"
+   ],
+   "description": "one live chunk. The v2 node plus `ext`, with a 27-wide struct. The brain computes the 50 read columns from cmd/lo/hi/tokens/kind/step/ext and inserts them after the struct, then appends the role markers and graph-type columns, giving the checkpoint's 106-wide node row. Identical to the v1 node except the three embedding slots carry text instead of vectors; the server embeds them and then rebuilds the exact same graph. EMPTY-STRING SEMANTICS ARE LOAD-BEARING: an empty cmd/head must produce a ZERO VECTOR server-side, not the embedding of the empty string — v1's client mirrored this (featurize::vec_or_zeros never called the embedder on \"\"), and the parity gate pins it.",
+   "properties": {
+    "text": {
+     "$ref": "#/$defs/text2000",
+     "description": "chunk text[:2000] — xe content slot + rel-2 kNN cosine"
+    },
+    "cmd": {
+     "type": "string",
+     "description": "the producing command, UNTRUNCATED (v1 embedded it untruncated; the clip would change the vector). Empty string when the chunk has none (cmd_id null) -> server emits a zero vector."
+    },
+    "head": {
+     "$ref": "#/$defs/text240",
+     "description": "observation head[:240]. Empty string when none (head_id null) -> server emits a zero vector."
+    },
+    "struct": {
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "minItems": 27,
+     "maxItems": 27,
+     "description": "node_struct_with_type(21) + the six HS re-request columns [n_prior_serves, prior_copy_cut, file_rereq_count, log1p(trace_rereq_count), is_rereq, is_rereq_of_cut], computed client-side over EVERY chunk up to the birth step (dropped ones included) with cut state from the freezer's dropped registry (engine rereq.rs)."
+    },
+    "step": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "kind": {
+     "$ref": "#/$defs/kind"
+    },
+    "tokens": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "chunk token weight (max(1, len(text)//4)); the trace forward reads token mass from `struct`, not from this field"
+    },
+    "file_id": {
+     "$ref": "#/$defs/hex16_id",
+     "description": "salted hash of the file basename; null = fileless chunk (no rel-0 chain edge, no file hub)"
+    },
+    "lo": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "description": "first original-file line covered; null disables the rel-0 chain for this chunk"
+    },
+    "hi": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "cmd_id": {
+     "$ref": "#/$defs/hex16_id",
+     "description": "salted hash of the producing command string; null = no command (no command hub row)"
+    },
+    "head_id": {
+     "$ref": "#/$defs/hex16_id",
+     "description": "salted hash of the observation head[:240]; PRESENCE is the has-head marker and gates the head hub on the command's first chunk"
+    },
+    "ext": {
+     "$ref": "#/$defs/ext_class"
+    }
+   }
+  },
+  "score_trace_request": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "contract",
+    "conv_id",
+    "checkpoint_id",
+    "cur_step",
+    "nodes",
+    "task_text",
+    "mask",
+    "decided_struct",
+    "edges_supersession"
+   ],
+   "description": "POST /v1/score/trace with contract='brain-api/v3' (HS curator). The brain live-encodes nodes[].text/cmd/head, task_text and sys_text with its fine-tuned encoder (Qwen3.5-0.8B-Base final-layer per-token hidden states, 768-token head+tail cap), builds the het graph, fills the read columns and dupcos, and scores the mask rows with the query-bank read head.",
+   "properties": {
+    "contract": {
+     "const": "brain-api/v3"
+    },
+    "conv_id": {
+     "$ref": "#/$defs/ident"
+    },
+    "checkpoint_id": {
+     "$ref": "#/$defs/checkpoint_id"
+    },
+    "cur_step": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "target_cov": {
+     "type": "string",
+     "pattern": "^0\\.\\d{2}$",
+     "description": "accepted for provenance; tau resolves at bundle load (PARSEC_TARGET_COV), not per request"
+    },
+    "nodes": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/node"
+     },
+     "description": "the LIVE chunk set (client registries applied) in decision order — the stable step-sorted parse order; the temporal chain i->i+1 and all equal-step tie-breaks key on this ordering"
+    },
+    "task_text": {
+     "$ref": "#/$defs/text2000",
+     "description": "the task statement (first user message) text[:2000]; empty string when absent -> zero vector"
+    },
+    "sys_text": {
+     "$ref": "#/$defs/text2000",
+     "description": "system prompt text[:2000] (the harness hub payload); omitted or empty = zeros"
+    },
+    "mask": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "description": "rows of `nodes` to decide (undecided newborns); all other rows return exactly 1000000 (never cut)"
+    },
+    "decided_struct": {
+     "type": "array",
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "number"
+      },
+      "minItems": 104,
+      "maxItems": 104
+     },
+     "description": "one 104-col decided row per mask entry: struct_features 0-15 | rereq 16-21 | read columns 22-71 | age 72 | extra 73-75 | readmit 76-79 | issuematch 80-84 | rerank 85-92 | centrality 93-97 | scout 98-101 | dupcos 102-103. The client fills every block except the read columns and dupcos, which it sends as zeros; the brain fills them. Width is validated against the bundle's read_struct (422 on drift)."
+    },
+    "edges_supersession": {
+     "type": "array",
+     "items": {
+      "type": "array",
+      "prefixItems": [
+       {
+        "type": "integer",
+        "minimum": 0
+       },
+       {
+        "type": "integer",
+        "minimum": 0
+       }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+     },
+     "description": "client-computed rel-4 pairs [old_src, new_dst] over `nodes` rows (same-file line overlap OR >=0.6 span-set Jaccard). The server sorts pairs lexicographically = the vendored emission order, keeping the scatter summation order bit-identical. Required, even when empty: the client must compute it consciously, never default it away."
+    },
+    "gf": {
+     "$ref": "#/$defs/gf"
+    }
+   }
+  },
+  "score_trace_response": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "scores_q",
+    "checkpoint_id",
+    "tau_q_by_kind"
+   ],
+   "properties": {
+    "scores_q": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/grid_q"
+     },
+     "description": "one per node row; rows outside mask are exactly 1000000 (never cut)"
+    },
+    "checkpoint_id": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "doom_q": {
+     "$ref": "#/$defs/grid_q",
+     "description": "sigmoid(doom head) on the 1e-6 grid — present iff the request carried gf, the checkpoint has a doom head, and a forward ran"
+    },
+    "timings_ms": {
+     "type": "object",
+     "additionalProperties": false,
+     "properties": {
+      "embed": {
+       "type": "number",
+       "description": "server-side embed wall time. Unlike v1 (always 0.0) this is a real number on v2 and is the primary capacity signal — it shares the serving lock with the forward (docs/server-side-embedding.md §6)."
+      },
+      "forward": {
+       "type": "number"
+      }
+     }
+    },
+    "tau_q_by_kind": {
+     "$ref": "#/$defs/tau_q_by_kind"
+    }
+   },
+   "description": "score/trace reply. Keep rule (client): keep a chunk when it is fought (its struct column 26 = is_rereq_of_cut, known client-side) or scores_q >= tau_q_by_kind[kind]; kinds without a tau (asst) are never cut."
+  },
+  "tau_q_by_kind": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "read",
+    "other",
+    "grep",
+    "reasoning"
+   ],
+   "properties": {
+    "read": {
+     "$ref": "#/$defs/grid_q"
+    },
+    "other": {
+     "$ref": "#/$defs/grid_q"
+    },
+    "grep": {
+     "$ref": "#/$defs/grid_q"
+    },
+    "reasoning": {
+     "$ref": "#/$defs/grid_q"
+    }
+   },
+   "description": "per-kind keep thresholds on the 1e-6 grid, re-derived on the brain's own served scores at the bundle's coverage floor and stored beside the checkpoint. No global tau: one threshold starves the other/reasoning kinds."
+  },
+  "bundle_response": {
+   "type": "object",
+   "required": [
+    "contracts",
+    "checkpoint_id",
+    "read_struct",
+    "node_struct",
+    "spec_version",
+    "tau_q_by_kind",
+    "tau_coverage",
+    "encoder",
+    "accept_gzip",
+    "doom"
+   ],
+   "description": "GET /v1/bundle on an HS brain. The client refuses to score (fail open) unless contracts lists brain-api/v3 and read_struct/node_struct/spec_version equal what it builds.",
+   "properties": {
+    "contracts": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "contains": {
+      "const": "brain-api/v3"
+     }
+    },
+    "checkpoint_id": {
+     "$ref": "#/$defs/checkpoint_id"
+    },
+    "read_struct": {
+     "const": 104
+    },
+    "node_struct": {
+     "const": 106
+    },
+    "spec_version": {
+     "const": "v6828t3"
+    },
+    "tau_q_by_kind": {
+     "$ref": "#/$defs/tau_q_by_kind"
+    },
+    "tau_coverage": {
+     "type": "string",
+     "pattern": "^0\\.\\d{2}$"
+    },
+    "encoder": {
+     "type": "string",
+     "description": "encoder model name, for ledger provenance"
+    },
+    "accept_gzip": {
+     "type": "boolean"
+    },
+    "doom": {
+     "type": "object"
+    }
+   }
+  }
+ }
+}
