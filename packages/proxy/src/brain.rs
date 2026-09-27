@@ -41,7 +41,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use parsec_engine::freeze::{BirthQuery, ChunkScorer, ScoreError, ScoreResult};
+use parsec_engine::freeze::{BirthQuery, ChunkScorer, KindTaus, ScoreError, ScoreResult};
 use parsec_engine::pystr::char_prefix;
 
 use crate::featurize;
@@ -56,26 +56,40 @@ pub enum BrainContract {
     /// wire, the brain embeds (docs/server-side-embedding.md). No local
     /// embedder, so no ONNX model ships with the client.
     V2,
+    /// brain-api/v3 — the HS curator (docs/brain-api-v3.md): v2 plus the six
+    /// re-request columns the Freezer computes, a per-node extension class,
+    /// the 104-col decided row, and per-kind taus with the fought keep rule.
+    /// Scores only against a brain whose /v1/bundle advertises it.
+    V3,
 }
 
 impl BrainContract {
-    /// `PARSEC_BRAIN_CONTRACT` parsing: the exact strings "v1"/"v2" select
+    /// `PARSEC_BRAIN_CONTRACT` parsing: the exact strings "v2"/"v3" select
     /// those contracts; anything else (unset, "dev", typos) stays dev — the
     /// conservative default for an explicitly-configured URL.
     pub fn from_env_value(v: Option<&str>) -> BrainContract {
         match v.map(str::trim) {
             Some("v2") => BrainContract::V2,
+            Some("v3") => BrainContract::V3,
             _ => BrainContract::Dev,
         }
     }
 
     /// Does this contract do the /v1/bundle handshake and carry
-    /// `checkpoint_id`? v2 does; dev has no matched-pair guard, which is
+    /// `checkpoint_id`? v2 and v3 do; dev has no matched-pair guard, which is
     /// precisely why v2 derives from v1 (docs/server-side-embedding.md §4).
     pub fn needs_handshake(self) -> bool {
-        self == BrainContract::V2
+        matches!(self, BrainContract::V2 | BrainContract::V3)
     }
 }
+
+/// What a v3 client builds. A brain advertising other widths or another
+/// feature spec would reject the rows (422) or, worse, score them against a
+/// layout they were not built for — so the client refuses to score instead.
+const V3_CONTRACT: &str = "brain-api/v3";
+const V3_READ_STRUCT: i64 = parsec_engine::v3::READ_STRUCT_V3 as i64;
+const V3_NODE_STRUCT: i64 = 106;
+const V3_SPEC_VERSION: &str = "v6828t3";
 
 /// Config surface (docs/brain-serving-v0.md "Config surface").
 #[derive(Debug, Clone)]
@@ -91,7 +105,9 @@ pub struct BrainConfig {
     /// PARSEC_TOOL_STUB — serve pruned tools as name+note stubs instead of
     /// dropping them (default on); "off" restores the reference hard-drop.
     pub tool_stub: bool,
-    /// PARSEC_BRAIN_CONTRACT: dev (default) | v1 | v2.
+    /// PARSEC_BRAIN_CONTRACT: dev (default for an env URL) | v2 (default for
+    /// a release-baked URL) | v3 (the HS curator; scores only against a brain
+    /// whose /v1/bundle advertises brain-api/v3 at the client's row widths).
     pub contract: BrainContract,
     /// Directory for the persisted per-conversation score memo (perf
     /// research 2026-09-02 §1): scores are pure functions of (step,
@@ -218,6 +234,18 @@ struct BundleInfo {
     /// sending `gf` to them would 422 every trace: version-skew guard).
     #[serde(default)]
     doom: Option<DoomInfo>,
+    /// Contracts this brain scores. Checked for v3 only: a v2 brain predates
+    /// the check, and its list has always included v2.
+    #[serde(default)]
+    contracts: Vec<String>,
+    /// Decided-row width, node-row width and feature-spec version of the
+    /// loaded checkpoint (HS brains). Absent on bge brains.
+    #[serde(default)]
+    read_struct: Option<i64>,
+    #[serde(default)]
+    node_struct: Option<i64>,
+    #[serde(default)]
+    spec_version: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -229,6 +257,49 @@ struct DoomInfo {
 impl BundleInfo {
     fn doom_served(&self) -> bool {
         self.doom.as_ref().is_some_and(|d| d.served)
+    }
+
+    /// Why this brain cannot score the v3 rows this client builds, or None.
+    fn v3_mismatch(&self) -> Option<String> {
+        if !self.contracts.iter().any(|c| c == V3_CONTRACT) {
+            return Some(format!(
+                "does not serve {V3_CONTRACT} (serves {:?})",
+                self.contracts
+            ));
+        }
+        if self.read_struct != Some(V3_READ_STRUCT) || self.node_struct != Some(V3_NODE_STRUCT) {
+            return Some(format!(
+                "row widths {:?}/{:?}, client builds {V3_READ_STRUCT}/{V3_NODE_STRUCT}",
+                self.read_struct, self.node_struct
+            ));
+        }
+        if self.spec_version.as_deref() != Some(V3_SPEC_VERSION) {
+            return Some(format!(
+                "feature spec {:?}, client builds {V3_SPEC_VERSION}",
+                self.spec_version
+            ));
+        }
+        None
+    }
+}
+
+/// Per-kind taus as the v3 reply carries them.
+#[derive(Deserialize)]
+struct WireKindTaus {
+    read: i64,
+    other: i64,
+    grep: i64,
+    reasoning: i64,
+}
+
+impl From<WireKindTaus> for KindTaus {
+    fn from(w: WireKindTaus) -> Self {
+        KindTaus {
+            read: w.read,
+            other: w.other,
+            grep: w.grep,
+            reasoning: w.reasoning,
+        }
     }
 }
 
@@ -318,7 +389,12 @@ fn fresh_salt(conv_id: &str) -> String {
 #[derive(Deserialize)]
 struct TraceResponse {
     scores_q: Vec<i64>,
-    tau_q: i64,
+    /// The global tau (v2). Absent on v3, which carries `tau_q_by_kind`.
+    #[serde(default)]
+    tau_q: Option<i64>,
+    /// Per-kind taus (v3).
+    #[serde(default)]
+    tau_q_by_kind: Option<WireKindTaus>,
     checkpoint_id: String,
     #[serde(default)]
     #[allow(dead_code)]
@@ -346,7 +422,8 @@ pub struct BrainStats {
     pub last_doom_q: Option<i64>,
 }
 
-/// (cur_step, live-set fingerprint, scores_q, tau_q), most-recent last.
+/// One memoized score reply: (cur_step, live-set fingerprint) -> scores and
+/// taus, most-recent last.
 /// WIDENED from a single entry (docs/perf-research-2026-09-02.md §1):
 /// scores are pure functions of (step, live set) — the mask is deliberately
 /// not keyed, exactly as in the single-entry design — so a full birth
@@ -354,7 +431,15 @@ pub struct BrainStats {
 /// re-serves memoized scores with ZERO HTTP: a 100s replay storm becomes
 /// CPU-only. Bounded FIFO; on hit the entry is not reordered (replays walk
 /// steps in order, so FIFO ≈ LRU here).
-type ScoreMemo = std::collections::VecDeque<(i64, String, Vec<i64>, i64)>;
+struct MemoEntry {
+    step: i64,
+    fp: String,
+    scores: Vec<i64>,
+    tau: i64,
+    /// Per-kind taus when the reply was v3; persisted as "k".
+    kinds: Option<KindTaus>,
+}
+type ScoreMemo = std::collections::VecDeque<MemoEntry>;
 type ScoreCache = Mutex<ScoreMemo>;
 
 /// `PARSEC_SCORE_MEMO_MAX`: score-memo entries per conversation; min 1
@@ -403,7 +488,26 @@ fn load_persisted_scores(path: &std::path::Path, cap: usize) -> (ScoreMemo, Opti
         if scores.len() != q.len() {
             continue;
         }
-        out.push_front((s, fp.to_string(), scores, t));
+        // "k" = [read, other, grep, reasoning]; absent on v2 lines.
+        let kinds = v.get("k").and_then(Value::as_array).and_then(|k| {
+            let k: Vec<i64> = k.iter().filter_map(Value::as_i64).collect();
+            match k[..] {
+                [read, other, grep, reasoning] => Some(KindTaus {
+                    read,
+                    other,
+                    grep,
+                    reasoning,
+                }),
+                _ => None,
+            }
+        });
+        out.push_front(MemoEntry {
+            step: s,
+            fp: fp.to_string(),
+            scores,
+            tau: t,
+            kinds,
+        });
     }
     if !out.is_empty() {
         tracing::debug!(entries = out.len(), path = %path.display(), "score memo loaded from disk");
@@ -420,10 +524,15 @@ fn persist_score(
     fp: &str,
     scores: &[i64],
     tau: i64,
+    kinds: Option<&KindTaus>,
     ck8: &str,
 ) {
     let Some(path) = path else { return };
-    let line = json!({"s": step, "fp": fp, "q": scores, "t": tau, "ck": ck8}).to_string();
+    let mut line = json!({"s": step, "fp": fp, "q": scores, "t": tau, "ck": ck8});
+    if let Some(k) = kinds {
+        line["k"] = json!([k.read, k.other, k.grep, k.reasoning]);
+    }
+    let line = line.to_string();
     let res: std::io::Result<()> = (|| {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -500,6 +609,8 @@ pub struct BrainScorer {
     /// extra=forbid: an unknown key is a 422 = total curation outage).
     /// Refreshed with every handshake (incl. the 409 re-pair).
     v1_doom: bool,
+    /// A v3 handshake refusal was logged (once per conversation).
+    v3_refusal_logged: bool,
     /// Per-conversation opaque-id salt (never leaves this process).
     conv_salt: String,
 }
@@ -534,6 +645,7 @@ impl BrainScorer {
             attach_gf: false,
             v1_checkpoint: None,
             v1_doom: false,
+            v3_refusal_logged: false,
             conv_salt,
         }
     }
@@ -543,20 +655,48 @@ impl BrainScorer {
         for (gi, c) in q.live_gi.iter().zip(q.live.iter()) {
             h.update(format!("{}:{}:{}:{}\n", gi, c.step, c.kind, c.tokens).as_bytes());
         }
+        // v3 inputs also carry the re-request columns, which read the cut
+        // state of chunks OUTSIDE the live set. Empty on v2, so a v2
+        // fingerprint (and every persisted v2 memo line) is unchanged.
+        for r in &q.rereq {
+            h.update(format!("{r:?}\n").as_bytes());
+        }
         format!("{:x}", h.finalize())
+    }
+
+    /// The /v1/bundle handshake (v2 and v3): returns the checkpoint every
+    /// payload must name. On v3 a brain that cannot score the rows this
+    /// client builds is refused — not cached, so a redeploy is picked up on
+    /// the next birth — and the step fails open.
+    fn handshake(&mut self) -> Result<String, ScoreError> {
+        if let Some(ck) = &self.v1_checkpoint {
+            return Ok(ck.clone());
+        }
+        let info = fetch_bundle(&self.http, &self.cfg)?;
+        if self.cfg.contract == BrainContract::V3 {
+            if let Some(why) = info.v3_mismatch() {
+                if !self.v3_refusal_logged {
+                    self.v3_refusal_logged = true;
+                    tracing::warn!(
+                        "brain at {} {why}: not scoring on {V3_CONTRACT} (fail-open, \
+                         passthrough curation)",
+                        self.cfg.url
+                    );
+                }
+                return Err(ScoreError(format!("brain incompatible with v3: {why}")));
+            }
+        }
+        self.v1_doom = info.doom_served();
+        self.srv_gzip = info.accept_gzip;
+        self.v1_checkpoint = Some(info.checkpoint_id.clone());
+        Ok(info.checkpoint_id)
     }
 
     /// v2 request body: the same handshake (the §8.2 matched-pair guard rides
     /// on v2 exactly as on v1) + structural featurization only. No embedder,
     /// so the only failure mode left is the handshake itself.
     fn v2_body(&mut self, q: &BirthQuery) -> Result<Value, ScoreError> {
-        if self.v1_checkpoint.is_none() {
-            let info = fetch_bundle(&self.http, &self.cfg)?;
-            self.v1_doom = info.doom_served();
-            self.srv_gzip = info.accept_gzip;
-            self.v1_checkpoint = Some(info.checkpoint_id);
-        }
-        let checkpoint_id = self.v1_checkpoint.clone().expect("handshake done");
+        let checkpoint_id = self.handshake()?;
         Ok(featurize::build_v2_trace_payload(
             q,
             featurize::changeprone(),
@@ -565,6 +705,22 @@ impl BrainScorer {
             &checkpoint_id,
             &self.cfg.target_cov,
         ))
+    }
+
+    /// v3 request body: the handshake (which also checks the brain serves
+    /// v3 at these widths) + v2's structural featurization + the Freezer's
+    /// re-request columns.
+    fn v3_body(&mut self, q: &BirthQuery) -> Result<Value, ScoreError> {
+        let checkpoint_id = self.handshake()?;
+        featurize::build_v3_trace_payload(
+            q,
+            featurize::changeprone(),
+            &self.conv_salt,
+            &self.conv_id,
+            &checkpoint_id,
+            &self.cfg.target_cov,
+        )
+        .ok_or_else(|| ScoreError("v3 payload: birth query carries no re-request columns".into()))
     }
 }
 
@@ -578,11 +734,11 @@ impl ChunkScorer for BrainScorer {
             .unwrap_or_else(|e| e.into_inner())
             .iter()
             .rev()
-            .find(|(step, cached_fp, _, _)| *step == q.cur_step && *cached_fp == fp)
-            .map(|(_, _, scores, tau)| ScoreResult {
-                scores_q: scores.clone(),
-                tau_q: *tau,
-                tau_by_kind: None,
+            .find(|e| e.step == q.cur_step && e.fp == fp)
+            .map(|e| ScoreResult {
+                scores_q: e.scores.clone(),
+                tau_q: e.tau,
+                tau_by_kind: e.kinds,
             });
         if let Some(hit) = hit {
             self.stats.cache_hits += 1;
@@ -607,6 +763,7 @@ impl ChunkScorer for BrainScorer {
                 "target_cov": self.cfg.target_cov,
             }),
             BrainContract::V2 => self.v2_body(q)?,
+            BrainContract::V3 => self.v3_body(q)?,
         };
         // Governor doom head input (wire contract addition, both contracts):
         // loop_feats over the SAME internal view being scored. Omitted when
@@ -617,8 +774,8 @@ impl ChunkScorer for BrainScorer {
         // extras, so dev attaches unconditionally.
         let gf_capable = match self.cfg.contract {
             BrainContract::Dev => true,
-            // v2 handshakes, so it gates on the served doom capability
-            BrainContract::V2 => self.v1_doom,
+            // v2/v3 handshake, so they gate on the served doom capability
+            BrainContract::V2 | BrainContract::V3 => self.v1_doom,
         };
         if self.attach_gf && gf_capable {
             if let Some(gf) = crate::governor::gf_of(q.messages) {
@@ -662,9 +819,21 @@ impl ChunkScorer for BrainScorer {
                 detail.chars().take(200).collect::<String>()
             )));
         }
-        let r: TraceResponse = resp
+        let mut r: TraceResponse = resp
             .json()
             .map_err(|e| ScoreError(format!("brain response decode: {e}")))?;
+        // v2 replies carry one tau; v3 replies carry per-kind taus instead.
+        // A reply missing the one its contract needs is a failed score.
+        let (tau_q, kinds) = match self.cfg.contract {
+            BrainContract::V3 => match r.tau_q_by_kind.take() {
+                Some(k) => (0, Some(KindTaus::from(k))),
+                None => return Err(ScoreError("brain v3 reply lacks tau_q_by_kind".into())),
+            },
+            _ => match r.tau_q {
+                Some(t) => (t, None),
+                None => return Err(ScoreError("brain reply lacks tau_q".into())),
+            },
+        };
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.stats.brain_ms += elapsed_ms;
         // the whole GNN score vector, index-aligned to the live chunk set —
@@ -673,7 +842,8 @@ impl ChunkScorer for BrainScorer {
             conv = %self.conv_id,
             cur_step = q.cur_step,
             scores_q = ?r.scores_q,
-            tau_q = r.tau_q,
+            tau_q,
+            tau_by_kind = ?kinds,
             "GNN trace score vector"
         );
         tracing::debug!(
@@ -681,7 +851,7 @@ impl ChunkScorer for BrainScorer {
             cur_step = q.cur_step,
             live = q.live.len(),
             scores = r.scores_q.len(),
-            tau_q = r.tau_q,
+            tau_q,
             checkpoint = %r.checkpoint_id,
             elapsed_ms = elapsed_ms as u64,
             "brain /v1/score/trace ok"
@@ -720,7 +890,13 @@ impl ChunkScorer for BrainScorer {
         }
         {
             let mut memo = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            memo.push_back((q.cur_step, fp.clone(), r.scores_q.clone(), r.tau_q));
+            memo.push_back(MemoEntry {
+                step: q.cur_step,
+                fp: fp.clone(),
+                scores: r.scores_q.clone(),
+                tau: tau_q,
+                kinds,
+            });
             while memo.len() > self.memo_max {
                 memo.pop_front();
             }
@@ -730,13 +906,14 @@ impl ChunkScorer for BrainScorer {
             q.cur_step,
             &fp,
             &r.scores_q,
-            r.tau_q,
+            tau_q,
+            kinds.as_ref(),
             ck8.as_deref().unwrap_or(""),
         );
         Ok(ScoreResult {
             scores_q: r.scores_q,
-            tau_q: r.tau_q,
-            tau_by_kind: None,
+            tau_q,
+            tau_by_kind: kinds,
         })
     }
 }
@@ -770,7 +947,8 @@ pub async fn score_tools(
             "messages": internal,
             "tools": tools,
         }),
-        BrainContract::V2 => {
+        // v3 keeps the v2 shapes on tools/rules/neighbors (brain-api-v3.schema.json).
+        BrainContract::V2 | BrainContract::V3 => {
             // Same shape as v1 minus the embedder: the handshake is still
             // blocking HTTP, so it stays off the async runtime.
             let cfg2 = cfg.clone();
@@ -902,7 +1080,8 @@ pub async fn score_rules(
             "tools": tools.as_array().cloned().unwrap_or_default(),
             "step": cur_step,
         }),
-        BrainContract::V2 => {
+        // v3 keeps the v2 shapes on tools/rules/neighbors (brain-api-v3.schema.json).
+        BrainContract::V2 | BrainContract::V3 => {
             let cfg2 = cfg.clone();
             let conv2 = conv_id.to_string();
             let internal2 = internal.to_vec();
@@ -993,7 +1172,8 @@ pub async fn fetch_neighbors(
             "conv_id": conv_id,
             "task_text": task_text,
         }),
-        BrainContract::V2 => {
+        // v3 keeps the v2 shapes on tools/rules/neighbors (brain-api-v3.schema.json).
+        BrainContract::V2 | BrainContract::V3 => {
             // The server embeds the task head; only the handshake is blocking.
             let cfg2 = cfg.clone();
             let built = tokio::task::spawn_blocking(move || -> Result<Value, ScoreError> {

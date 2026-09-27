@@ -363,6 +363,12 @@ pub fn run() -> anyhow::Result<()> {
                 "brain scorer active — brain-api/v2 (structural featurization \
                  local, chunk text sent to the brain, which embeds)"
             ),
+            crate::brain::BrainContract::V3 => tracing::info!(
+                url = %b.url, target_cov = %b.target_cov, tool_prune = b.tool_prune,
+                "brain scorer active — brain-api/v3 (HS curator: structural + \
+                 re-request featurization local, chunk text sent to the brain, \
+                 per-kind keep rule)"
+            ),
         }
     }
     if crate::ledger_ship::resolve().is_some() {
@@ -992,11 +998,15 @@ async fn curate(
         // Freezer (and its blocking HTTP scorer) is built AND driven on a
         // blocking thread — reqwest::blocking panics on async runtime threads.
         let protect_current = st.protect_current;
+        // v3 scores need the HS re-request columns, which only the Freezer
+        // can compute (it holds the dropped chunks).
+        let rereq = bcfg2.contract == crate::brain::BrainContract::V3;
         let (fz, served, fails_before, resets_before, calls_before, cut_delta) =
             tokio::task::spawn_blocking(move || {
                 let mut fz = taken.unwrap_or_else(|| {
                     let cfg = FreezeConfig {
                         protect_current,
+                        rereq,
                         ..FreezeConfig::default()
                     };
                     Freezer::new(cfg, BrainScorer::new(bcfg2, conv2))
