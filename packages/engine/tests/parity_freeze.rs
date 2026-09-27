@@ -45,6 +45,8 @@ fn config_of(fx: &Value) -> (FreezeConfig, Option<i64>) {
         // fixtures). Product defaults differ; see FreezeConfig.
         protect_current: false,
         product_markers: false,
+        // No HS re-request columns: the v2 reference freezer never had them.
+        rereq: false,
     };
     (cfg, tau_q)
 }
@@ -243,6 +245,8 @@ fn malformed_input_fails_open() {
         // fixtures). Product defaults differ; see FreezeConfig.
         protect_current: false,
         product_markers: false,
+        // No HS re-request columns: the v2 reference freezer never had them.
+        rereq: false,
     };
     let mut fz = Freezer::new(cfg, StubScorer { tau_q: None });
     // Non-string text in a content part: the reference raises out of curate()

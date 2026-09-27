@@ -36,6 +36,7 @@ impl ChunkScorer for CutAll {
         Ok(ScoreResult {
             scores_q: vec![0; q.live.len()],
             tau_q: SCORE_SCALE,
+            tau_by_kind: None,
         })
     }
 }

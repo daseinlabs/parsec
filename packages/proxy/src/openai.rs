@@ -283,6 +283,8 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
             .take();
         let internal_in = internal.clone();
         let bcfg2 = bcfg.clone();
+        // v3: the Freezer computes the HS re-request columns (see server.rs).
+        let rereq = bcfg2.contract == crate::brain::BrainContract::V3;
         let conv2 = conv_id.clone();
         let (fz, served, fails_before, calls_before, insists_before) =
             tokio::task::spawn_blocking(move || {
@@ -294,6 +296,7 @@ async fn curate_responses(st: &Arc<AppState>, body: &Value) -> anyhow::Result<Op
                     let cfg = FreezeConfig {
                         cut_assistant: false,
                         protect_current,
+                        rereq,
                         ..FreezeConfig::default()
                     };
                     Freezer::new(cfg, BrainScorer::new(bcfg2, conv2))
