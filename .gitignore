@@ -48,3 +48,14 @@ packages/installer/**/dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Working design notes (local only)
+docs/
+
+# HS model code (verbatim from the private gnn-train repo): copied in by the private
+# image build, never published. See packages/brain/src/parsec_brain/vendored_hs/__init__.py.
+packages/brain/src/parsec_brain/vendored_hs/pyg_model.py
+packages/brain/src/parsec_brain/vendored_hs/enc_pool.py
+packages/brain/src/parsec_brain/vendored_hs/encgnn.py
+packages/brain/src/parsec_brain/vendored_hs/read_columns.py
+packages/brain/src/parsec_brain/vendored_hs/rereq.py
