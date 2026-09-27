@@ -65,6 +65,7 @@ use serde_json::Value;
 use crate::chunking::{chunk_assistant, chunk_observation, Chunk, ChunkMode, DEFAULT_WIN};
 use crate::messages::{actions, reasoning_chunk};
 use crate::pystr::*;
+use crate::rereq::{rereq_columns, REREQ_WIDTH};
 
 /// Fixed-point grid for scores and taus: 1e-6. Python float(q/1e6) is
 /// strictly monotone in q at this magnitude, so integer comparison here is
@@ -115,6 +116,13 @@ pub struct FreezeConfig {
     /// `awk`/`tail`-style reads — a marker the agent cannot trust. The
     /// parity fixtures encode the reference wording.
     pub product_markers: bool,
+    /// Compute the HS curator's six re-request columns for every birth query
+    /// (`BirthQuery::rereq`), over every chunk up to the birth step —
+    /// dropped ones included — with cut state read from the dropped
+    /// registry. Needed by the brain-api/v3 wire (node and decided rows) and
+    /// by its keep rule (`fought` = column 5). False = the v2 wire, which
+    /// has no such columns: nothing is computed and serving is unchanged.
+    pub rereq: bool,
 }
 
 impl Default for FreezeConfig {
@@ -127,6 +135,7 @@ impl Default for FreezeConfig {
             cut_assistant: true,
             protect_current: true,
             product_markers: true,
+            rereq: false,
         }
     }
 }
@@ -150,13 +159,44 @@ pub struct BirthQuery<'a> {
     /// per request (contracts brain-api-dev/v0; mismatch = 409, fail open).
     pub chunk_checksum: String,
     pub mask: Vec<usize>,
+    /// The HS re-request columns per live chunk (`rereq::rereq_columns`),
+    /// aligned with `live`. Empty unless `FreezeConfig::rereq`.
+    pub rereq: Vec<[f64; REREQ_WIDTH]>,
+}
+
+/// Per-kind keep thresholds (brain-api/v3), on the SCORE_SCALE grid. Kinds
+/// without a threshold — `asst` — are never cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KindTaus {
+    pub read: i64,
+    pub other: i64,
+    pub grep: i64,
+    pub reasoning: i64,
+}
+
+impl KindTaus {
+    pub fn of(&self, kind: &str) -> Option<i64> {
+        match kind {
+            "read" => Some(self.read),
+            "other" => Some(self.other),
+            "grep" => Some(self.grep),
+            "reasoning" => Some(self.reasoning),
+            _ => None,
+        }
+    }
 }
 
 pub struct ScoreResult {
     /// Keep score per live chunk, on the SCORE_SCALE grid.
     pub scores_q: Vec<i64>,
-    /// The pool tau (reference `qhat`), same grid.
+    /// The pool tau (reference `qhat`), same grid. Ignored when
+    /// `tau_by_kind` is present.
     pub tau_q: i64,
+    /// Per-kind taus (brain-api/v3). Present = the HS keep rule: a chunk is
+    /// kept when it is fought (`BirthQuery::rereq` column 5) or its score
+    /// meets its kind's tau; a kind with no tau is never cut. The taus are
+    /// per checkpoint, so every owner pool shares them.
+    pub tau_by_kind: Option<KindTaus>,
 }
 
 /// A scorer call failed (brain unreachable, timeout, drift 409, ...). The
@@ -180,6 +220,7 @@ impl ChunkScorer for PassthroughScorer {
         Ok(ScoreResult {
             scores_q: vec![SCORE_SCALE; q.live.len()],
             tau_q: 0,
+            tau_by_kind: None,
         })
     }
 }
@@ -204,7 +245,11 @@ impl ChunkScorer for StubScorer {
             b.copy_from_slice(&d[..8]);
             (u64::from_be_bytes(b) % SCORE_SCALE as u64) as i64
         });
-        Ok(ScoreResult { scores_q, tau_q })
+        Ok(ScoreResult {
+            scores_q,
+            tau_q,
+            tau_by_kind: None,
+        })
     }
 }
 
@@ -567,6 +612,42 @@ impl<S: ChunkScorer> Freezer<S> {
             out.push((j, i));
         }
         out.sort_by_key(|&(_, i)| i);
+        self.long_runs(out, chunks, owner)
+    }
+
+    /// The brain-api/v3 keep rule (HS curator): keep a chunk when it is
+    /// fought or its score meets its kind's tau; a kind with no tau is never
+    /// cut. The surviving cut set then goes through the same run floor as
+    /// `budget_cut`, which only ever keeps more.
+    fn budget_cut_by_kind(
+        &self,
+        pairs: &[(usize, usize)],
+        scores_q: &[i64],
+        taus: &KindTaus,
+        fought: &[bool],
+        chunks: &[Chunk],
+        owner: &[usize],
+    ) -> Vec<(usize, usize)> {
+        let mut out: Vec<(usize, usize)> = pairs
+            .iter()
+            .copied()
+            .filter(|&(j, i)| {
+                !fought.get(j).copied().unwrap_or(false)
+                    && taus.of(&chunks[i].kind).is_some_and(|t| scores_q[j] < t)
+            })
+            .collect();
+        out.sort_by_key(|&(_, i)| i);
+        self.long_runs(out, chunks, owner)
+    }
+
+    /// Keep only contiguous same-owner runs of `out` (sorted by global index)
+    /// with >= `min_run_tokens` mass.
+    fn long_runs(
+        &self,
+        out: Vec<(usize, usize)>,
+        chunks: &[Chunk],
+        owner: &[usize],
+    ) -> Vec<(usize, usize)> {
         let mut kept: Vec<(usize, usize)> = Vec::new();
         let mut run: Vec<(usize, usize)> = Vec::new();
         let run_tokens =
@@ -644,6 +725,20 @@ impl<S: ChunkScorer> Freezer<S> {
                 .iter()
                 .flat_map(|(_, v)| v.iter().map(|&(j, _)| j))
                 .collect();
+            // HS re-request columns, over EVERY chunk up to this step —
+            // dropped ones included, since a cut earlier copy is exactly what
+            // they look for — with cut state from the registry as of steps < s
+            // (nothing of step s is committed yet). Chunks are step-sorted, so
+            // "up to this step" is a prefix.
+            let rereq: Vec<[f64; REREQ_WIDTH]> = if self.cfg.rereq {
+                let upto = p.chunks.partition_point(|c| c.step <= s);
+                let cols = rereq_columns(&p.chunks[..upto], |k| {
+                    self.dropped.contains(&ckey(p.owner[k], &p.chunks[k]))
+                });
+                live_gi.iter().map(|&gi| cols[gi]).collect()
+            } else {
+                Vec::new()
+            };
             let shared = self.scorer.score(&BirthQuery {
                 cur_step: s,
                 task_text: task_text.clone(),
@@ -654,7 +749,11 @@ impl<S: ChunkScorer> Freezer<S> {
                 messages,
                 chunk_checksum: p.chunk_checksum.clone(),
                 mask: all_mask,
+                rereq: rereq.clone(),
             })?;
+            // Per-kind taus are per checkpoint: every pool shares them, so the
+            // per-pool tau calls below are skipped.
+            let by_kind = shared.tau_by_kind;
             // Multi-owner: ALL per-pool tau calls complete before any pool's
             // decision commits (a failure on pool k must not leave pools
             // 0..k decided).
@@ -663,7 +762,7 @@ impl<S: ChunkScorer> Freezer<S> {
             for (_, pairs) in &undecided {
                 taus.push(if let Some(t) = self.cfg.tau_fixed_q {
                     t
-                } else if multi {
+                } else if multi && by_kind.is_none() {
                     self.scorer
                         .score(&BirthQuery {
                             cur_step: s,
@@ -675,14 +774,27 @@ impl<S: ChunkScorer> Freezer<S> {
                             messages,
                             chunk_checksum: p.chunk_checksum.clone(),
                             mask: pairs.iter().map(|&(j, _)| j).collect(),
+                            rereq: rereq.clone(),
                         })?
                         .tau_q
                 } else {
                     shared.tau_q
                 });
             }
+            let fought: Vec<bool> = rereq.iter().map(|r| r[5] > 0.5).collect();
             for ((mi, pairs), &tau_q) in undecided.iter().zip(&taus) {
-                let drops = self.budget_cut(pairs, &shared.scores_q, tau_q, &p.chunks, &p.owner);
+                // A fixed tau is an operator override: it keeps the global rule.
+                let drops = match (&by_kind, self.cfg.tau_fixed_q) {
+                    (Some(k), None) => self.budget_cut_by_kind(
+                        pairs,
+                        &shared.scores_q,
+                        k,
+                        &fought,
+                        &p.chunks,
+                        &p.owner,
+                    ),
+                    _ => self.budget_cut(pairs, &shared.scores_q, tau_q, &p.chunks, &p.owner),
+                };
                 decided.push(*mi);
                 to_drop.extend(drops.iter().map(|&(_, i)| i));
             }
@@ -1300,6 +1412,7 @@ mod tests {
             Ok(ScoreResult {
                 scores_q: vec![0; q.live.len()],
                 tau_q: SCORE_SCALE,
+                tau_by_kind: None,
             })
         }
     }
@@ -1529,5 +1642,183 @@ mod tests {
         let m = out[2].get("content").and_then(Value::as_str).unwrap();
         assert!(m.contains(" · re-read a.py:L10-"), "{m}");
         assert!(!m.contains("parsec"), "{m}");
+    }
+
+    /// Per-kind taus (brain-api/v3): a fixed score, thresholds that put it
+    /// below `read` and above `other`. Records the rereq rows it was sent.
+    struct KindScorer {
+        score: i64,
+        taus: KindTaus,
+        saw_rereq: bool,
+    }
+    impl ChunkScorer for KindScorer {
+        fn score(&mut self, q: &BirthQuery) -> Result<ScoreResult, ScoreError> {
+            self.saw_rereq |= !q.rereq.is_empty();
+            assert!(q.rereq.is_empty() || q.rereq.len() == q.live.len());
+            Ok(ScoreResult {
+                scores_q: vec![self.score; q.live.len()],
+                tau_q: 0,
+                tau_by_kind: Some(self.taus),
+            })
+        }
+    }
+
+    fn act(cmd: &str) -> Value {
+        json!({ "role": "assistant", "content": "ok",
+                "extra": { "actions": [{ "command": cmd }] } })
+    }
+
+    fn file_body(lines: std::ops::RangeInclusive<usize>) -> String {
+        lines
+            .map(|i| format!("def f{i}(): return {i}  # some words here"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn content(out: &[Value], i: usize) -> &str {
+        out[i].get("content").and_then(Value::as_str).unwrap()
+    }
+
+    /// The v3 keep rule is per kind: the same score is cut as a `read` and
+    /// kept as `other`, and `asst` (no kind tau) is never cut.
+    #[test]
+    fn v3_keep_rule_is_per_kind() {
+        let read = file_body(1..=30);
+        let test_out = format!("returncode: 1\n{}", prose("pytest", 30));
+        let msgs = vec![
+            json!({ "role": "user", "content": "fix the thing" }),
+            act("cat a.py"),
+            json!({ "role": "user", "content": read.clone() }),
+            act("pytest -q"),
+            json!({ "role": "user", "content": test_out.clone() }),
+        ];
+        let taus = KindTaus {
+            read: 600_000,
+            other: 400_000,
+            grep: 0,
+            reasoning: 0,
+        };
+        let mut fz = Freezer::new(
+            reference_cfg(),
+            KindScorer {
+                score: 500_000,
+                taus,
+                saw_rereq: false,
+            },
+        );
+        let out = fz.serve(&msgs).unwrap();
+        assert_ne!(content(&out, 2), read, "read below its tau is cut");
+        assert_eq!(content(&out, 4), test_out, "other above its tau is kept");
+        assert_eq!(content(&out, 1), "ok", "asst has no kind tau: never cut");
+        assert!(!fz.scorer.saw_rereq, "rereq off: no columns computed");
+    }
+
+    /// `fought` (re-request column 5) force-keeps a re-read of content the
+    /// freezer cut, even when its score is below its kind's tau. The same
+    /// re-read is cut when the columns are off.
+    #[test]
+    fn v3_fought_rereads_of_cut_content_are_kept() {
+        let msgs = vec![
+            json!({ "role": "user", "content": "fix the thing" }),
+            act("cat a.py"),
+            json!({ "role": "user", "content": file_body(1..=30) }),
+            act("sed -n '5,14p' a.py"),
+            json!({ "role": "user", "content": file_body(5..=14) }),
+        ];
+        let taus = KindTaus {
+            read: 600_000,
+            other: 600_000,
+            grep: 600_000,
+            reasoning: 600_000,
+        };
+        let reread = file_body(5..=14);
+
+        let cfg = FreezeConfig {
+            rereq: true,
+            ..reference_cfg()
+        };
+        let mut fz = Freezer::new(
+            cfg,
+            KindScorer {
+                score: 0,
+                taus,
+                saw_rereq: false,
+            },
+        );
+        let out = fz.serve(&msgs).unwrap();
+        assert_ne!(content(&out, 2), file_body(1..=30), "first read is cut");
+        assert_eq!(
+            content(&out, 4),
+            reread,
+            "re-read of cut lines is fought: kept"
+        );
+        assert!(fz.scorer.saw_rereq);
+
+        let mut fz = Freezer::new(
+            reference_cfg(),
+            KindScorer {
+                score: 0,
+                taus,
+                saw_rereq: false,
+            },
+        );
+        let out = fz.serve(&msgs).unwrap();
+        assert_ne!(
+            content(&out, 4),
+            reread,
+            "without rereq columns nothing is fought"
+        );
+    }
+
+    /// Deferred births (`protect_current`) keep the fought decision causal:
+    /// cold and warm freezers over the same prefix serve the same bytes.
+    #[test]
+    fn v3_fought_is_cold_warm_stable() {
+        let turn1 = vec![
+            json!({ "role": "user", "content": "fix the thing" }),
+            act("cat a.py"),
+            json!({ "role": "user", "content": file_body(1..=30) }),
+            act("sed -n '5,14p' a.py"),
+            json!({ "role": "user", "content": file_body(5..=14) }),
+        ];
+        let mut turn2 = turn1.clone();
+        turn2.push(act("pytest -q"));
+        turn2.push(json!({ "role": "user", "content": prose("pytest", 20) }));
+        let taus = KindTaus {
+            read: 600_000,
+            other: 600_000,
+            grep: 600_000,
+            reasoning: 600_000,
+        };
+        let cfg = FreezeConfig {
+            rereq: true,
+            ..FreezeConfig::default()
+        };
+
+        let mut warm = Freezer::new(
+            cfg.clone(),
+            KindScorer {
+                score: 0,
+                taus,
+                saw_rereq: false,
+            },
+        );
+        warm.serve(&turn1).unwrap();
+        let warm_out = warm.serve(&turn2).unwrap();
+        let mut cold = Freezer::new(
+            cfg,
+            KindScorer {
+                score: 0,
+                taus,
+                saw_rereq: false,
+            },
+        );
+        let cold_out = cold.serve(&turn2).unwrap();
+        assert_eq!(warm_out, cold_out, "cold == warm");
+        assert_eq!(
+            content(&warm_out, 4),
+            file_body(5..=14),
+            "fought re-read kept"
+        );
     }
 }
