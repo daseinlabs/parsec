@@ -9,6 +9,18 @@ are published on the releases page.
 
 ## [Unreleased]
 
+### Added
+
+- proxy: idle auto-update. A proxy running as `~/.parsec/bin/parsec` checks
+  this repository's latest release every 6 hours, only after 10 minutes with
+  no request in flight. A newer stable version is downloaded, verified
+  against the release's `manifest.json` sha256 (refused if missing),
+  sanity-run, swapped in, and restarted on the same port via
+  `parsec up --restart`. It never downgrades or takes a pre-release.
+  Plugin-cache and dev binaries are left to whatever installed them.
+  `/health` reports `update.{enabled,checks,failures,last_error}`. Off
+  switch: `PARSEC_AUTO_UPDATE=0`.
+
 ### Fixed
 
 - tray (macOS): `parsec tray install` produced a bundle Gatekeeper rejected

@@ -423,7 +423,11 @@ pub(crate) fn ensure_callable(auto: bool) {
 /// Gated on the flag rather than on every `up`, so a manual `parsec up`
 /// cannot silently burn a staged payload. `consume_pending` is one-shot and
 /// TTL-bounded, so a resume inside the window gets it once and never again.
-pub fn up(restart: bool, session_start: bool) -> anyhow::Result<()> {
+///
+/// `port` overrides the routed-port lookup — the auto-updater's handoff
+/// (update.rs) restarts the supervisor on the port it actually holds, which
+/// is not necessarily the one Claude Code is routed to.
+pub fn up(restart: bool, session_start: bool, port: Option<u16>) -> anyhow::Result<()> {
     if session_start {
         if let Ok(cwd) = std::env::current_dir() {
             if let Some(ctx) =
@@ -433,7 +437,7 @@ pub fn up(restart: bool, session_start: bool) -> anyhow::Result<()> {
             }
         }
     }
-    let port = routed_port();
+    let port = port.unwrap_or_else(routed_port);
     let log = parsec_home().join("proxy.log");
     if crate::hook::port_listening(port) {
         // Liveness is not identity. Every harness's SessionStart hook calls
@@ -1226,6 +1230,15 @@ pub fn spawn_proxy_detached(port: u16, extra_env: &[(String, String)]) -> anyhow
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
+    spawn_detached(cmd, "proxy.log")
+}
+
+/// Spawn `<exe> up --restart --port <port>` detached — the auto-updater's
+/// handoff to a freshly installed binary (update.rs). It runs in its own
+/// process group, so it outlives the supervisor it is about to shut down.
+pub(crate) fn spawn_restart_detached(exe: &std::path::Path, port: u16) -> anyhow::Result<()> {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["up", "--restart", "--port", &port.to_string()]);
     spawn_detached(cmd, "proxy.log")
 }
 

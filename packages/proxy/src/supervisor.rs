@@ -77,6 +77,30 @@ pub struct SupState {
     /// Requests served by the direct-to-Anthropic fallback (worker down).
     fallbacks: AtomicU64,
     heartbeat: PathBuf,
+    /// Requests currently being relayed (held until the last body byte, so a
+    /// long SSE stream counts as busy) and when the last one started or
+    /// finished. The auto-updater restarts only a proxy idle on both.
+    in_flight: AtomicU64,
+    last_activity_s: AtomicU64,
+}
+
+/// RAII marker for one relayed request: counts it in flight and stamps
+/// activity on both ends. Moved into the response stream by `stream_back`.
+struct Active(Arc<SupState>);
+
+impl Active {
+    fn enter(st: &Arc<SupState>) -> Self {
+        st.in_flight.fetch_add(1, Ordering::SeqCst);
+        st.last_activity_s.store(epoch_s(), Ordering::Relaxed);
+        Active(st.clone())
+    }
+}
+
+impl Drop for Active {
+    fn drop(&mut self) {
+        self.0.last_activity_s.store(epoch_s(), Ordering::Relaxed);
+        self.0.in_flight.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl SupState {
@@ -91,7 +115,20 @@ impl SupState {
             shutting_down: AtomicBool::new(false),
             fallbacks: AtomicU64::new(0),
             heartbeat: heartbeat_path(),
+            in_flight: AtomicU64::new(0),
+            // Startup counts as activity: a freshly (re)started proxy is
+            // never immediately "idle enough" to update again.
+            last_activity_s: AtomicU64::new(epoch_s()),
         }
+    }
+
+    /// Seconds since the last request activity, or None while one is in
+    /// flight.
+    fn idle_s(&self) -> Option<u64> {
+        if self.in_flight.load(Ordering::SeqCst) > 0 {
+            return None;
+        }
+        Some(epoch_s().saturating_sub(self.last_activity_s.load(Ordering::Relaxed)))
     }
 
     /// GET /health on `port` and confirm the responder is a parsec proxy (ours
@@ -235,6 +272,11 @@ pub fn run() -> anyhow::Result<()> {
              worker curates, fallback is direct-to-Anthropic"
         );
         tokio::spawn(monitor(state.clone()));
+        let upd = state.clone();
+        tokio::spawn(async move {
+            let client = upd.client.clone();
+            crate::update::run(client, port, move || upd.idle_s()).await;
+        });
         let on_exit = state.clone();
         axum::serve(listener, router(state))
             .with_graceful_shutdown(shutdown_signal())
@@ -329,6 +371,7 @@ pub fn router(state: Arc<SupState>) -> Router {
                     "role": "supervisor",
                     "version": env!("CARGO_PKG_VERSION"),
                     "wires": crate::setup::SERVED_WIRES,
+                    "update": crate::update::health_json(),
                 }))
             }),
         )
@@ -366,6 +409,7 @@ async fn shutdown_handler(State(st): State<Arc<SupState>>) -> Response {
 /// un-curated fallback has nothing to measure; §8.4 forbids fabricating a
 /// row).
 async fn forward(State(st): State<Arc<SupState>>, req: Request) -> Response {
+    let active = Active::enter(&st);
     let (parts, body) = req.into_parts();
     let is_openai =
         parts.uri.path().starts_with("/openai/") || parts.uri.path().starts_with("/chatgpt/");
@@ -401,7 +445,7 @@ async fn forward(State(st): State<Arc<SupState>>, req: Request) -> Response {
         )
         .await
         {
-            Ok(resp) => return stream_back(resp),
+            Ok(resp) => return stream_back(resp, active),
             Err(e) => {
                 tracing::warn!(
                     "worker at {base} unreachable ({e}) — falling back to upstream; \
@@ -440,7 +484,7 @@ async fn forward(State(st): State<Arc<SupState>>, req: Request) -> Response {
         )
     };
     match send(&st, base, &parts, &path, headers, bytes).await {
-        Ok(resp) => stream_back(resp),
+        Ok(resp) => stream_back(resp, active),
         Err(e) => bad_gateway(&e),
     }
 }
@@ -487,15 +531,22 @@ async fn send(
 }
 
 /// Relay an upstream response unmodified, streaming the body (SSE stays
-/// unbuffered so tokens arrive as they are produced).
-fn stream_back(resp: reqwest::Response) -> Response {
+/// unbuffered so tokens arrive as they are produced). `active` rides inside
+/// the body stream, so the request counts as in flight until its last byte
+/// is relayed (or the client hangs up and the stream is dropped).
+fn stream_back(resp: reqwest::Response, active: Active) -> Response {
+    use futures_util::StreamExt;
     let status = resp.status();
     let ct = resp.headers().get(header::CONTENT_TYPE).cloned();
     let mut b = Response::builder().status(status);
     if let Some(ct) = ct {
         b = b.header(header::CONTENT_TYPE, ct);
     }
-    b.body(Body::from_stream(resp.bytes_stream()))
+    let body = resp.bytes_stream().map(move |chunk| {
+        let _held = &active;
+        chunk
+    });
+    b.body(Body::from_stream(body))
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
 }
 
