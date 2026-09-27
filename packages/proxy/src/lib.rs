@@ -45,4 +45,5 @@ pub mod statusline;
 pub mod supervisor;
 pub mod tray;
 pub mod trim;
+pub mod update;
 pub mod visibility;

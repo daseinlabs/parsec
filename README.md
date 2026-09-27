@@ -123,6 +123,7 @@ verified in `packages/proxy/src` and the schemas in `packages/contracts`.
 | When | What leaves your machine | Where | Off switch |
 |---|---|---|---|
 | Always | Your model requests, with your own auth headers | The provider you already use (`api.anthropic.com` by default) | n/a — this is your agent's own traffic |
+| Every 6 hours while the proxy is idle | A **release check**: an unauthenticated download of the latest `manifest.json` from this repository's GitHub Releases, and the new binary when there is one. Only a proxy running as `~/.parsec/bin/parsec` updates itself. | GitHub | `PARSEC_AUTO_UPDATE=0` |
 | Always, no key needed | An anonymous **install ping**: random install id, parsec version, OS, arch, list of configured harnesses. Sent at setup, on key changes, and every 6 hours while the proxy runs. Never your API key. | parsec platform | `PARSEC_INSTALL_REPORT=0` or `DO_NOT_TRACK=1` |
 | With scoring enabled | **Chunk text** (each chunk capped at 2000 chars) plus structural features, for keep/cut scoring. The response is scores; the service does not learn what was dropped. | parsec scoring API | `PARSEC_FREEZE=off`, or run with no scoring endpoint |
 | With a parsec key | **Savings-ledger rows**: token counts per request, model, harness, conversation and request ids. No prompt text. | parsec platform | remove the key (`/parsec:key`) or unset `PARSEC_PLATFORM_URL` |

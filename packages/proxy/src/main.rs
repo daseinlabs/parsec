@@ -193,6 +193,10 @@ enum Command {
         /// through the hook's additionalContext field.
         #[arg(long)]
         session_start: bool,
+        /// Target this port instead of the one Claude Code is routed to
+        /// (the auto-updater's restart handoff).
+        #[arg(long, hide = true)]
+        port: Option<u16>,
     },
     /// Sign in: opens the dashboard in your browser, which hands an API key
     /// back to this machine. Same result as `parsec key set`, no pasting.
@@ -362,7 +366,8 @@ fn main() -> anyhow::Result<()> {
         Command::Up {
             restart,
             session_start,
-        } => parsec_proxy::setup::up(restart, session_start),
+            port,
+        } => parsec_proxy::setup::up(restart, session_start, port),
         Command::Trim {
             transcript,
             session_id,
