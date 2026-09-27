@@ -541,7 +541,27 @@ jobs:
           # pointer the install scripts and the shim follow. Nothing reaches
           # users who did not type the tag name: the escape hatch the single
           # channel otherwise lacks.
-          flags=(--title "parsec v$VERSION" --generate-notes)
+          # Release body: the per-platform install table from
+          # .github/release-template.md, with GitHub's generated changelog
+          # appended below it (gh prepends --notes-file to --generate-notes).
+          DL="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+          sed -e "s|{{VERSION}}|$VERSION|g" \
+              -e "s|{{REPO}}|$GITHUB_REPOSITORY|g" \
+              -e "s|{{DL}}|$DL|g" \
+              .github/release-template.md > release-notes.md
+          if grep -q '{{' release-notes.md; then
+            echo "unfilled placeholder in .github/release-template.md:" >&2
+            grep -n '{{' release-notes.md >&2
+            exit 1
+          fi
+          # Every asset the template links to must actually be uploaded.
+          for f in $(grep -o "$DL/[^)]*" release-notes.md | sed "s|$DL/||" | sort -u); do
+            if [ ! -f "assets/$f" ]; then
+              echo "release-template.md links $f, which is not a release asset" >&2
+              exit 1
+            fi
+          done
+          flags=(--title "parsec v$VERSION" --notes-file release-notes.md --generate-notes)
           if [[ "$VERSION" == *-* ]]; then
             flags+=(--prerelease)
           fi
