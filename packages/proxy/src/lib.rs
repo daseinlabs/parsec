@@ -22,6 +22,7 @@ pub mod credentials;
 pub mod featurize;
 pub mod governor;
 pub mod hook;
+pub mod inspect;
 pub mod install;
 pub mod internal;
 pub mod ledger_ship;

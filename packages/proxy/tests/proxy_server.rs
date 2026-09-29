@@ -579,3 +579,55 @@ async fn desktop_attribution_header_never_reaches_upstream() {
     let row: Value = serde_json::from_str(ledger.lines().next().unwrap_or("{}")).unwrap();
     assert_eq!(row["tool"], "claude-desktop");
 }
+
+#[tokio::test]
+async fn inspector_lists_conversation_and_renders_diff() {
+    let ctx = setup().await;
+    let r = post_messages(
+        &ctx,
+        &body(vec![
+            user("hello <inspector>"),
+            assistant("hi"),
+            user("again"),
+        ]),
+        &[("x-api-key", "k")],
+    )
+    .await;
+    assert_eq!(r.status(), StatusCode::OK);
+
+    let index = ctx.http.get(format!("{}/", ctx.url)).send().await.unwrap();
+    assert_eq!(index.status(), StatusCode::OK);
+    let html = index.text().await.unwrap();
+    let href = html
+        .split("href=\"/c/")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .expect("conversation link on index")
+        .to_string();
+
+    let page = ctx
+        .http
+        .get(format!("{}/c/{href}", ctx.url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = page.text().await.unwrap();
+    // message content is shown, HTML-escaped
+    assert!(html.contains("hello &lt;inspector&gt;"));
+    assert!(!html.contains("<inspector>"));
+    // kept messages are shown open, with kept totals and the kept-only view
+    assert!(html.contains("<span class=badge>kept</span>"));
+    assert!(html.contains("id=v-kept"));
+    assert!(html.contains("kept ~"));
+
+    // a non-loopback Host (DNS rebinding) is refused
+    let foreign = ctx
+        .http
+        .get(format!("{}/", ctx.url))
+        .header("host", "evil.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(foreign.status(), StatusCode::FORBIDDEN);
+}

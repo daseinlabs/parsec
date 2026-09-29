@@ -174,6 +174,9 @@ pub struct AppState {
     /// Defaults true in the constructors so tests are hermetic; real `run` sets
     /// it from `apikey::enabled()`.
     pub entitled: bool,
+    /// Local cut inspector (`GET /`): latest request/forward pair per recent
+    /// conversation, memory only. Sized by `PARSEC_INSPECT`.
+    pub inspect: crate::inspect::Inspector,
 }
 
 fn epoch_s() -> u64 {
@@ -261,6 +264,7 @@ impl AppState {
             in_flight: AtomicU64::new(0),
             started: std::time::Instant::now(),
             entitled: true,
+            inspect: crate::inspect::Inspector::from_env(),
         }
     }
 
@@ -529,6 +533,11 @@ pub fn router(state: Arc<AppState>) -> Router {
                     "shutting_down": true,
                 }))
             }),
+        )
+        .route("/", axum::routing::get(crate::inspect::index))
+        .route(
+            "/c/{conv_id}",
+            axum::routing::get(crate::inspect::conversation),
         )
         .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
@@ -2426,6 +2435,24 @@ async fn messages(State(st): State<Arc<AppState>>, headers: HeaderMap, raw: Byte
         .as_ref()
         .map(|p| Bytes::from(p.out_bytes.clone()))
         .unwrap_or_else(|| raw.clone());
+    if let Some(cid) = conv_id.as_deref() {
+        st.inspect.record(
+            crate::inspect::Record {
+                conv_id: cid,
+                model: body
+                    .as_ref()
+                    .and_then(|b| b.get("model"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("?"),
+                fail_open,
+                freeze_cut_tokens: stats.freeze_cut_tokens,
+                tools_total: stats.tools_total,
+                tools_kept: stats.tools_kept,
+            },
+            &raw,
+            &send,
+        );
+    }
     tracing::debug!(
         in_bytes = raw.len(),
         out_bytes = send.len(),
