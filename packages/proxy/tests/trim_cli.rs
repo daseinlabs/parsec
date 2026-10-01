@@ -435,6 +435,7 @@ fn run_up(home: &TempHome, args: &[&str]) -> (String, i32) {
         .env("PARSEC_PROXY_AUTOSTART", "0")
         .env_remove("PARSEC_TRIM_TTL_SECS")
         .current_dir(home.proj())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -445,9 +446,66 @@ fn run_up(home: &TempHome, args: &[&str]) -> (String, i32) {
     )
 }
 
-/// Codex has no additionalContext hook field; it surfaces SessionStart hook
-/// STDOUT to the model as a developer message. `parsec up --session-start` is
-/// therefore the Codex injection channel — and it must be the FLAG that
+/// Run `parsec up --session-start` the way Codex does: the hook payload on
+/// stdin, stdout parsed as the hook's JSON output. `key` entitles the run.
+/// Stdout must be exactly one JSON object or nothing — any other text would
+/// reach the model as a developer message.
+fn run_codex_hook(home: &TempHome, source: &str, key: bool) -> Value {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsec"));
+    cmd.args(["up", "--session-start", "--port", "1"])
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("PARSEC_PROXY_AUTOSTART", "0")
+        .env_remove("PARSEC_BRAIN_KEY")
+        .env_remove("PARSEC_API_KEY_NOTE")
+        .env_remove("PARSEC_TRIM_TTL_SECS")
+        .current_dir(home.proj())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    if key {
+        cmd.env("PARSEC_API_KEY", "psc_test_key");
+    } else {
+        cmd.env_remove("PARSEC_API_KEY");
+    }
+    let mut child = cmd.spawn().expect("spawn parsec up --session-start");
+    let payload = json!({
+        "session_id": "s1",
+        "transcript_path": null,
+        "cwd": home.proj().to_string_lossy(),
+        "hook_event_name": "SessionStart",
+        "model": "gpt-5",
+        "permission_mode": "default",
+        "source": source,
+    });
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(payload.to_string().as_bytes())
+        .expect("write payload");
+    let out = child.wait_with_output().expect("wait");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "hook must never fail the session"
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    if text.trim().is_empty() {
+        return Value::Null;
+    }
+    serde_json::from_str(text.trim())
+        .unwrap_or_else(|e| panic!("stdout is not hook JSON ({e}): {text}"))
+}
+
+fn additional_context(v: &Value) -> &str {
+    v.pointer("/hookSpecificOutput/additionalContext")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
+/// `parsec up --session-start` is Codex's SessionStart hook; the staged trim
+/// rides its JSON `additionalContext` — and it must be the FLAG that
 /// consumes, so a manual `parsec up` cannot burn a staged payload.
 #[test]
 fn session_start_injects_a_codex_trim_and_a_bare_up_does_not() {
@@ -467,8 +525,9 @@ fn session_start_injects_a_codex_trim_and_a_bare_up_does_not() {
     );
     assert!(home.pending().exists(), "bare up consumed the payload");
 
-    // `--session-start` prints it, directives and all, exactly once.
-    let (out, _) = run_up(&home, &["--session-start"]);
+    // `--session-start` injects it, directives and all, exactly once.
+    let v = run_codex_hook(&home, "startup", false);
+    let out = additional_context(&v).to_string();
     assert!(
         out.contains("ctrl_source_line_3"),
         "trim not injected: {out}"
@@ -480,11 +539,73 @@ fn session_start_injects_a_codex_trim_and_a_bare_up_does_not() {
     assert!(out.contains("Never touch ctrl.py again."), "{out}");
     assert!(!home.pending().exists(), "payload must be one-shot");
 
-    let (out2, _) = run_up(&home, &["--session-start"]);
+    let v2 = run_codex_hook(&home, "startup", false);
     assert!(
-        !out2.contains("ctrl_source_line_3"),
-        "payload replayed: {out2}"
+        !v2.to_string().contains("ctrl_source_line_3"),
+        "payload replayed: {v2}"
     );
+}
+
+/// Parity with Claude Code's one-shot rule: `resume` never consumes a staged
+/// trim (the live context already holds it); the following `clear` does.
+#[test]
+fn codex_trim_skips_resume_and_lands_on_clear() {
+    let home = TempHome::new("resume");
+    home.write_rollout("rollout-2026-08-24T00-00-00-abc.jsonl", &codex_session());
+    let (out, code) = run_trim(&home, &[], None);
+    assert_eq!(code, 0, "{out}");
+    let (out, code) = run_trim(&home, &["--finalize"], Some("Keep going."));
+    assert_eq!(code, 0, "{out}");
+
+    let v = run_codex_hook(&home, "resume", true);
+    assert!(!v.to_string().contains("ctrl_source_line_3"), "{v}");
+    assert!(home.pending().exists(), "resume consumed the payload");
+
+    let v = run_codex_hook(&home, "clear", true);
+    let ctx = additional_context(&v);
+    assert!(ctx.contains("ctrl_source_line_3"), "{v}");
+    // The trim and the curation note share the one context field.
+    assert!(ctx.contains("Parsec context curation is active"), "{v}");
+    assert!(!home.pending().exists());
+}
+
+/// The curation note (fold-marker contract) reaches the model on every
+/// context-building source when entitled, never on resume, never unentitled
+/// — the same gate as the Claude Code hook.
+#[test]
+fn codex_session_start_carries_the_curation_note() {
+    let home = TempHome::new("note");
+    for src in ["startup", "clear", "compact"] {
+        let v = run_codex_hook(&home, src, true);
+        assert!(
+            additional_context(&v).contains("repeat the identical call")
+                || additional_context(&v).contains("make the exact same call again"),
+            "{src}: {v}"
+        );
+        assert_eq!(
+            v.pointer("/hookSpecificOutput/hookEventName"),
+            Some(&json!("SessionStart"))
+        );
+    }
+    let v = run_codex_hook(&home, "resume", true);
+    assert_eq!(additional_context(&v), "", "resume re-injected: {v}");
+    let v = run_codex_hook(&home, "startup", false);
+    assert_eq!(additional_context(&v), "", "unentitled got the note: {v}");
+}
+
+/// User-facing messages ride `systemMessage` (never stdout text), worded for
+/// Codex, and only on fresh startups.
+#[test]
+fn codex_session_start_banner_is_a_system_message_for_codex() {
+    let home = TempHome::new("banner");
+    let v = run_codex_hook(&home, "startup", false);
+    let msg = v["systemMessage"].as_str().unwrap_or_default();
+    assert!(msg.contains("parsec login"), "{v}");
+    assert!(msg.contains("Codex runs normally"), "{v}");
+    assert!(!msg.contains("Claude"), "{v}");
+    assert_eq!(v["suppressOutput"], json!(true));
+    let v = run_codex_hook(&home, "resume", false);
+    assert!(v.get("systemMessage").is_none(), "resume re-nagged: {v}");
 }
 
 /// A Codex-staged payload is invisible to the Claude Code hook, and vice

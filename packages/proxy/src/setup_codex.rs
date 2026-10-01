@@ -141,17 +141,21 @@ fn head_block(mode: Mode, port: u16) -> String {
 /// survives, with a PATH fallback. Windows: no `/bin/sh` — the resolved
 /// absolute exe path is baked at setup time as a TOML LITERAL string
 /// (single quotes: backslashes survive; the install.ps1 places parsec.exe
-/// at exactly this path).
-fn hook_command_line() -> String {
+/// at exactly this path). `--port` pins the port this block routes to — it
+/// can differ from Claude Code's routed port when setup had to pick a free
+/// one.
+fn hook_command_line(port: u16) -> String {
     #[cfg(unix)]
     {
-        "command = \"/bin/sh -c '\\\"$HOME\\\"/.parsec/bin/parsec up --session-start || parsec up --session-start'\"".to_string()
+        format!(
+            "command = \"/bin/sh -c '\\\"$HOME\\\"/.parsec/bin/parsec up --session-start --port {port} || parsec up --session-start --port {port}'\""
+        )
     }
     #[cfg(windows)]
     {
         let exe = crate::setup::parsec_home().join("bin").join("parsec.exe");
         format!(
-            "command = 'cmd /c \"\"{}\" up --session-start\"'",
+            "command = 'cmd /c \"\"{}\" up --session-start --port {port}\"'",
             exe.display()
         )
     }
@@ -161,7 +165,10 @@ fn hook_command_line() -> String {
 /// it) and the SessionStart proxy-revival hook. `wire_api = "responses"` is
 /// the only wire Codex still speaks; the attribution header rides Codex's
 /// own `http_headers` surface (subscription mode is attributed by its route
-/// namespace instead). `parsec up` is idempotent and detached. Deliberately
+/// namespace instead). The hook (`hook::codex_session_start`) is Codex's
+/// twin of Claude Code's SessionStart — trim pickup, curation note, banners,
+/// proxy revival — so it matches every source that starts or rebuilds a
+/// context (`clear`/`compact` included), not just startup/resume. Deliberately
 /// SYNCHRONOUS: codex 0.147.0 rejects `async = true` by skipping the whole
 /// hook ("async hooks are not supported yet") — and `parsec up` returns
 /// immediately anyway (the proxy detaches).
@@ -176,7 +183,7 @@ fn tail_block(port: u16) -> String {
          http_headers = {{ \"x-parsec-tool\" = \"codex\" }}\n\
          \n\
          [[hooks.SessionStart]]\n\
-         matcher = \"startup|resume\"\n\
+         matcher = \"startup|resume|clear|compact\"\n\
          \n\
          [[hooks.SessionStart.hooks]]\n\
          type = \"command\"\n\
@@ -184,7 +191,7 @@ fn tail_block(port: u16) -> String {
          statusMessage = \"parsec: reviving proxy\"\n\
          timeout = 30\n\
          {TAIL_END}\n",
-        hook_command = hook_command_line()
+        hook_command = hook_command_line(port)
     )
 }
 
@@ -763,6 +770,8 @@ mod tests {
             "wire_api = \"responses\"",
             "\"x-parsec-tool\" = \"codex\"",
             "[[hooks.SessionStart]]",
+            "matcher = \"startup|resume|clear|compact\"",
+            "up --session-start --port 8082",
         ] {
             assert!(tail.contains(needle), "{needle} missing from tail block");
         }

@@ -336,7 +336,7 @@ fn ledger_file() -> std::path::PathBuf {
 /// are the same aggregates `parsec savings` prints: the proxy figure is the
 /// §8.4 counterfactual sum (signed, never clamped), the hook figure keeps
 /// its "~" because it is the on-disk-bytes approximation.
-pub fn lifetime_note() -> Option<String> {
+pub fn lifetime_note(tool: crate::trim::Source) -> Option<String> {
     let ledger = std::fs::read_to_string(ledger_file()).ok();
     let (mut blocked, mut tokens, mut loops) = (0u64, 0u64, 0u64);
     if let Ok(entries) = std::fs::read_dir(sessions_dir()) {
@@ -350,7 +350,13 @@ pub fn lifetime_note() -> Option<String> {
             }
         }
     }
-    lifetime_note_from(ledger.as_deref(), blocked, tokens, loops)
+    lifetime_note_from(
+        ledger.as_deref(),
+        blocked,
+        tokens,
+        loops,
+        tool.savings_cmd(),
+    )
 }
 
 fn lifetime_note_from(
@@ -358,6 +364,7 @@ fn lifetime_note_from(
     blocked: u64,
     tokens: u64,
     loops: u64,
+    savings_cmd: &str,
 ) -> Option<String> {
     let mut parts = Vec::new();
     if let Some(lines) = ledger_lines {
@@ -379,7 +386,7 @@ fn lifetime_note_from(
     }
     (!parts.is_empty()).then(|| {
         format!(
-            "⌁ parsec active — lifetime: {}. /parsec:savings for details.",
+            "⌁ parsec active — lifetime: {}. {savings_cmd} for details.",
             parts.join(" · ")
         )
     })
@@ -637,7 +644,7 @@ mod tests {
     #[test]
     fn lifetime_note_quiet_until_measured_then_honest() {
         // Fresh install: no ledger, no hook counters — stay silent.
-        assert_eq!(lifetime_note_from(None, 0, 0, 0), None);
+        assert_eq!(lifetime_note_from(None, 0, 0, 0, "/parsec:savings"), None);
         // Ledger present but nothing probed yet — still silent.
         assert_eq!(
             lifetime_note_from(
@@ -646,14 +653,15 @@ mod tests {
                 ),
                 0,
                 0,
-                0
+                0,
+                "/parsec:savings"
             ),
             None
         );
         // Both sources measured: proxy sum + hook counters, one line.
         let note = lifetime_note_from(
             Some(r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":1500,"billed_input_tokens":200,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#),
-            3, 12000, 1,
+            3, 12000, 1, "/parsec:savings",
         )
         .unwrap();
         assert!(note.contains("proxy ~1300 tok saved"), "{note}");
@@ -663,9 +671,10 @@ mod tests {
         // A net-negative proxy shows signed overhead, never clamped (§8.4).
         let neg = lifetime_note_from(
             Some(r#"{"contract_version":"savings-ledger/v0","conv_id":"a","counterfactual_input_tokens":100,"billed_input_tokens":150,"billed_cache_read_tokens":0,"billed_cache_write_tokens":0,"fail_open":false}"#),
-            0, 0, 0,
+            0, 0, 0, "$parsec-savings",
         )
         .unwrap();
+        assert!(neg.contains("$parsec-savings"), "{neg}");
         assert!(neg.contains("proxy -50 tok (overhead)"), "{neg}");
     }
 }

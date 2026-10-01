@@ -32,6 +32,15 @@ are published on the releases page.
 
 ### Fixed
 
+- codex: the SessionStart hook (`parsec up --session-start`) is now at parity
+  with Claude Code's. It prints hook JSON: the curation note (fold-marker
+  contract) and any staged trim go in `additionalContext`, and the key banner,
+  lifetime note, and proxy upgrade/revival notices go in `systemMessage`.
+  Proxy status lines no longer leak into the model's context as developer
+  messages. The hook now matches `clear` and `compact` too, and the trim is
+  no longer consumed on `resume`. It revives the port the Codex provider
+  routes to (`--port`) rather than Claude Code's. Re-run `parsec setup codex`
+  to pick up the new matcher and port.
 - tray (macOS): `parsec tray install` produced a bundle Gatekeeper rejected
   as "damaged". Since release binaries became Developer ID signed, the copied
   binary's hardened-runtime signature sat inside an `.app` with no resource

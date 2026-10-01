@@ -187,10 +187,10 @@ enum Command {
         /// Foreign processes on the port are never killed.
         #[arg(long)]
         restart: bool,
-        /// Called from a harness SessionStart hook. Prints a staged Codex
-        /// trim (/parsec:trim) to stdout, which Codex surfaces to the model
-        /// as a developer message — the injection channel Claude Code gets
-        /// through the hook's additionalContext field.
+        /// Run as Codex's SessionStart hook: revive/upgrade the proxy and
+        /// print hook JSON — the staged trim and curation note as
+        /// additionalContext, banners as systemMessage — at parity with
+        /// Claude Code's `parsec hook SessionStart`.
         #[arg(long)]
         session_start: bool,
         /// Target this port instead of the one Claude Code is routed to
@@ -367,7 +367,13 @@ fn main() -> anyhow::Result<()> {
             restart,
             session_start,
             port,
-        } => parsec_proxy::setup::up(restart, session_start, port),
+        } => {
+            if session_start {
+                parsec_proxy::hook::codex_session_start(port)
+            } else {
+                parsec_proxy::setup::up(restart, port)
+            }
+        }
         Command::Trim {
             transcript,
             session_id,

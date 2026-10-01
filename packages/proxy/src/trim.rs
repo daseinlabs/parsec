@@ -137,6 +137,21 @@ impl Source {
             Source::Codex => "codex",
         }
     }
+    /// The harness's product name, for user-facing SessionStart text.
+    pub fn label(self) -> &'static str {
+        match self {
+            Source::Claude => "Claude Code",
+            Source::Codex => "Codex",
+        }
+    }
+    /// How the savings roll-up is invoked in this harness: a plugin slash
+    /// command in Claude Code, a skill mention in Codex (setup_codex).
+    pub fn savings_cmd(self) -> &'static str {
+        match self {
+            Source::Claude => "/parsec:savings",
+            Source::Codex => "$parsec-savings",
+        }
+    }
     fn parse(s: &str) -> anyhow::Result<Option<Self>> {
         match s.trim().to_lowercase().as_str() {
             "auto" => Ok(None),
