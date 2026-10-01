@@ -78,11 +78,12 @@ pub fn enabled() -> bool {
 /// The URL leads: it is the one thing the reader has to act on, so it owns the
 /// first line (and its own line — `brand::panel` keeps these newlines) rather
 /// than sitting mid-paragraph. The explanation follows.
-fn banner_text() -> String {
+fn banner_text(tool: crate::trim::Source) -> String {
+    let harness = tool.label();
     format!(
         "→ Sign in:  parsec login   (opens {SIGNUP_URL} and links this machine — nothing to paste)\n\
          \n\
-         ⚠️  NO API KEY — parsec savings are OFF. Claude Code runs normally, \
+         ⚠️  NO API KEY — parsec savings are OFF. {harness} runs normally, \
          but parsec will not curate context until you add a key.\n\
          ~(silence this reminder with PARSEC_API_KEY_NOTE=0)"
     )
@@ -90,16 +91,17 @@ fn banner_text() -> String {
 
 /// The banner to show at SessionStart (and install), or `None` when entitled or
 /// muted. Split from [`banner_text`] so the decision is unit-testable.
-fn banner_for(enabled: bool, muted: bool) -> Option<String> {
-    (!enabled && !muted).then(banner_text)
+fn banner_for(enabled: bool, muted: bool, tool: crate::trim::Source) -> Option<String> {
+    (!enabled && !muted).then(|| banner_text(tool))
 }
 
 /// Live gate banner: `Some` iff unentitled and not muted via
 /// `PARSEC_API_KEY_NOTE=0`.
-pub fn gate_banner() -> Option<String> {
+pub fn gate_banner(tool: crate::trim::Source) -> Option<String> {
     banner_for(
         enabled(),
         std::env::var("PARSEC_API_KEY_NOTE").ok().as_deref() == Some("0"),
+        tool,
     )
 }
 
@@ -126,12 +128,17 @@ mod tests {
     #[test]
     fn banner_shows_only_when_unentitled_and_unmuted() {
         // Unentitled and not muted -> banner, and it points at the signup URL.
-        let b = banner_for(false, false).expect("banner when unentitled");
+        use crate::trim::Source;
+        let b = banner_for(false, false, Source::Claude).expect("banner when unentitled");
         assert!(b.contains(SIGNUP_URL));
         assert!(b.contains("parsec login"));
+        assert!(b.contains("Claude Code runs normally"));
+        // Worded for the harness that is starting.
+        let c = banner_for(false, false, Source::Codex).expect("banner when unentitled");
+        assert!(c.contains("Codex runs normally") && !c.contains("Claude"));
         // Entitled -> never.
-        assert_eq!(banner_for(true, false), None);
+        assert_eq!(banner_for(true, false, Source::Claude), None);
         // Muted -> suppressed even when unentitled.
-        assert_eq!(banner_for(false, true), None);
+        assert_eq!(banner_for(false, true, Source::Claude), None);
     }
 }

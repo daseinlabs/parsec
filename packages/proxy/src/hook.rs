@@ -13,6 +13,7 @@ use crate::adjudicator;
 use crate::noreread::{
     load_session, prune_sessions, read_tool_range, save_session, Gate, SessionState,
 };
+use crate::trim::Source;
 
 /// SessionStart additionalContext: the curation contract the model needs to
 /// read a fold marker correctly. Kept in lockstep with the wording in
@@ -138,7 +139,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // savings/statusline.
             let mut additional_context: Option<String> = None;
             if matches!(source, "clear" | "startup") {
-                if let Some(ctx) = crate::trim::consume_pending(&cwd, crate::trim::Source::Claude) {
+                if let Some(ctx) = crate::trim::consume_pending(&cwd, Source::Claude) {
                     additional_context = Some(ctx);
                     msgs.push(
                         "injected the /parsec:trim payload from your previous session".into(),
@@ -170,7 +171,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // prominent get-a-key banner. Fresh startups only (resume/clear/
             // compact must not re-nag). Single source: apikey::gate_banner.
             if is_startup && !off {
-                if let Some(m) = crate::apikey::gate_banner() {
+                if let Some(m) = crate::apikey::gate_banner(Source::Claude) {
                     msgs.push(m);
                 }
             }
@@ -190,7 +191,7 @@ pub fn run(event: &str) -> anyhow::Result<()> {
             // SessionStart and must not re-nag. It says "parsec active", so
             // it must not fire on a disabled install.
             if is_startup && !off {
-                if let Some(m) = crate::statusline::lifetime_note() {
+                if let Some(m) = crate::statusline::lifetime_note(Source::Claude) {
                     msgs.push(m);
                 }
             }
@@ -228,6 +229,123 @@ pub fn run(event: &str) -> anyhow::Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// `parsec up --session-start` — the Codex SessionStart hook, at parity with
+/// the Claude Code branch of [`run`]. Codex 0.15x takes the same hook output
+/// shape (`session-start.command.output`: `systemMessage`, `suppressOutput`,
+/// `hookSpecificOutput.additionalContext`), so the same JSON object is
+/// printed and stdout carries NOTHING else — any bare text a Codex hook
+/// prints is surfaced to the model as a developer message, which is how
+/// proxy status lines used to leak into context.
+///
+/// Parity map: staged trim (one-shot, `startup`/`clear` only), the curation
+/// note (`startup`/`clear`/`compact`), key banner and lifetime note (fresh
+/// startups only), proxy upgrade + revival. Deliberately absent: autosetup
+/// (it downloads the embedder and writes Claude Code settings) and the
+/// no-reread state reset (Codex has no PreToolUse gate recording reads).
+///
+/// No payload — a manual run, pi's detached spawn — reads as `startup`, the
+/// flag's historical behaviour. `port` is the one the Codex provider block
+/// was written with; older blocks omit it and fall back to the routed port.
+/// Fail open: every problem becomes a message and the hook exits 0.
+pub fn codex_session_start(port: Option<u16>) -> anyhow::Result<()> {
+    let mut input = String::new();
+    // A terminal has no payload to give — never block a manual run on it.
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    }
+    let payload: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
+    let source = payload
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("startup");
+    let is_startup = source == "startup";
+    let cwd = payload
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|d| d.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "/".into());
+
+    crate::trim::prune_pending(24 * 3600);
+    let mut msgs = Vec::new();
+    // Same one-shot rule as Claude Code: never on `resume`/`fork` (the live
+    // context already holds what was trimmed) or `compact`.
+    let mut additional_context: Option<String> = None;
+    if matches!(source, "clear" | "startup") {
+        if let Some(ctx) = crate::trim::consume_pending(&cwd, Source::Codex) {
+            additional_context = Some(ctx);
+            msgs.push("injected the $parsec-trim payload from your previous session".into());
+        }
+    }
+    // Codex traffic is curated too (responses.rs fold-back), so the model
+    // needs the same marker contract. Not gated on `setup::switched_off`:
+    // that is Claude Code's switch — Codex is switched off by
+    // `parsec disable codex`, which removes this hook altogether.
+    if crate::apikey::enabled() && matches!(source, "startup" | "clear" | "compact") {
+        additional_context = Some(match additional_context.take() {
+            Some(ctx) => format!("{ctx}\n\n{CURATION_NOTE}"),
+            None => CURATION_NOTE.to_string(),
+        });
+    }
+    if is_startup {
+        if let Some(m) = crate::apikey::gate_banner(Source::Codex) {
+            msgs.push(m);
+        }
+    }
+    let port = port.unwrap_or_else(crate::setup::routed_port);
+    // Liveness is not identity: a foreign listener would otherwise be
+    // silently left in the path of every Codex request.
+    if port_listening(port) && !crate::setup::parsec_owns(port) {
+        msgs.push(format!(
+            "⌁ parsec: 127.0.0.1:{port} is listening but is NOT a parsec proxy — Codex \
+             requests are going to that process. Stop it, or re-run `parsec setup codex` \
+             to route at a different port."
+        ));
+    } else {
+        if let Some(m) = maybe_upgrade_proxy_on(port) {
+            msgs.push(m);
+        }
+        if let Some(m) = maybe_autostart_proxy_on(port, Source::Codex) {
+            msgs.push(m);
+        }
+    }
+    if is_startup {
+        if let Some(m) = crate::statusline::lifetime_note(Source::Codex) {
+            msgs.push(m);
+        }
+    }
+    let mut out = serde_json::Map::new();
+    if !msgs.is_empty() {
+        out.insert("systemMessage".into(), json!(crate::brand::notice(&msgs)));
+        out.insert("suppressOutput".into(), json!(true));
+    }
+    if let Some(ctx) = additional_context {
+        out.insert(
+            "hookSpecificOutput".into(),
+            json!({
+                "hookEventName": "SessionStart",
+                "additionalContext": ctx,
+            }),
+        );
+    }
+    if !out.is_empty() {
+        println!("{}", Value::Object(out));
+    }
+    Ok(())
+}
+
+/// What routes a harness's traffic through the proxy, for failure messages.
+fn routing_name(tool: Source) -> &'static str {
+    match tool {
+        Source::Claude => "ANTHROPIC_BASE_URL",
+        Source::Codex => "Codex's `parsec` model provider",
+    }
 }
 
 /// The continue directive fed back on a blocked stop — the reference steer
@@ -420,11 +538,16 @@ fn unix_now() -> u64 {
 /// PARSEC_PROXY_AUTOSTART=0 opt-out (both are "the hook manages the proxy
 /// for me").
 fn maybe_upgrade_proxy() -> Option<String> {
+    let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
+    maybe_upgrade_proxy_on(local_proxy_port(&base)?)
+}
+
+/// [`maybe_upgrade_proxy`] against an explicit port — the Codex SessionStart
+/// path knows its port from its own provider block, not from the env.
+fn maybe_upgrade_proxy_on(port: u16) -> Option<String> {
     if std::env::var("PARSEC_PROXY_AUTOSTART").ok().as_deref() == Some("0") {
         return None;
     }
-    let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
-    let port = local_proxy_port(&base)?;
     if !port_listening(port) {
         return None; // nothing to replace — autostart spawns the new binary
     }
@@ -512,11 +635,16 @@ fn maybe_upgrade_proxy() -> Option<String> {
 /// message when it acted (or failed — a dead routed port breaks the session,
 /// which must never be silent).
 fn maybe_autostart_proxy() -> Option<String> {
+    let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
+    maybe_autostart_proxy_on(local_proxy_port(&base)?, Source::Claude)
+}
+
+/// [`maybe_autostart_proxy`] against an explicit port; `tool` only words the
+/// failure message (what routes through the dead port).
+fn maybe_autostart_proxy_on(port: u16, tool: Source) -> Option<String> {
     if std::env::var("PARSEC_PROXY_AUTOSTART").ok().as_deref() == Some("0") {
         return None;
     }
-    let base = std::env::var("ANTHROPIC_BASE_URL").ok()?;
-    let port = local_proxy_port(&base)?;
     if port_listening(port) {
         return None; // already up (ours or the user's own) — never double-spawn
     }
@@ -529,9 +657,10 @@ fn maybe_autostart_proxy() -> Option<String> {
     // routine revival path.
     if let Err(e) = crate::setup::spawn_proxy_detached(port, &[]) {
         return Some(format!(
-            "⌁ parsec: ANTHROPIC_BASE_URL routes through 127.0.0.1:{port} but the proxy \
+            "⌁ parsec: {} routes through 127.0.0.1:{port} but the proxy \
              FAILED to start ({e}) — API requests will fail until you run `parsec proxy` \
              (log: {})",
+            routing_name(tool),
             log_path.display()
         ));
     }

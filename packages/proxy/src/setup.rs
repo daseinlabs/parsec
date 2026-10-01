@@ -409,34 +409,14 @@ pub(crate) fn ensure_callable(auto: bool) {
 /// (A dead *worker* needs no intervention — the supervisor respawns it and
 /// falls back to Anthropic in the gap.) Idempotent —
 /// a live proxy (ours or the user's own) is never double-spawned.
-/// `parsec up` — revive the routed proxy, and (on `--session-start`) hand a
-/// staged Codex trim to the session that is starting.
 ///
-/// Codex has no `additionalContext` hook field the way Claude Code does, but
-/// it surfaces a SessionStart hook's STDOUT to the model as a `developer`
-/// message — confirmed in a real rollout, where this function's own
-/// "proxy already listening…" line appears as one. That is the injection
-/// channel: printing the composed trim puts it in the next session's context,
-/// which is exactly what the Claude Code hook achieves through
-/// `additionalContext`.
-///
-/// Gated on the flag rather than on every `up`, so a manual `parsec up`
-/// cannot silently burn a staged payload. `consume_pending` is one-shot and
-/// TTL-bounded, so a resume inside the window gets it once and never again.
+/// `up --session-start` (the Codex hook) is `hook::codex_session_start`, not
+/// this: a hook's stdout must be hook JSON, never these status lines.
 ///
 /// `port` overrides the routed-port lookup — the auto-updater's handoff
 /// (update.rs) restarts the supervisor on the port it actually holds, which
 /// is not necessarily the one Claude Code is routed to.
-pub fn up(restart: bool, session_start: bool, port: Option<u16>) -> anyhow::Result<()> {
-    if session_start {
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Some(ctx) =
-                crate::trim::consume_pending(&cwd.to_string_lossy(), crate::trim::Source::Codex)
-            {
-                println!("{ctx}");
-            }
-        }
-    }
+pub fn up(restart: bool, port: Option<u16>) -> anyhow::Result<()> {
     let port = port.unwrap_or_else(routed_port);
     let log = parsec_home().join("proxy.log");
     if crate::hook::port_listening(port) {
@@ -541,7 +521,7 @@ pub(crate) fn shutdown_parsec_on(port: u16) -> bool {
 /// The port a routed Claude Code session is actually pointed at: this shell's
 /// ANTHROPIC_BASE_URL if it names a local proxy, else the one written into
 /// settings.json (what sessions launch with), else the default.
-fn routed_port() -> u16 {
+pub(crate) fn routed_port() -> u16 {
     if let Some(p) = std::env::var("ANTHROPIC_BASE_URL")
         .ok()
         .and_then(|b| crate::hook::local_proxy_port(&b))
