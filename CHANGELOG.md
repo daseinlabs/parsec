@@ -11,6 +11,15 @@ are published on the releases page.
 
 ### Added
 
+- proxy: local cut inspector. Opening `http://127.0.0.1:<port>/` on the
+  proxy port lists recent conversations. Each one opens a message-by-message
+  view of what the client sent next to what was forwarded, showing the exact
+  cut span, the fold marker that replaced it, and any dropped or stubbed
+  tools. It also shows what was kept: every message stays visible with kept
+  and cut token estimates, and a "kept" view shows the conversation exactly
+  as the model received it. Only the latest request of the last `PARSEC_INSPECT` (default 20)
+  conversations is kept, in memory. Nothing is written to disk. Pages are
+  refused for any non-loopback `Host`.
 - proxy: idle auto-update. A proxy running as `~/.parsec/bin/parsec` checks
   this repository's latest release every 6 hours, only after 10 minutes with
   no request in flight. A newer stable version is downloaded, verified

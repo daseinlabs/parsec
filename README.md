@@ -1,30 +1,93 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/parsec-mark-glow.svg">
-    <img src="assets/brand/parsec-mark-light.svg" width="220" alt="parsec">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/site/hero-parsec-dark.svg">
+    <img src="assets/brand/site/hero-parsec-light.svg" width="320" alt="">
   </picture>
 </p>
 
-<h1 align="center">parsec</h1>
+<p align="center"><sub><b>PARSEC · CONTEXT FOR CODING AGENTS</b></sub></p>
 
-<p align="center"><b>2× the context. ½ the cost.</b><br>
-<sub>Same model. Longer reach.</sub></p>
+<h1 align="center">A new way to go farther.</h1>
 
 <p align="center">
-  <a href="https://github.com/daseinlabs/parsec/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/daseinlabs/parsec?style=flat-square&color=2ea043"></a>
-  <a href="https://github.com/daseinlabs/parsec/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/daseinlabs/parsec/ci.yml?branch=main&style=flat-square"></a>
-  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea043?style=flat-square"></a>
+Parsec understands that doing more shouldn’t require more, and the way forward
+for all of us is through efficiency, not effort. Reducing costs with bespoke
+plans that provide the value that fits your project, available to all, for all.
 </p>
 
-**Context savings for coding agents.** parsec is a local proxy and plugin for
-Claude Code, OpenCode, Codex CLI, pi, and Claude Desktop that cuts the tokens your
-agent spends per turn: it blocks wasteful re-reads, breaks command loops, and
-(with scoring enabled) curates the conversation context before each request,
-cache-safely. Savings are measured per request against the provider's own
-token counter, never estimated.
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="https://app.getparsec.ai/"><b>Sign in</b></a> ·
+  <a href="https://github.com/daseinlabs/code-compression-bench"><b>Read the benchmark</b></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/daseinlabs/parsec/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/daseinlabs/parsec?style=flat-square&color=7EFB94&labelColor=000000"></a>
+  <a href="https://github.com/daseinlabs/parsec/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/daseinlabs/parsec/ci.yml?branch=main&style=flat-square&labelColor=000000"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-7EFB94?style=flat-square&labelColor=000000"></a>
+</p>
+
+parsec is a local proxy and plugin for Claude Code, OpenCode, Codex CLI, pi,
+and Claude Desktop that cuts the tokens your agent spends per turn: it blocks
+wasteful re-reads, breaks command loops, and (with scoring enabled) curates the
+conversation context before each request, cache-safely. Savings are measured
+per request against the provider's own token counter, never estimated.
 
 Everything runs on your machine with your own credentials. Model traffic never
 touches anyone else's infrastructure.
+
+## Cheaper. Faster. More solved.
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%"><sub><b>CHEAPER</b></sub><h2>−39%</h2>$89.65 vs $147.30 total cost<br><sub>$1.45 per solved task, the lowest of all six arms tested.</sub></td>
+    <td align="center" width="33%"><sub><b>FASTER</b></sub><h2>−25%</h2>10.8 hours vs 14.4 hours<br><sub>The same task set, completed 3.6 hours sooner.</sub></td>
+    <td align="center" width="33%"><sub><b>BETTER</b></sub><h2>62/100</h2>Up from 57 without compression<br><sub>Five more working fixes, verified by the official grader.</sub></td>
+  </tr>
+</table>
+
+<p align="center"><sub>100 SWE-bench Verified tasks, one fixed model (Claude Sonnet 4.6), the
+official Docker grader, and cache-aware pricing. Only the compression layer
+changes. <a href="https://github.com/daseinlabs/code-compression-bench">Read the benchmark →</a></sub></p>
+
+## How it works
+
+<table align="center">
+  <tr>
+    <td align="center" width="25%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/brand/site/agent-context-dark.svg">
+        <img src="assets/brand/site/agent-context-light.svg" width="160" alt="">
+      </picture><br>
+      <b>Agent context</b><br>
+      <sub>File reads, search results, tool output, and thinking accumulate with every turn.</sub>
+    </td>
+    <td align="center" width="25%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/brand/site/learned-curator-dark.svg">
+        <img src="assets/brand/site/learned-curator-light.svg" width="160" alt="">
+      </picture><br>
+      <b>Learned curator</b><br>
+      <sub>parsec scores each chunk and removes context the agent is unlikely to use.</sub>
+    </td>
+    <td align="center" width="25%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/brand/site/original-content-dark.svg">
+        <img src="assets/brand/site/original-content-light.svg" width="160" alt="">
+      </picture><br>
+      <b>Original content</b><br>
+      <sub>Kept content stays byte-exact. Your prompts and the agent’s answers stay untouched.</sub>
+    </td>
+    <td align="center" width="25%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/brand/site/measured-results-dark.svg">
+        <img src="assets/brand/site/measured-results-light.svg" width="160" alt="">
+      </picture><br>
+      <b>Measured results</b><br>
+      <sub>Less context to process: lower cost, faster runs, more solved tasks.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Install
 
