@@ -9,10 +9,14 @@
 
 <h1 align="center">A new way to go farther.</h1>
 
-<p align="center">
+<p>
 Parsec understands that doing more shouldn’t require more, and the way forward
 for all of us is through efficiency, not effort. Reducing costs with bespoke
 plans that provide the value that fits your project, available to all, for all.
+</p>
+<p>
+  Everything runs on your machine with your own credentials. Model traffic never
+touches anyone else's infrastructure.
 </p>
 
 <p align="center">
@@ -27,14 +31,7 @@ plans that provide the value that fits your project, available to all, for all.
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-7EFB94?style=flat-square&labelColor=000000"></a>
 </p>
 
-parsec is a local proxy and plugin for Claude Code, OpenCode, Codex CLI, pi,
-and Claude Desktop that cuts the tokens your agent spends per turn: it blocks
-wasteful re-reads, breaks command loops, and (with scoring enabled) curates the
-conversation context before each request, cache-safely. Savings are measured
-per request against the provider's own token counter, never estimated.
 
-Everything runs on your machine with your own credentials. Model traffic never
-touches anyone else's infrastructure.
 
 ## Cheaper. Faster. More solved.
 
