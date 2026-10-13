@@ -56,7 +56,7 @@ winit = "0.30"
 # Decodes the embedded brand mark to the RGBA buffer tray-icon wants. The
 # `image` crate would pull a dozen codecs we will never use; the brand assets
 # are PNG and stay PNG.
-png = "0.17"
+png = "0.18"
 
 [lints]
 workspace = true
