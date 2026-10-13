@@ -268,4 +268,100 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(r#"{"a": [1, "é"], "b": null}"#).unwrap();
         assert_eq!(py_json_dumps(&v), "{\"a\": [1, \"\\u00e9\"], \"b\": null}");
     }
+
+    // ---- new tests below ----
+
+    #[test]
+    fn splitlines_all_break_chars() {
+        let s = "a\nb\rc\r\nd\x0be\x0cf\x1cg\x1dh\x1ei\u{85}j\u{2028}k\u{2029}l";
+        assert_eq!(
+            py_splitlines(s),
+            vec!["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
+        );
+    }
+
+    #[test]
+    fn splitlines_crlf_no_empty_trailing_line() {
+        assert_eq!(py_splitlines("a\r\n"), vec!["a"]);
+        assert_eq!(py_splitlines("\r\n"), vec![""]);
+    }
+
+    #[test]
+    fn splitlines_consecutive_and_leading_trailing_newlines() {
+        assert_eq!(py_splitlines("a\n\nb"), vec!["a", "", "b"]);
+        assert_eq!(py_splitlines("\na"), vec!["", "a"]);
+        assert_eq!(py_splitlines("a\n\n"), vec!["a", ""]);
+        assert_eq!(py_splitlines("\n\n"), vec!["", ""]);
+    }
+
+    #[test]
+    fn strip_and_is_space_whitespace_set() {
+        assert_eq!(py_strip("  \t\nhello\n\t  "), "hello");
+        // ASCII \x1c..\x1f info-separators are whitespace for Python but not Rust std.
+        assert_eq!(py_strip("\x1c\x1d hi \x1e\x1f"), "hi");
+        assert!(py_is_space('\x1c'));
+        assert!(py_is_space('\x1f'));
+        assert!(!py_is_space('a'));
+    }
+
+    #[test]
+    fn strip_edge_cases() {
+        assert_eq!(py_strip(""), "");
+        assert_eq!(py_strip("   \t\x1c  "), "");
+        assert_eq!(py_strip("noWhitespaceHere"), "noWhitespaceHere");
+        assert!(!py_has_content(""));
+        assert!(!py_has_content("   \x1c\x1d "));
+        assert!(py_has_content(" x "));
+    }
+
+    #[test]
+    fn split_ws_edge_cases() {
+        assert_eq!(py_split_ws(""), Vec::<&str>::new());
+        assert_eq!(py_split_ws("   "), Vec::<&str>::new());
+        assert_eq!(py_split_ws("a  b\tc"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn char_prefix_and_len_multibyte() {
+        assert_eq!(char_len("héllo"), 5);
+        let cjk = "日本語";
+        assert_eq!(char_len(cjk), 3);
+        assert_eq!(char_prefix(cjk, 2), "日本");
+        // Astral-plane emoji: ONE Rust `char` even though it's a UTF-16
+        // surrogate pair in Python/JS.
+        let emoji = "a😀b";
+        assert_eq!(char_len(emoji), 3);
+        assert_eq!(char_prefix(emoji, 2), "a😀");
+        assert_eq!(char_prefix(emoji, 1), "a");
+    }
+
+    #[test]
+    fn char_prefix_length_exceeds_char_count() {
+        assert_eq!(char_prefix("héllo", 100), "héllo");
+        assert_eq!(char_prefix("", 5), "");
+        assert_eq!(char_prefix("日本語", 10), "日本語");
+    }
+
+    #[test]
+    fn json_dumps_sort_keys_true_false() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"b": 1, "a": 2}"#).unwrap();
+        assert_eq!(py_json_dumps_opts(&v, false, true), "{\"b\": 1, \"a\": 2}");
+        assert_eq!(py_json_dumps_opts(&v, true, true), "{\"a\": 2, \"b\": 1}");
+    }
+
+    #[test]
+    fn json_dumps_ensure_ascii_true_false() {
+        let v = serde_json::Value::String("café 日本".to_string());
+        assert_eq!(
+            py_json_dumps_opts(&v, false, true),
+            "\"caf\\u00e9 \\u65e5\\u672c\""
+        );
+        assert_eq!(py_json_dumps_opts(&v, false, false), "\"café 日本\"");
+    }
+
+    #[test]
+    fn json_dumps_astral_char_ensure_ascii_surrogate_pair() {
+        let v = serde_json::Value::String("😀".to_string());
+        assert_eq!(py_json_dumps_opts(&v, false, true), "\"\\ud83d\\ude00\"");
+    }
 }
