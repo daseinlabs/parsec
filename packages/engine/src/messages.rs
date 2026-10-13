@@ -201,3 +201,252 @@ pub fn assistant_chunks_of(messages: &[Value]) -> Vec<Chunk> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn msgs(v: Value) -> Vec<Value> {
+        v.as_array().cloned().unwrap_or_default()
+    }
+
+    // --- actions ----------------------------------------------------------
+
+    #[test]
+    fn test_actions_prefers_command_and_falls_back_to_query() {
+        let m = json!({"extra": {"actions": [
+            {"command": "ls -la"},
+            {"query": "foo"},
+            {"command": "", "query": "bar"},
+            {"command": "cat x", "query": "y"},
+            {"other": 1},
+        ]}});
+        assert_eq!(actions(&m), vec!["ls -la", "foo", "bar", "cat x", ""]);
+    }
+
+    #[test]
+    fn test_actions_missing_or_malformed_returns_empty_vec() {
+        assert!(actions(&json!({})).is_empty());
+        assert!(actions(&json!({"extra": {}})).is_empty());
+        assert!(actions(&json!({"extra": {"actions": []}})).is_empty());
+        assert!(actions(&json!({"extra": {"actions": "nope"}})).is_empty());
+        // A non-object action item still contributes an empty string slot.
+        assert_eq!(actions(&json!({"extra": {"actions": [42]}})), vec![""]);
+    }
+
+    // --- steps_of ---------------------------------------------------------
+
+    #[test]
+    fn test_steps_of_pairs_assistant_with_next_user_or_tool() {
+        let ms = msgs(json!([
+            {"role": "system", "content": "sys"},
+            {"role": "assistant", "extra": {"actions": [{"command": "ls"}]}, "content": "thinking"},
+            {"role": "user", "content": "obs one"},
+            {"role": "assistant", "extra": {"actions": [{"command": "a"}, {"query": "b"}]}},
+            {"role": "tool", "content": "tool out"},
+        ]));
+        assert_eq!(
+            steps_of(&ms),
+            vec![
+                ("ls".to_string(), "obs one".to_string()),
+                ("a ; b".to_string(), "tool out".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_steps_of_drops_dangling_assistant_and_keeps_last_of_a_run() {
+        let ms = msgs(json!([
+            {"role": "assistant", "extra": {"actions": [{"command": "first"}]}},
+            {"role": "assistant", "extra": {"actions": [{"command": "second"}]}},
+            {"role": "user", "content": "obs"},
+            {"role": "assistant", "extra": {"actions": [{"command": "dangling"}]}},
+        ]));
+        assert_eq!(
+            steps_of(&ms),
+            vec![("second".to_string(), "obs".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_steps_of_content_string_blocks_and_missing() {
+        let ms = msgs(json!([
+            {"role": "assistant", "extra": {"actions": [{"command": "a"}]}},
+            {"role": "user", "content": [{"type": "text", "text": "hello"}, {"type": "text", "text": "world"}]},
+            {"role": "assistant", "extra": {"actions": [{"command": "b"}]}},
+            {"role": "user"},
+        ]));
+        assert_eq!(
+            steps_of(&ms),
+            vec![
+                ("a".to_string(), "hello world".to_string()),
+                ("b".to_string(), String::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_steps_of_ignores_user_without_pending_assistant() {
+        let ms = msgs(json!([
+            {"role": "user", "content": "orphan"},
+            {"role": "assistant", "extra": {"actions": [{"command": "x"}]}},
+            {"role": "user", "content": "obs"},
+        ]));
+        assert_eq!(steps_of(&ms), vec![("x".to_string(), "obs".to_string())]);
+    }
+
+    #[test]
+    fn test_steps_of_text_blocks_join_with_spaces_even_when_blocks_lack_text() {
+        let ms = msgs(json!([
+            {"role": "assistant", "extra": {"actions": [{"command": "a"}]}},
+            {"role": "user", "content": [{"type": "tool_result", "content": "z"}, {"type": "text", "text": "after"}]},
+        ]));
+        // The tool_result block contributes "" so the join starts with a space.
+        assert_eq!(steps_of(&ms), vec![("a".to_string(), " after".to_string())]);
+    }
+
+    // --- assistant_chunks_of ---------------------------------------------
+
+    #[test]
+    fn test_assistant_chunks_of_plain_string_and_text_blocks() {
+        let ms = msgs(json!([
+            {"role": "assistant", "content": "one\ntwo"},
+            {"role": "user", "content": "r"},
+            {"role": "assistant", "content": [{"type": "text", "text": "x"}, {"text": "y"}]},
+            {"role": "user", "content": "r"},
+        ]));
+        assert_eq!(
+            assistant_chunks_of(&ms)
+                .iter()
+                .map(|c| (c.text.clone(), c.step, c.kind.clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("one\ntwo".to_string(), 0, "asst".to_string()),
+                ("x y".to_string(), 1, "asst".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_assistant_chunks_of_skips_a_message_with_any_non_text_block() {
+        // A single tool_use block makes the WHOLE message non-text.
+        let ms = msgs(json!([
+            {"role": "assistant", "content": [
+                {"type": "text", "text": "hi"},
+                {"type": "tool_use", "id": "t", "name": "n"}
+            ]},
+            {"role": "user", "content": "r"},
+        ]));
+        assert!(assistant_chunks_of(&ms).is_empty());
+    }
+
+    #[test]
+    fn test_assistant_chunks_of_skips_blank_and_non_content() {
+        let ms = msgs(json!([
+            {"role": "assistant", "content": "   "},
+            {"role": "user", "content": "r"},
+            {"role": "assistant", "content": 42},
+            {"role": "user", "content": "r"},
+        ]));
+        assert!(assistant_chunks_of(&ms).is_empty());
+    }
+
+    // --- reasoning --------------------------------------------------------
+
+    #[test]
+    fn test_reasoning_text_prefers_content_then_actions_then_placeholder() {
+        assert_eq!(
+            reasoning_text(&json!({"reasoning_content": "  think  "})),
+            "  think  "
+        );
+        assert_eq!(
+            reasoning_text(
+                &json!({"reasoning_content": "   ", "extra": {"actions": [{"command": "cmd"}]}})
+            ),
+            "cmd"
+        );
+        assert_eq!(reasoning_text(&json!({})), "reasoning");
+    }
+
+    #[test]
+    fn test_reasoning_text_truncates_to_2000_chars() {
+        let m = json!({"reasoning_content": "a".repeat(2500)});
+        assert_eq!(char_len(&reasoning_text(&m)), 2000);
+    }
+
+    #[test]
+    fn test_reasoning_chunk_is_provider_evicted_only_with_blob() {
+        assert!(reasoning_chunk(&json!({}), 0).is_none());
+        let c = reasoning_chunk(&json!({"reasoning_content": "abcd"}), 7).unwrap();
+        assert_eq!(c.kind, "reasoning");
+        assert_eq!(c.evict, "provider");
+        assert_eq!(c.step, 7);
+        assert!(!c.text.is_empty());
+    }
+
+    #[test]
+    fn test_reasoning_chunks_of_aligns_with_steps_and_skips_empty() {
+        let ms = msgs(json!([
+            {"role": "assistant", "reasoning_content": "aaaa"},
+            {"role": "user", "content": "o"},
+            {"role": "assistant"},
+            {"role": "user", "content": "o"},
+            {"role": "assistant", "reasoning_content": "cccc"},
+            {"role": "user", "content": "o"},
+        ]));
+        assert_eq!(steps_of(&ms).len(), 3);
+        // Step 1 carries no blob, so only steps 0 and 2 yield reasoning chunks.
+        assert_eq!(
+            reasoning_chunks_of(&ms)
+                .iter()
+                .map(|c| c.step)
+                .collect::<Vec<_>>(),
+            vec![0, 2]
+        );
+    }
+
+    #[test]
+    fn test_blob_tokens_sums_tool_calls_and_reason_fields() {
+        assert_eq!(blob_tokens(&json!({})), 0);
+        assert_eq!(
+            blob_tokens(&json!({"reasoning_content": "abcde", "thinking_blocks": [1, 2, 3]})),
+            3
+        );
+        assert_eq!(
+            blob_tokens(&json!({"tool_calls": [{"provider_specific_fields": {"x": [1, 2]}}]})),
+            3
+        );
+        // Falsy payloads contribute nothing.
+        assert_eq!(blob_tokens(&json!({"reasoning_content": ""})), 0);
+        assert_eq!(
+            blob_tokens(&json!({"tool_calls": [{"provider_specific_fields": {}}]})),
+            0
+        );
+    }
+
+    #[test]
+    fn test_truthy_matches_python_truthiness() {
+        for v in [
+            json!(null),
+            json!(false),
+            json!(0),
+            json!(0.0),
+            json!(""),
+            json!([]),
+            json!({}),
+        ] {
+            assert!(!truthy(&v), "{v} should be falsy");
+        }
+        for v in [
+            json!(true),
+            json!(1),
+            json!(-1),
+            json!("x"),
+            json!([0]),
+            json!({"a": 0}),
+        ] {
+            assert!(truthy(&v), "{v} should be truthy");
+        }
+    }
+}
