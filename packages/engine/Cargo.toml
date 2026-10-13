@@ -16,7 +16,7 @@ regex = "1"
 sha2 = "0.10"
 # Grammar versions are checkpoint-matched (see src/cst.rs) — bump deliberately.
 tree-sitter = "0.25"
-tree-sitter-python = "0.23"
+tree-sitter-python = "0.25"
 tree-sitter-javascript = "0.23"
 tree-sitter-typescript = "0.23"
 tree-sitter-go = "0.23"
