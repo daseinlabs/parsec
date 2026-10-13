@@ -51,7 +51,7 @@ gethostname = "1"
 # flow is what lets the menu refresh on the MAIN thread, which AppKit requires
 # and Win32 message queues assume.
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
-tray-icon = "0.19"
+tray-icon = "0.25"
 winit = "0.30"
 # Decodes the embedded brand mark to the RGBA buffer tray-icon wants. The
 # `image` crate would pull a dozen codecs we will never use; the brand assets
